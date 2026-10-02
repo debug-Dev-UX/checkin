@@ -29,10 +29,38 @@ import {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
 export default function App() {
-  // Navigation State (from sidebar)
-  // 'overview' | 'performance' | 'staff' | 'control' | 'settings'
-  const [navTab, setNavTab] = useState('overview')
+  // Navigation State with URL Hash Support (#staff, #performance, #overview, etc.)
+  const getInitialTab = () => {
+    const params = new URLSearchParams(window.location.search)
+    const tabParam = params.get('tab')
+    const hash = window.location.hash.replace('#', '').toLowerCase()
+    const target = tabParam || hash
+    if (['overview', 'performance', 'staff', 'control', 'settings'].includes(target)) {
+      return target
+    }
+    return 'overview'
+  }
+
+  const [navTab, setNavTabState] = useState(getInitialTab)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+
+  const setNavTab = useCallback((tab) => {
+    setNavTabState(tab)
+    if (window.location.hash !== `#${tab}`) {
+      window.location.hash = tab
+    }
+  }, [])
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const hash = window.location.hash.replace('#', '').toLowerCase()
+      if (['overview', 'performance', 'staff', 'control', 'settings'].includes(hash)) {
+        setNavTabState(hash)
+      }
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
 
   // Real-time Overview Stats (0 Data default)
   const [stats, setStats] = useState({
