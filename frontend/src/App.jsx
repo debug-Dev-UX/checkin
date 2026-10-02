@@ -26,18 +26,18 @@ import {
   IconPrinter,
   IconCamera
 } from './Icons'
-import StaffCameraScanner from './components/StaffCameraScanner'
+import UserDashboard from './components/UserDashboard'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
 export default function App() {
-  // Navigation State with URL Hash Support (#staff, #staff-scan, #performance, #overview, etc.)
+  // Navigation State with URL Hash Support (#user, #staff, #overview, etc.)
   const getInitialTab = () => {
     const params = new URLSearchParams(window.location.search)
-    const tabParam = params.get('tab')
+    const tabParam = params.get('tab') || params.get('mode')
     const hash = window.location.hash.replace('#', '').toLowerCase()
     const target = tabParam || hash
-    if (['overview', 'performance', 'staff', 'staff-scan', 'control', 'settings'].includes(target)) {
+    if (['overview', 'performance', 'staff', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(target)) {
       return target
     }
     return 'overview'
@@ -56,7 +56,7 @@ export default function App() {
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase()
-      if (['overview', 'performance', 'staff', 'staff-scan', 'control', 'settings'].includes(hash)) {
+      if (['overview', 'performance', 'staff', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(hash)) {
         setNavTabState(hash)
       }
     }
@@ -441,7 +441,21 @@ export default function App() {
   const currentActive = stats.active_now ?? 0
   const occupancyPct = seatingCap > 0 ? Math.min(100, Math.round((currentActive / seatingCap) * 100)) : 0
   const staffOnShiftCount = staffList.filter(s => s.is_on_shift).length
-  const staffCoveragePct = staffList.length > 0 ? Math.round((staffOnShiftCount / staffList.length) * 100) : 0
+  // Dedicated USER / STAFF DASHBOARD for camera check-in (No admin dashboard controls)
+  if (navTab === 'user' || navTab === 'staff-scan' || navTab === 'staff-portal') {
+    return (
+      <UserDashboard
+        apiBase={API_BASE}
+        staffList={staffList}
+        onShiftUpdated={() => {
+          fetchOverviewData()
+          fetchStaffData()
+          fetchControlData()
+        }}
+        onSwitchToAdmin={() => setNavTab('overview')}
+      />
+    )
+  }
 
   return (
     <div className="dashboard-root">
@@ -510,13 +524,13 @@ export default function App() {
               <span>Staff Roster</span>
             </button>
             <button
-              className={`sidebar-nav-item ${navTab === 'staff-scan' ? 'active' : ''}`}
-              onClick={() => setNavTab('staff-scan')}
+              className="sidebar-nav-item"
+              onClick={() => setNavTab('user')}
             >
               <span className="nav-item-icon">
                 <IconCamera size={16} />
               </span>
-              <span>Camera Scanner</span>
+              <span>User Dashboard (Scan)</span>
             </button>
             <button
               className={`sidebar-nav-item ${navTab === 'control' ? 'active' : ''}`}
@@ -586,6 +600,16 @@ export default function App() {
 
           {/* Topbar Right Controls */}
           <div className="top-navbar-right">
+            <button
+              className="btn-secondary"
+              style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '4px' }}
+              onClick={() => setNavTab('user')}
+              title="Open Staff Camera Check-In Portal"
+            >
+              <IconCamera size={14} color="#ea580c" />
+              <span>User Dashboard (Scan)</span>
+            </button>
+
             <button className="admin-dropdown-btn">
               <IconGear size={14} color="#64748b" />
               <span>System Administrator</span>
@@ -1040,10 +1064,10 @@ export default function App() {
                     <button
                       className="btn-secondary"
                       style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                      onClick={() => setNavTab('staff-scan')}
+                      onClick={() => setNavTab('user')}
                     >
                       <IconCamera size={14} color="#ea580c" />
-                      <span>Open Camera Scanner</span>
+                      <span>User Dashboard (Scan)</span>
                     </button>
                     <button
                       className="btn-primary"
@@ -1183,11 +1207,11 @@ export default function App() {
                     </button>
                     <button
                       className="btn-secondary"
-                      onClick={() => setNavTab('staff-scan')}
+                      onClick={() => setNavTab('user')}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                     >
                       <IconCamera size={15} color="#ea580c" />
-                      <span>Open Camera Scanner</span>
+                      <span>User Dashboard (Scan)</span>
                     </button>
                   </div>
                 </div>
@@ -1312,22 +1336,6 @@ export default function App() {
                 </div>
               </form>
             </div>
-          )}
-
-          {/* ============================================================== */}
-          {/* TAB 6: STAFF CAMERA SCANNER (Camera QR Check-In / Clock-In) */}
-          {/* ============================================================== */}
-          {navTab === 'staff-scan' && (
-            <StaffCameraScanner
-              apiBase={API_BASE}
-              staffList={staffList}
-              onCheckinSuccess={() => {
-                fetchOverviewData()
-                fetchStaffData()
-                fetchControlData()
-              }}
-              onBackToDashboard={() => setNavTab('staff')}
-            />
           )}
         </main>
       </div>
