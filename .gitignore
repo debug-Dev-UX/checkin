@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build artifacts
+dist/
+dist-ssr/
+public/build/
+public/hot/
+public/storage/
+
+# Environment files (Keep .example and .testing)
+**/.env
+**/.env.backup
+**/.env.production
+!**/.env.example
+!**/.env.testing
+
+# Cache, Sessions & Logs
+*.log
+logs/
+.phpunit.cache/
+.phpunit.result.cache/
+backend/storage/logs/*.log
+backend/storage/framework/cache/data/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+!backend/storage/logs/.gitignore
+!backend/storage/framework/.gitignore
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.local
