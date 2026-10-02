@@ -23,19 +23,21 @@ import {
   IconMoreVertical,
   IconTrash,
   IconClock,
-  IconPrinter
+  IconPrinter,
+  IconCamera
 } from './Icons'
+import StaffCameraScanner from './components/StaffCameraScanner'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
 export default function App() {
-  // Navigation State with URL Hash Support (#staff, #performance, #overview, etc.)
+  // Navigation State with URL Hash Support (#staff, #staff-scan, #performance, #overview, etc.)
   const getInitialTab = () => {
     const params = new URLSearchParams(window.location.search)
     const tabParam = params.get('tab')
     const hash = window.location.hash.replace('#', '').toLowerCase()
     const target = tabParam || hash
-    if (['overview', 'performance', 'staff', 'control', 'settings'].includes(target)) {
+    if (['overview', 'performance', 'staff', 'staff-scan', 'control', 'settings'].includes(target)) {
       return target
     }
     return 'overview'
@@ -54,7 +56,7 @@ export default function App() {
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase()
-      if (['overview', 'performance', 'staff', 'control', 'settings'].includes(hash)) {
+      if (['overview', 'performance', 'staff', 'staff-scan', 'control', 'settings'].includes(hash)) {
         setNavTabState(hash)
       }
     }
@@ -508,6 +510,15 @@ export default function App() {
               <span>Staff Roster</span>
             </button>
             <button
+              className={`sidebar-nav-item ${navTab === 'staff-scan' ? 'active' : ''}`}
+              onClick={() => setNavTab('staff-scan')}
+            >
+              <span className="nav-item-icon">
+                <IconCamera size={16} />
+              </span>
+              <span>Camera Scanner</span>
+            </button>
+            <button
               className={`sidebar-nav-item ${navTab === 'control' ? 'active' : ''}`}
               onClick={() => setNavTab('control')}
             >
@@ -608,22 +619,26 @@ export default function App() {
               {navTab === 'staff' && 'Staff Directory & Role Assignment'}
               {navTab === 'control' && 'Control Room & QR Terminal'}
               {navTab === 'settings' && 'System Settings'}
+              {navTab === 'staff-scan' && 'Staff Camera Check-In Terminal'}
             </h1>
             <div className="page-breadcrumb">
-              Home {navTab !== 'overview' && ` / ${navTab.charAt(0).toUpperCase() + navTab.slice(1)}`}
+              Home {navTab !== 'overview' && ` / ${navTab === 'staff-scan' ? 'Camera Scanner' : navTab.charAt(0).toUpperCase() + navTab.slice(1)}`}
             </div>
           </div>
 
           {/* Subheading row: Arrow Pointer + Start */}
-          <div className="section-subheading-row">
-            <IconArrowPointer size={16} color="#1e293b" />
-            <span>Start</span>
-          </div>
+          {navTab !== 'staff-scan' && (
+            <div className="section-subheading-row">
+              <IconArrowPointer size={16} color="#1e293b" />
+              <span>Start</span>
+            </div>
+          )}
 
           {/* ============================================================== */}
           {/* 4 COLOR BANNER KPI CARDS (SVG Icons & 0 Data Default) */}
           {/* ============================================================== */}
-          <section className="kpi-cards-row" aria-label="Summary KPIs">
+          {navTab !== 'staff-scan' && (
+            <section className="kpi-cards-row" aria-label="Summary KPIs">
             {/* Card 1: Vivid Magenta (Rack Server Icon / CURRENTLY SEATED) */}
             <div className="kpi-banner-card magenta">
               <div className="kpi-banner-icon">
@@ -668,6 +683,7 @@ export default function App() {
               </div>
             </div>
           </section>
+          )}
 
           {/* ============================================================== */}
           {/* TAB 1: OVERVIEW (Tasks & Notifications table) */}
@@ -1020,14 +1036,24 @@ export default function App() {
               <div className="content-panel">
                 <div className="panel-header-bar">
                   <div className="panel-heading-title">CHAFÉ STAFF ROSTER & ROLE ASSIGNMENT</div>
-                  <button
-                    className="btn-primary"
-                    style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                    onClick={() => setIsCreateStaffModalOpen(true)}
-                  >
-                    <IconPlus size={13} color="#ffffff" />
-                    <span>Create Staff</span>
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className="btn-secondary"
+                      style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      onClick={() => setNavTab('staff-scan')}
+                    >
+                      <IconCamera size={14} color="#ea580c" />
+                      <span>Open Camera Scanner</span>
+                    </button>
+                    <button
+                      className="btn-primary"
+                      style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      onClick={() => setIsCreateStaffModalOpen(true)}
+                    >
+                      <IconPlus size={13} color="#ffffff" />
+                      <span>Create Staff</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="table-responsive">
@@ -1146,7 +1172,7 @@ export default function App() {
                     />
                   </div>
 
-                  <div style={{ marginTop: '16px' }}>
+                  <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <button
                       className="btn-primary"
                       onClick={() => window.print()}
@@ -1154,6 +1180,14 @@ export default function App() {
                     >
                       <IconPrinter size={15} color="#ffffff" />
                       <span>Print QR Poster</span>
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => setNavTab('staff-scan')}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    >
+                      <IconCamera size={15} color="#ea580c" />
+                      <span>Open Camera Scanner</span>
                     </button>
                   </div>
                 </div>
@@ -1278,6 +1312,22 @@ export default function App() {
                 </div>
               </form>
             </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* TAB 6: STAFF CAMERA SCANNER (Camera QR Check-In / Clock-In) */}
+          {/* ============================================================== */}
+          {navTab === 'staff-scan' && (
+            <StaffCameraScanner
+              apiBase={API_BASE}
+              staffList={staffList}
+              onCheckinSuccess={() => {
+                fetchOverviewData()
+                fetchStaffData()
+                fetchControlData()
+              }}
+              onBackToDashboard={() => setNavTab('staff')}
+            />
           )}
         </main>
       </div>
