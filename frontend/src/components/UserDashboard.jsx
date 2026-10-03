@@ -326,9 +326,13 @@ export default function UserDashboard({
 
           if (matchedStaff) {
             playSuccessBeep()
-            // Popup action modal to choose Check In or Check Out
-            setPendingAction(isCheckedIn ? 'out' : 'in')
-            setActiveModal('action_confirm')
+            if (pendingAction) {
+              handleExecuteClock(pendingAction, matchedStaff, 'QR Scan')
+            } else {
+              // Popup action modal to choose Check In or Check Out if no action chosen beforehand
+              setPendingAction(isCheckedIn ? 'out' : 'in')
+              setActiveModal('action_confirm')
+            }
           }
         }
       }
@@ -500,7 +504,10 @@ export default function UserDashboard({
                 <button
                   type="button"
                   className={`mobile-action-card ${!isCheckedIn ? 'active-state' : ''}`}
-                  onClick={() => handleExecuteClock('in')}
+                  onClick={() => {
+                    setPendingAction('in')
+                    setActiveTab('scan')
+                  }}
                   disabled={isProcessing}
                 >
                   <div className="mobile-action-icon">
@@ -516,7 +523,10 @@ export default function UserDashboard({
                 <button
                   type="button"
                   className={`mobile-action-card ${isCheckedIn ? 'active-state' : ''}`}
-                  onClick={() => handleExecuteClock('out')}
+                  onClick={() => {
+                    setPendingAction('out')
+                    setActiveTab('scan')
+                  }}
                   disabled={isProcessing}
                 >
                   <div className="mobile-action-icon">

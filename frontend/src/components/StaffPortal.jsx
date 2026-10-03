@@ -578,7 +578,10 @@ export default function StaffPortal({
                 <button
                   type="button"
                   className={`mobile-action-card ${!activeCheckin ? 'active-state' : ''}`}
-                  onClick={() => handleOpenActionModal('in')}
+                  onClick={() => {
+                    setSelectedScanAction('in')
+                    setActiveTab('scan')
+                  }}
                 >
                   <div className="mobile-action-icon">
                     <IconDoorIn size={36} color="#f59e0b" />
@@ -593,7 +596,10 @@ export default function StaffPortal({
                 <button
                   type="button"
                   className={`mobile-action-card ${activeCheckin ? 'active-state' : ''}`}
-                  onClick={() => handleOpenActionModal('out')}
+                  onClick={() => {
+                    setSelectedScanAction('out')
+                    setActiveTab('scan')
+                  }}
                 >
                   <div className="mobile-action-icon">
                     <IconDoorOut size={36} color="#f59e0b" />
