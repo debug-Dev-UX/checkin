@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import jsQR from 'jsqr'
 import {
   IconCamera,
@@ -7,7 +7,11 @@ import {
   IconCalendar,
   IconLogOut,
   IconUserCircle,
-  IconRefresh
+  IconRefresh,
+  IconQrCode,
+  IconPrinter,
+  IconTrophy,
+  IconUsers
 } from '../Icons'
 import { Skeleton } from './Skeleton'
 import {
@@ -39,7 +43,6 @@ function playSuccessBeep() {
 }
 
 export default function StaffPortal({
-  apiBase,
   staffUser,
   onLogout,
   showToast,
@@ -51,6 +54,9 @@ export default function StaffPortal({
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [actionResult, setActionResult] = useState(null)
+  const [activeTab, setActiveTab] = useState('clock') // 'clock' | 'schedule' | 'history' | 'badge'
+  const [shiftNote, setShiftNote] = useState('')
+  const [dayoffFilter, setDayoffFilter] = useState('all') // 'all' | 'upcoming' | 'past'
 
   // Camera QR scanner optional toggle
   const [showCamera, setShowCamera] = useState(false)
@@ -66,19 +72,38 @@ export default function StaffPortal({
     return () => clearInterval(timer)
   }, [])
 
+  // Live Elapsed Shift Timer calculation
+  const elapsedShiftTime = useMemo(() => {
+    if (!activeCheckin || !activeCheckin.check_in_at) return null
+    const start = new Date(activeCheckin.check_in_at)
+    const diff = Math.max(0, Math.floor((currentTime - start) / 1000))
+    const hours = Math.floor(diff / 3600)
+    const mins = Math.floor((diff % 3600) / 60)
+    const secs = diff % 60
+    return `${hours.toString().padStart(2, '0')}h ${mins.toString().padStart(2, '0')}m ${secs.toString().padStart(2, '0')}s`
+  }, [activeCheckin, currentTime])
+
+  // Greeting based on time of day
+  const greeting = useMemo(() => {
+    const hour = currentTime.getHours()
+    if (hour < 12) return 'Good morning'
+    if (hour < 18) return 'Good afternoon'
+    return 'Good evening'
+  }, [currentTime])
+
   // Fetch staff's current shift status and dayoffs
   const fetchStaffStatus = useCallback(async () => {
     if (!staffUser || !staffUser.id) return
     setLoading(true)
     try {
-      // 1. Fetch checkins to find active shift
+      // 1. Fetch checkins to find active shift and history
       const allCheckins = await getCheckinsFromFirebase()
       const userRecords = (allCheckins || []).filter(
         c => c.staff_id === staffUser.id || c.email === staffUser.email || c.name === staffUser.name
       )
       const currentActive = userRecords.find(c => c.status === 'checked_in')
       setActiveCheckin(currentActive || null)
-      setRecentLogs(userRecords.slice(0, 5))
+      setRecentLogs(userRecords)
 
       // 2. Fetch staff's assigned dayoffs
       const userDayoffs = await getStaffDayoffsFromFirebase(staffUser.id)
@@ -98,6 +123,27 @@ export default function StaffPortal({
   const todayStr = new Date().toISOString().split('T')[0]
   const todayDayoff = dayoffs.find(d => String(d.date).substring(0, 10) === todayStr)
 
+  // Calculate staff punctuality statistics
+  const punctualityStats = useMemo(() => {
+    const completed = recentLogs.filter(l => l.type === 'employee')
+    if (completed.length === 0) return { rate: 100, onTime: 0, late: 0, total: 0 }
+    const late = completed.filter(l => l.punctuality_status === 'late').length
+    const onTime = completed.length - late
+    const rate = Math.round((onTime / completed.length) * 100)
+    return { rate, onTime, late, total: completed.length }
+  }, [recentLogs])
+
+  // Filtered dayoffs
+  const filteredDayoffs = useMemo(() => {
+    return dayoffs.filter(item => {
+      const isPast = String(item.date).substring(0, 10) < todayStr
+      const isUpcoming = String(item.date).substring(0, 10) >= todayStr
+      if (dayoffFilter === 'upcoming') return isUpcoming
+      if (dayoffFilter === 'past') return isPast
+      return true
+    })
+  }, [dayoffs, dayoffFilter, todayStr])
+
   // Execute Clock In / Clock Out
   const handleClockAction = async () => {
     setProcessing(true)
@@ -111,10 +157,14 @@ export default function StaffPortal({
           name: staffUser.name,
           email: staffUser.email,
           type: 'employee',
-          department: staffUser.role || 'Barista',
-          badge_no: `STAFF-${staffUser.id}`,
-          location: 'Staff Portal Terminal',
-          note: todayDayoff ? `Clocked in on Day Off (${todayDayoff.type})` : 'Clocked in via Staff Portal',
+          department: staffUser.role || 'Service Team',
+          badge_no: `STAFF-${staffUser.id || 'MEM'}`,
+          location: 'Staff Mobile Portal',
+          note: shiftNote.trim()
+            ? shiftNote.trim()
+            : todayDayoff
+            ? `Clocked in on Day Off (${todayDayoff.type})`
+            : 'Clocked in via Staff Portal',
         }
 
         const newRecord = await createCheckinInFirebase(payload)
@@ -122,10 +172,11 @@ export default function StaffPortal({
         playSuccessBeep()
         setActionResult({
           type: 'success',
-          action: 'Clocked In Successfully!',
+          action: 'Shift Started Successfully!',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
         })
+        setShiftNote('')
         if (showToast) showToast(`Clocked in! Welcome, ${staffUser.name}`, 'success')
       } else {
         // CLOCK OUT
@@ -134,9 +185,9 @@ export default function StaffPortal({
         playSuccessBeep()
         setActionResult({
           type: 'success',
-          action: 'Clocked Out Successfully!',
+          action: 'Shift Completed Successfully!',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          status: 'Shift Completed',
+          status: 'Shift Logged to Timesheet ✓',
         })
         if (showToast) showToast(`Shift completed! Great job today, ${staffUser.name}!`, 'success')
       }
@@ -220,7 +271,6 @@ export default function StaffPortal({
         })
 
         if (code && code.data) {
-          // Scanned QR code
           handleClockAction()
           setShowCamera(false)
           return
@@ -238,281 +288,648 @@ export default function StaffPortal({
     }
   }, [cameraActive])
 
+  // Get initials for profile badge
+  const initials = useMemo(() => {
+    if (!staffUser?.name) return 'ST'
+    return staffUser.name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .substring(0, 2)
+      .toUpperCase()
+  }, [staffUser?.name])
+
+  // QR code image URL for digital badge
+  const qrBadgeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=STAFF-${encodeURIComponent(staffUser?.id || staffUser?.username || 'STAFF')}&color=0f172a&bgcolor=ffffff`
+
+  const handlePrintTimesheet = () => {
+    window.print()
+  }
+
   return (
-    <div className="staff-portal-page">
-      {/* Top Navbar */}
-      <header className="staff-portal-nav">
-        <div className="staff-portal-brand">
-          <div className="login-logo-badge" style={{ padding: '4px 8px' }}>
-            <span className="login-logo-text" style={{ fontSize: '15px' }}>Chafé</span>
-            <span className="login-logo-tag" style={{ fontSize: '10px' }}>STAFF</span>
+    <div className="pro-staff-portal">
+      {/* ============================================================== */}
+      {/* 1. PROFESSIONAL TOP NAVBAR */}
+      {/* ============================================================== */}
+      <header className="pro-staff-nav">
+        <div className="pro-staff-brand-box">
+          <div className="pro-brand-logo">
+            <span className="pro-brand-name">Chafé</span>
+            <span className="pro-brand-tag">EMPLOYEE</span>
           </div>
-          <span className="staff-portal-title">Employee Portal</span>
+          <span className="pro-portal-label">Staff Workspace</span>
         </div>
 
-        <div className="staff-portal-user-meta">
-          <div className="user-avatar-circle" style={{ width: '34px', height: '34px' }}>
-            <IconUserCircle size={22} color="#0284c7" />
-          </div>
-          <div style={{ textAlign: 'left' }}>
-            <div style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a' }}>{staffUser?.name}</div>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>
-              {staffUser?.role} • @{staffUser?.username || 'staff'}
+        <div className="pro-staff-nav-right">
+          <div className="pro-nav-user-pill">
+            <div className="pro-user-avatar">{initials}</div>
+            <div className="pro-user-info-text">
+              <span className="pro-user-name">{staffUser?.name}</span>
+              <span className="pro-user-role">{staffUser?.role || 'Team Member'}</span>
             </div>
           </div>
 
           <button
             type="button"
-            className="btn-secondary"
+            className="pro-btn-signout"
             onClick={onLogout}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', marginLeft: '12px' }}
+            title="Sign out of employee portal"
           >
-            <IconLogOut size={14} />
-            <span>Sign Out</span>
+            <IconLogOut size={15} />
+            <span className="signout-label">Sign Out</span>
           </button>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="staff-portal-content">
-        {/* Banner: If Today is Assigned Day Off */}
+      {/* ============================================================== */}
+      {/* 2. HERO GREETING & PROFILE BANNER */}
+      {/* ============================================================== */}
+      <section className="pro-staff-hero">
+        <div className="pro-staff-hero-glow"></div>
+        <div className="pro-staff-hero-inner">
+          <div className="pro-hero-profile">
+            <div className="pro-hero-avatar-ring">
+              <div className="pro-hero-avatar">{initials}</div>
+              {activeCheckin && <span className="pro-avatar-live-dot" title="Active on shift"></span>}
+            </div>
+
+            <div className="pro-hero-meta">
+              <div className="pro-hero-greeting-line">
+                <span className="pro-hero-greeting">{greeting}, {staffUser?.name?.split(' ')[0] || 'Team'}</span>
+                <span className={`pro-shift-status-pill ${activeCheckin ? 'status-active' : 'status-off'}`}>
+                  {activeCheckin ? '● ON SHIFT' : '○ OFF DUTY'}
+                </span>
+              </div>
+              <h1 className="pro-hero-full-name">{staffUser?.name}</h1>
+              <div className="pro-hero-tags">
+                <span className="pro-tag role-tag">☕ {staffUser?.role || 'Staff'}</span>
+                <span className="pro-tag id-tag">ID: STAFF-{String(staffUser?.id || '').slice(-6).toUpperCase()}</span>
+                <span className="pro-tag shift-tag">Shift: {staffUser?.shift_start || '07:30'} - {staffUser?.shift_end || '16:00'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="pro-hero-quick-actions">
+            <button
+              type="button"
+              className="pro-hero-action-btn"
+              onClick={fetchStaffStatus}
+              title="Sync live status with cloud"
+            >
+              <IconRefresh size={14} />
+              <span>Sync Cloud</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Main Container */}
+      <main className="pro-portal-container">
+        {/* Scheduled Day Off Banner (if applicable today) */}
         {todayDayoff && (
-          <div className="staff-dayoff-banner">
-            <div className="dayoff-banner-icon">🌴</div>
-            <div className="dayoff-banner-text">
-              <h4>TODAY IS YOUR SCHEDULED DAY OFF ({todayDayoff.type.toUpperCase().replace('_', ' ')})</h4>
+          <div className="pro-dayoff-alert-banner">
+            <div className="pro-dayoff-icon">🌴</div>
+            <div className="pro-dayoff-info">
+              <h3>TODAY IS YOUR SCHEDULED DAY OFF ({todayDayoff.type.replace('_', ' ').toUpperCase()})</h3>
               <p>
-                Reason: <strong>{todayDayoff.reason || 'Rest Day'}</strong>. You are scheduled off duty today.
-                You can still clock in below if covering a shift.
+                Reason: <strong>{todayDayoff.reason || 'Rest & Recharge'}</strong>. You are scheduled off duty today.
+                You may still clock in below if you are covering an extra shift.
               </p>
             </div>
           </div>
         )}
 
-        <div className="staff-portal-grid">
-          {/* Left Column: Shift Check In / Out Card */}
-          <div className="content-panel staff-action-panel">
-            <div className="panel-header-bar">
-              <div className="panel-heading-title">MY SHIFT ATTENDANCE</div>
-              <button className="panel-gear-btn" onClick={fetchStaffStatus} title="Refresh status">
-                <IconRefresh size={14} />
-              </button>
+        {/* ============================================================== */}
+        {/* 3. TOP 4 KPI CARDS */}
+        {/* ============================================================== */}
+        <section className="pro-kpi-grid">
+          {/* Card 1: Shift Status & Elapsed Timer */}
+          <div className={`pro-kpi-card ${activeCheckin ? 'active-kpi' : ''}`}>
+            <div className="pro-kpi-header">
+              <span className="pro-kpi-title">CURRENT SHIFT STATUS</span>
+              <div className={`pro-kpi-badge ${activeCheckin ? 'badge-emerald' : 'badge-slate'}`}>
+                {activeCheckin ? 'ACTIVE' : 'IDLE'}
+              </div>
             </div>
+            <div className="pro-kpi-value-row">
+              <span className="pro-kpi-main-val">
+                {activeCheckin ? elapsedShiftTime : 'Off Duty'}
+              </span>
+            </div>
+            <div className="pro-kpi-footer-note">
+              {activeCheckin
+                ? `Clocked in at ${new Date(activeCheckin.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                : `Next regular shift: ${staffUser?.shift_start || '07:30'}`}
+            </div>
+          </div>
 
-            <div style={{ padding: '24px', textAlign: 'center' }}>
-              {/* Digital Clock */}
-              <div className="portal-digital-clock">
-                <div className="clock-time">
+          {/* Card 2: Today's Schedule */}
+          <div className="pro-kpi-card">
+            <div className="pro-kpi-header">
+              <span className="pro-kpi-title">TODAY'S SCHEDULE</span>
+              <IconCalendar size={18} color="#0284c7" />
+            </div>
+            <div className="pro-kpi-value-row">
+              <span className="pro-kpi-main-val">
+                {todayDayoff ? '🌴 Day Off' : `${staffUser?.shift_start || '07:30'} - ${staffUser?.shift_end || '16:00'}`}
+              </span>
+            </div>
+            <div className="pro-kpi-footer-note">
+              {todayDayoff ? `${todayDayoff.type.replace('_', ' ').toUpperCase()}` : 'Standard Working Shift'}
+            </div>
+          </div>
+
+          {/* Card 3: Punctuality Record */}
+          <div className="pro-kpi-card">
+            <div className="pro-kpi-header">
+              <span className="pro-kpi-title">PUNCTUALITY RATING</span>
+              <IconTrophy size={18} color="#f59e0b" />
+            </div>
+            <div className="pro-kpi-value-row">
+              <span className="pro-kpi-main-val">{punctualityStats.rate}%</span>
+              <span className="pro-kpi-sub-text">On-Time</span>
+            </div>
+            <div className="pro-kpi-footer-note">
+              {punctualityStats.late === 0
+                ? '⭐ Perfect on-time attendance'
+                : `${punctualityStats.late} late arrival(s) recorded`}
+            </div>
+          </div>
+
+          {/* Card 4: Monthly Shift Count */}
+          <div className="pro-kpi-card">
+            <div className="pro-kpi-header">
+              <span className="pro-kpi-title">TOTAL SHIFTS LOGGED</span>
+              <IconClock size={18} color="#8b5cf6" />
+            </div>
+            <div className="pro-kpi-value-row">
+              <span className="pro-kpi-main-val">{punctualityStats.total}</span>
+              <span className="pro-kpi-sub-text">Shifts</span>
+            </div>
+            <div className="pro-kpi-footer-note">
+              Logged in verified attendance history
+            </div>
+          </div>
+        </section>
+
+        {/* ============================================================== */}
+        {/* 4. PROFESSIONAL NAVIGATION TABS */}
+        {/* ============================================================== */}
+        <nav className="pro-tabs-nav">
+          <button
+            type="button"
+            className={`pro-tab-btn ${activeTab === 'clock' ? 'active-tab' : ''}`}
+            onClick={() => setActiveTab('clock')}
+          >
+            <span className="tab-icon">⚡</span>
+            <span>Clock In / Out</span>
+          </button>
+
+          <button
+            type="button"
+            className={`pro-tab-btn ${activeTab === 'schedule' ? 'active-tab' : ''}`}
+            onClick={() => setActiveTab('schedule')}
+          >
+            <span className="tab-icon">🌴</span>
+            <span>My Schedule & Leaves ({dayoffs.length})</span>
+          </button>
+
+          <button
+            type="button"
+            className={`pro-tab-btn ${activeTab === 'history' ? 'active-tab' : ''}`}
+            onClick={() => setActiveTab('history')}
+          >
+            <span className="tab-icon">📜</span>
+            <span>Shift History & Timesheet</span>
+          </button>
+
+          <button
+            type="button"
+            className={`pro-tab-btn ${activeTab === 'badge' ? 'active-tab' : ''}`}
+            onClick={() => setActiveTab('badge')}
+          >
+            <span className="tab-icon">🪪</span>
+            <span>Digital ID Badge</span>
+          </button>
+        </nav>
+
+        {/* ============================================================== */}
+        {/* 5. TAB 1: CLOCK IN / OUT CENTER */}
+        {/* ============================================================== */}
+        {activeTab === 'clock' && (
+          <div className="pro-tab-content-grid">
+            {/* Left: Clock Terminal Card */}
+            <div className="pro-card pro-clock-card">
+              <div className="pro-card-header">
+                <div>
+                  <h2 className="pro-card-title">ATTENDANCE TERMINAL</h2>
+                  <p className="pro-card-subtitle">Real-time cloud timestamp verification</p>
+                </div>
+                <div className="pro-live-indicator">
+                  <span className="live-pulse-dot"></span>
+                  <span>LIVE SYSTEM</span>
+                </div>
+              </div>
+
+              {/* Digital LED Clock Display */}
+              <div className="pro-digital-clock-display">
+                <div className="clock-led-time">
                   {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </div>
-                <div className="clock-date">
+                <div className="clock-led-date">
                   {currentTime.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                 </div>
               </div>
 
-              {/* Shift Hours info */}
-              <div className="portal-shift-meta-box">
-                <div className="shift-meta-item">
-                  <span className="shift-meta-label">SCHEDULED SHIFT</span>
-                  <strong className="shift-meta-val">
-                    ⏰ {staffUser?.shift_start || '07:30'} - {staffUser?.shift_end || '16:00'}
-                  </strong>
-                </div>
-
-                <div className="shift-meta-item">
-                  <span className="shift-meta-label">CURRENT STATUS</span>
-                  <span className={`badge-status-pill ${activeCheckin ? 'green' : 'blue'}`}>
-                    {activeCheckin ? '🟢 Active On Shift' : '⚪ Off Duty'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Active check-in details if clocked in */}
+              {/* Active Shift Details Card if clocked in */}
               {activeCheckin && (
-                <div className="active-shift-details-card">
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#047857' }}>
-                    Clocked in at {new Date(activeCheckin.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                <div className="pro-active-session-banner">
+                  <div className="session-banner-top">
+                    <span className="session-badge">🟢 ON SHIFT SESSION ACTIVE</span>
+                    <span className="session-timer-live">{elapsedShiftTime}</span>
                   </div>
-                  <div style={{ fontSize: '11px', color: '#065f46', marginTop: '4px' }}>
-                    Punctuality: {activeCheckin.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : `Late Arrival (${activeCheckin.late_minutes} min late)`}
+                  <div className="session-meta-row">
+                    <div>
+                      <span className="meta-label">CLOCKED IN AT</span>
+                      <strong className="meta-val">
+                        {new Date(activeCheckin.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="meta-label">PUNCTUALITY</span>
+                      <strong className={`meta-val ${activeCheckin.punctuality_status === 'on_time' ? 'text-emerald' : 'text-amber'}`}>
+                        {activeCheckin.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : `Late by ${activeCheckin.late_minutes} min`}
+                      </strong>
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Action Result Notification */}
               {actionResult && (
-                <div
-                  className={`portal-alert ${actionResult.type === 'success' ? 'success' : 'error'}`}
-                  style={{ margin: '16px 0', padding: '12px', borderRadius: '8px' }}
-                >
-                  <strong>{actionResult.action || actionResult.message}</strong>
-                  {actionResult.status && <div>{actionResult.status} at {actionResult.time}</div>}
+                <div className={`pro-action-alert ${actionResult.type === 'success' ? 'alert-success' : 'alert-error'}`}>
+                  <div className="alert-icon-box">{actionResult.type === 'success' ? '✓' : '⚠️'}</div>
+                  <div className="alert-content">
+                    <strong>{actionResult.action || actionResult.message}</strong>
+                    {actionResult.status && <div>{actionResult.status} at {actionResult.time}</div>}
+                  </div>
                 </div>
               )}
 
-              {/* Big Interactive 1-Tap Clock Button */}
-              <div style={{ marginTop: '20px' }}>
+              {/* Shift Notes (Optional) */}
+              {!activeCheckin && (
+                <div className="pro-form-group-note">
+                  <label className="pro-note-label">Shift Note (Optional)</label>
+                  <input
+                    type="text"
+                    className="pro-note-input"
+                    placeholder="e.g. Covering morning shift, swap with Liam"
+                    value={shiftNote}
+                    onChange={(e) => setShiftNote(e.target.value)}
+                    disabled={processing}
+                  />
+                </div>
+              )}
+
+              {/* Giant Luxury 1-Tap Clock Action Button */}
+              <div className="pro-clock-btn-container">
                 <button
                   type="button"
-                  className={`btn-giant-clock ${activeCheckin ? 'checkout-mode' : 'checkin-mode'}`}
+                  className={`pro-giant-clock-button ${activeCheckin ? 'btn-clock-out' : 'btn-clock-in'}`}
                   onClick={handleClockAction}
                   disabled={processing}
                 >
-                  <div className="giant-btn-inner">
-                    <span className="giant-btn-icon">
+                  <div className="giant-btn-glow"></div>
+                  <div className="giant-btn-core">
+                    <span className="giant-core-icon">
                       {activeCheckin ? '🛑' : '☕'}
                     </span>
-                    <span className="giant-btn-title">
+                    <span className="giant-core-title">
                       {processing
-                        ? 'Processing...'
+                        ? 'SYNCING CLOUD...'
                         : activeCheckin
                         ? 'TAP TO CLOCK OUT'
                         : 'TAP TO CLOCK IN'}
                     </span>
-                    <span className="giant-btn-subtitle">
+                    <span className="giant-core-desc">
                       {activeCheckin
-                        ? 'Finish your shift & log checkout time'
-                        : `Start shift as ${staffUser?.role}`}
+                        ? 'Complete shift & log final hours to timesheet'
+                        : `Start duty as ${staffUser?.role || 'Staff'}`}
                     </span>
                   </div>
                 </button>
               </div>
 
-              {/* Optional Camera Scanner Toggle */}
-              <div style={{ marginTop: '20px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              {/* Camera Scanner Toggle */}
+              <div className="pro-camera-toggle-section">
                 <button
                   type="button"
-                  className="btn-secondary"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
+                  className="pro-btn-camera-toggle"
                   onClick={() => setShowCamera(!showCamera)}
                 >
-                  <IconCamera size={15} />
-                  <span>{showCamera ? 'Hide Camera QR Scanner' : 'Use Camera QR Scanner'}</span>
+                  <IconCamera size={16} />
+                  <span>{showCamera ? 'Close Badge Camera Scanner' : 'Scan Badge with Camera'}</span>
                 </button>
 
                 {showCamera && (
-                  <div style={{ marginTop: '12px', position: 'relative', maxWidth: '320px', margin: '12px auto' }}>
-                    <video
-                      ref={videoRef}
-                      playsInline
-                      muted
-                      style={{ width: '100%', borderRadius: '12px', border: '2px solid #0284c7' }}
-                    />
+                  <div className="pro-camera-stream-wrapper">
+                    <video ref={videoRef} playsInline muted className="pro-camera-video" />
                     <canvas ref={canvasRef} style={{ display: 'none' }} />
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '6px' }}>
-                      Show your Staff QR code badge to the camera
+                    <div className="pro-camera-hint">
+                      Hold your Staff QR Code in front of the lens to auto clock
                     </div>
                   </div>
                 )}
               </div>
             </div>
-          </div>
 
-          {/* Right Column: Scheduled Days Off & Recent Shifts */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {/* Scheduled Days Off Card */}
-            <div className="content-panel">
-              <div className="panel-header-bar">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <IconCalendar size={16} color="#0f172a" />
-                  <div className="panel-heading-title">MY SCHEDULED DAYS OFF & VACATIONS</div>
+            {/* Right: Quick Schedule & Today Summary */}
+            <div className="pro-side-column">
+              {/* Today's Shift Card */}
+              <div className="pro-card">
+                <div className="pro-card-header">
+                  <h3 className="pro-card-title">TODAY'S SHIFT OVERVIEW</h3>
+                  <IconClock size={16} color="#0284c7" />
                 </div>
-                <span className="badge-status-pill blue">{dayoffs.length} Scheduled</span>
+                <div className="pro-card-body">
+                  <div className="pro-info-row">
+                    <span className="info-label">Assigned Shift</span>
+                    <span className="info-value font-bold">⏰ {staffUser?.shift_start || '07:30'} - {staffUser?.shift_end || '16:00'}</span>
+                  </div>
+                  <div className="pro-info-row">
+                    <span className="info-label">Department</span>
+                    <span className="info-value">{staffUser?.role || 'Service Counter'}</span>
+                  </div>
+                  <div className="pro-info-row">
+                    <span className="info-label">Hourly Compensation</span>
+                    <span className="info-value font-bold text-emerald">${Number(staffUser?.hourly_rate || 20).toFixed(2)}/hr</span>
+                  </div>
+                  <div className="pro-info-row">
+                    <span className="info-label">Day Off Today</span>
+                    <span className="info-value">
+                      {todayDayoff ? (
+                        <span className="pro-badge badge-amber">🌴 {todayDayoff.type.replace('_', ' ').toUpperCase()}</span>
+                      ) : (
+                        <span className="pro-badge badge-emerald">On Schedule</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div style={{ padding: '16px 20px' }}>
-                {loading ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <Skeleton width="100%" height="42px" borderRadius="8px" />
-                    <Skeleton width="100%" height="42px" borderRadius="8px" />
-                  </div>
-                ) : dayoffs.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: '13px' }}>
-                    🌴 No days off scheduled yet. Contact your administrator to assign rest days.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {dayoffs.map((item) => {
-                      const isPast = new Date(item.date) < new Date(todayStr)
-                      const isToday = String(item.date).substring(0, 10) === todayStr
-
-                      return (
-                        <div key={item.id} className={`staff-dayoff-row ${isToday ? 'today-highlight' : ''}`}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div className="dayoff-icon-circle">
-                              {item.type === 'annual_leave' ? '🏖️' : item.type === 'sick_leave' ? '🏥' : '🌴'}
+              {/* Recent 3 Shifts summary */}
+              <div className="pro-card">
+                <div className="pro-card-header">
+                  <h3 className="pro-card-title">RECENT SHIFTS</h3>
+                  <button
+                    type="button"
+                    className="pro-link-btn"
+                    onClick={() => setActiveTab('history')}
+                  >
+                    View All →
+                  </button>
+                </div>
+                <div className="pro-card-body">
+                  {recentLogs.slice(0, 3).length === 0 ? (
+                    <div className="pro-empty-card-msg">No recent shift logs recorded yet.</div>
+                  ) : (
+                    <div className="pro-recent-logs-list">
+                      {recentLogs.slice(0, 3).map((log) => (
+                        <div key={log.id} className="pro-log-item">
+                          <div>
+                            <div className="pro-log-date">
+                              {log.check_in_at ? new Date(log.check_in_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Shift'}
                             </div>
-                            <div>
-                              <div style={{ fontWeight: 700, fontSize: '13px', color: '#0f172a' }}>
-                                {item.date} {isToday && '(Today)'}
-                              </div>
-                              <div style={{ fontSize: '11px', color: '#64748b' }}>
-                                {item.type.replace('_', ' ').toUpperCase()} • {item.reason || 'Rest Day'}
-                              </div>
+                            <div className="pro-log-times">
+                              {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                              {log.check_out_at && ` → ${new Date(log.check_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
                             </div>
                           </div>
-
-                          <div>
-                            <span className={`badge-status-pill ${isToday ? 'green' : isPast ? 'blue' : 'amber'}`}>
-                              {isToday ? 'Today' : isPast ? 'Passed' : 'Upcoming'}
+                          <div className="pro-log-status-right">
+                            <span className={`pro-badge ${log.status === 'checked_in' ? 'badge-emerald' : 'badge-slate'}`}>
+                              {log.status === 'checked_in' ? 'Active' : 'Completed'}
                             </span>
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Recent Shift Activity */}
-            <div className="content-panel">
-              <div className="panel-header-bar">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <IconClock size={16} color="#0f172a" />
-                  <div className="panel-heading-title">MY RECENT SHIFT HISTORY</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-
-              <div style={{ padding: '16px 20px' }}>
-                {loading ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <Skeleton width="100%" height="36px" borderRadius="6px" />
-                    <Skeleton width="100%" height="36px" borderRadius="6px" />
-                    <Skeleton width="100%" height="36px" borderRadius="6px" />
-                  </div>
-                ) : recentLogs.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '13px' }}>
-                    No recent shift logs recorded yet.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {recentLogs.map((log) => (
-                      <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>
-                        <div>
-                          <strong>{log.check_in_at ? new Date(log.check_in_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Shift'}</strong>
-                          <div style={{ fontSize: '11px', color: '#64748b' }}>
-                            In: {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
-                            {log.check_out_at && ` • Out: ${new Date(log.check_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                          </div>
-                        </div>
-
-                        <div style={{ textAlign: 'right' }}>
-                          <span className={`badge-status-pill ${log.status === 'checked_in' ? 'green' : 'blue'}`}>
-                            {log.status === 'checked_in' ? 'Active' : 'Completed'}
-                          </span>
-                          <div style={{ fontSize: '10px', color: log.punctuality_status === 'on_time' ? '#10b981' : '#ea580c', marginTop: '2px', fontWeight: 600 }}>
-                            {log.punctuality_status === 'on_time' ? 'On-Time' : 'Late'}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* 6. TAB 2: MY SCHEDULE & DAYS OFF */}
+        {/* ============================================================== */}
+        {activeTab === 'schedule' && (
+          <div className="pro-card">
+            <div className="pro-card-header">
+              <div>
+                <h2 className="pro-card-title">MY SCHEDULED DAYS OFF & VACATIONS</h2>
+                <p className="pro-card-subtitle">Approved leaves and rest days assigned by management</p>
+              </div>
+              <div className="pro-filter-pills">
+                <button
+                  type="button"
+                  className={`pro-filter-pill ${dayoffFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setDayoffFilter('all')}
+                >
+                  All ({dayoffs.length})
+                </button>
+                <button
+                  type="button"
+                  className={`pro-filter-pill ${dayoffFilter === 'upcoming' ? 'active' : ''}`}
+                  onClick={() => setDayoffFilter('upcoming')}
+                >
+                  Upcoming
+                </button>
+                <button
+                  type="button"
+                  className={`pro-filter-pill ${dayoffFilter === 'past' ? 'active' : ''}`}
+                  onClick={() => setDayoffFilter('past')}
+                >
+                  Past
+                </button>
+              </div>
+            </div>
+
+            <div className="pro-card-body">
+              {loading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <Skeleton width="100%" height="48px" borderRadius="8px" />
+                  <Skeleton width="100%" height="48px" borderRadius="8px" />
+                </div>
+              ) : filteredDayoffs.length === 0 ? (
+                <div className="pro-empty-placeholder">
+                  <div className="empty-icon">🌴</div>
+                  <h3>No Scheduled Days Off Found</h3>
+                  <p>You currently do not have any {dayoffFilter !== 'all' ? dayoffFilter : ''} days off assigned.</p>
+                  <p className="sub">Contact your manager if you need to schedule leave or swap days off.</p>
+                </div>
+              ) : (
+                <div className="pro-dayoffs-grid">
+                  {filteredDayoffs.map((item) => {
+                    const isToday = String(item.date).substring(0, 10) === todayStr
+                    const isPast = String(item.date).substring(0, 10) < todayStr
+
+                    return (
+                      <div key={item.id} className={`pro-dayoff-card ${isToday ? 'card-today-glow' : ''}`}>
+                        <div className="dayoff-card-top">
+                          <span className="dayoff-type-icon">
+                            {item.type === 'annual_leave' ? '🏖️' : item.type === 'sick_leave' ? '🏥' : item.type === 'holiday' ? '🌟' : '🌴'}
+                          </span>
+                          <span className={`pro-badge ${isToday ? 'badge-emerald' : isPast ? 'badge-slate' : 'badge-blue'}`}>
+                            {isToday ? 'TODAY' : isPast ? 'COMPLETED' : 'UPCOMING'}
+                          </span>
+                        </div>
+                        <div className="dayoff-card-date">
+                          {new Date(item.date + 'T00:00:00').toLocaleDateString([], {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </div>
+                        <div className="dayoff-card-type-name">
+                          {item.type.replace('_', ' ').toUpperCase()}
+                        </div>
+                        <div className="dayoff-card-reason">
+                          {item.reason || 'Scheduled Rest & Recreation'}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* 7. TAB 3: SHIFT HISTORY & TIMESHEET */}
+        {/* ============================================================== */}
+        {activeTab === 'history' && (
+          <div className="pro-card">
+            <div className="pro-card-header">
+              <div>
+                <h2 className="pro-card-title">MY SHIFT HISTORY & ATTENDANCE LOGS</h2>
+                <p className="pro-card-subtitle">Verified cloud attendance records</p>
+              </div>
+              <button
+                type="button"
+                className="pro-btn-secondary"
+                onClick={handlePrintTimesheet}
+                title="Print timesheet"
+              >
+                <IconPrinter size={15} />
+                <span>Print Timesheet</span>
+              </button>
+            </div>
+
+            <div className="pro-card-body">
+              {loading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <Skeleton width="100%" height="40px" borderRadius="6px" />
+                  <Skeleton width="100%" height="40px" borderRadius="6px" />
+                  <Skeleton width="100%" height="40px" borderRadius="6px" />
+                </div>
+              ) : recentLogs.length === 0 ? (
+                <div className="pro-empty-placeholder">
+                  <div className="empty-icon">📜</div>
+                  <h3>No Shift History Recorded</h3>
+                  <p>When you clock in and out, your verified shift hours will be automatically recorded here.</p>
+                </div>
+              ) : (
+                <div className="pro-table-wrapper">
+                  <table className="pro-timesheet-table">
+                    <thead>
+                      <tr>
+                        <th>DATE</th>
+                        <th>CLOCK IN</th>
+                        <th>CLOCK OUT</th>
+                        <th>DEPARTMENT / LOCATION</th>
+                        <th>STATUS</th>
+                        <th>PUNCTUALITY</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentLogs.map((log) => {
+                        const inDate = log.check_in_at ? new Date(log.check_in_at) : null
+                        const outDate = log.check_out_at ? new Date(log.check_out_at) : null
+
+                        return (
+                          <tr key={log.id}>
+                            <td className="font-bold">
+                              {inDate ? inDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
+                            </td>
+                            <td>
+                              {inDate ? inDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                            </td>
+                            <td>
+                              {outDate ? outDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (
+                                <span className="text-emerald font-bold">Active Now</span>
+                              )}
+                            </td>
+                            <td>{log.department || 'Service Team'} • {log.location || 'Terminal'}</td>
+                            <td>
+                              <span className={`pro-badge ${log.status === 'checked_in' ? 'badge-emerald' : 'badge-slate'}`}>
+                                {log.status === 'checked_in' ? 'Active' : 'Completed'}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`pro-badge ${log.punctuality_status === 'on_time' ? 'badge-emerald' : 'badge-amber'}`}>
+                                {log.punctuality_status === 'on_time' ? '✓ On-Time' : `⚠️ Late (${log.late_minutes}m)`}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* 8. TAB 4: DIGITAL ID BADGE */}
+        {/* ============================================================== */}
+        {activeTab === 'badge' && (
+          <div className="pro-badge-tab-container">
+            <div className="pro-id-badge-card">
+              <div className="id-badge-top-banner">
+                <span className="id-badge-brand">CHAFÉ SPECIALTY COFFEE</span>
+                <span className="id-badge-chip">STAFF PASS</span>
+              </div>
+
+              <div className="id-badge-body">
+                <div className="id-badge-avatar-wrap">
+                  <div className="id-badge-avatar">{initials}</div>
+                </div>
+
+                <h3 className="id-badge-name">{staffUser?.name}</h3>
+                <div className="id-badge-role">{staffUser?.role || 'Staff Member'}</div>
+                <div className="id-badge-code">STAFF ID: #{String(staffUser?.id || '').slice(-6).toUpperCase()}</div>
+
+                <div className="id-badge-qr-box">
+                  <img
+                    src={qrBadgeUrl}
+                    alt={`Staff QR Badge for ${staffUser?.name}`}
+                    className="id-badge-qr-image"
+                  />
+                  <span className="id-badge-qr-caption">1-Tap Scan Code</span>
+                </div>
+
+                <div className="id-badge-footer">
+                  <p>Hold this badge against the entrance terminal or counter scanner to verify your shift attendance.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )
