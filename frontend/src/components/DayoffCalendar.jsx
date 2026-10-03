@@ -17,6 +17,11 @@ import {
   SkeletonTable,
   SkeletonCardGrid
 } from './Skeleton'
+import {
+  getDayoffsFromFirebase,
+  createDayoffInFirebase,
+  deleteDayoffInFirebase
+} from '../services/firebaseService'
 
 export const LEAVE_TYPES = [
   { id: 'day_off', label: 'Regular Day Off', icon: '🌴', color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd' },
@@ -62,18 +67,14 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
   const fetchDayoffs = useCallback(async () => {
     setLoading(true)
     try {
-      const url = `${apiBase}/dayoffs?month=${currentMonthStr}`
-      const res = await fetch(url)
-      if (res.ok) {
-        const json = await res.json()
-        setDayoffs(json.data || [])
-      }
+      const data = await getDayoffsFromFirebase(currentMonthStr)
+      setDayoffs(data || [])
     } catch {
       // quiet catch
     } finally {
       setLoading(false)
     }
-  }, [apiBase, currentMonthStr])
+  }, [currentMonthStr])
 
   useEffect(() => {
     fetchDayoffs()
@@ -149,19 +150,9 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
         payload.date = formDate
       }
 
-      const res = await fetch(`${apiBase}/dayoffs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
+      await createDayoffInFirebase(payload)
 
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.message || 'Failed to assign day off')
-
-      if (showToast) showToast(json.message || 'Day off assigned successfully!', 'success')
+      if (showToast) showToast('Day off assigned successfully!', 'success')
       setIsModalOpen(false)
       fetchDayoffs()
 
@@ -178,14 +169,9 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
     setDeletingId(id)
 
     try {
-      const res = await fetch(`${apiBase}/dayoffs/${id}`, {
-        method: 'DELETE',
-        headers: { 'Accept': 'application/json' },
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.message || 'Failed to cancel')
+      await deleteDayoffInFirebase(id)
 
-      if (showToast) showToast(json.message || 'Day off cancelled successfully', 'success')
+      if (showToast) showToast('Day off cancelled successfully', 'success')
       fetchDayoffs()
     } catch (err) {
       if (showToast) showToast(err.message || 'Error cancelling day off', 'error')

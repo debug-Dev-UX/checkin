@@ -10,6 +10,12 @@ import {
   IconRefresh
 } from '../Icons'
 import { Skeleton } from './Skeleton'
+import {
+  getCheckinsFromFirebase,
+  getStaffDayoffsFromFirebase,
+  createCheckinInFirebase,
+  checkoutInFirebase
+} from '../services/firebaseService'
 
 function playSuccessBeep() {
   try {
@@ -66,29 +72,23 @@ export default function StaffPortal({
     setLoading(true)
     try {
       // 1. Fetch checkins to find active shift
-      const checkinRes = await fetch(`${apiBase}/checkins`)
-      if (checkinRes.ok) {
-        const json = await checkinRes.json()
-        const userRecords = (json.data || []).filter(
-          c => c.staff_id === staffUser.id || c.email === staffUser.email || c.name === staffUser.name
-        )
-        const currentActive = userRecords.find(c => c.status === 'checked_in')
-        setActiveCheckin(currentActive || null)
-        setRecentLogs(userRecords.slice(0, 5))
-      }
+      const allCheckins = await getCheckinsFromFirebase()
+      const userRecords = (allCheckins || []).filter(
+        c => c.staff_id === staffUser.id || c.email === staffUser.email || c.name === staffUser.name
+      )
+      const currentActive = userRecords.find(c => c.status === 'checked_in')
+      setActiveCheckin(currentActive || null)
+      setRecentLogs(userRecords.slice(0, 5))
 
       // 2. Fetch staff's assigned dayoffs
-      const dayoffRes = await fetch(`${apiBase}/staff/${staffUser.id}/dayoffs`)
-      if (dayoffRes.ok) {
-        const dayoffJson = await dayoffRes.json()
-        setDayoffs(dayoffJson.data || [])
-      }
+      const userDayoffs = await getStaffDayoffsFromFirebase(staffUser.id)
+      setDayoffs(userDayoffs || [])
     } catch {
       // quiet catch
     } finally {
       setLoading(false)
     }
-  }, [apiBase, staffUser])
+  }, [staffUser])
 
   useEffect(() => {
     fetchStaffStatus()
@@ -117,35 +117,19 @@ export default function StaffPortal({
           note: todayDayoff ? `Clocked in on Day Off (${todayDayoff.type})` : 'Clocked in via Staff Portal',
         }
 
-        const res = await fetch(`${apiBase}/checkins`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        })
-
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.message || 'Clock in failed')
+        const newRecord = await createCheckinInFirebase(payload)
 
         playSuccessBeep()
         setActionResult({
           type: 'success',
           action: 'Clocked In Successfully!',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          status: json.data?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
         })
         if (showToast) showToast(`Clocked in! Welcome, ${staffUser.name}`, 'success')
       } else {
         // CLOCK OUT
-        const res = await fetch(`${apiBase}/checkins/${activeCheckin.id}/checkout`, {
-          method: 'POST',
-          headers: { 'Accept': 'application/json' },
-        })
-
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.message || 'Clock out failed')
+        await checkoutInFirebase(activeCheckin.id)
 
         playSuccessBeep()
         setActionResult({

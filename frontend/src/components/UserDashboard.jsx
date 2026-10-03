@@ -8,6 +8,12 @@ import {
   IconUserCircle,
   IconGear
 } from '../Icons'
+import {
+  getTodayControlFromFirebase,
+  getCheckinsFromFirebase,
+  createCheckinInFirebase,
+  checkoutInFirebase
+} from '../services/firebaseService'
 
 /**
  * Web Audio API chime on successful scan
@@ -73,16 +79,13 @@ export default function UserDashboard({
   // Fetch today's staff logs
   const fetchTodayLogs = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBase}/control/today`)
-      if (res.ok) {
-        const json = await res.json()
-        const staffOnly = (json.data || []).filter(item => item.type === 'employee')
-        setTodayStaffLogs(staffOnly)
-      }
+      const todayControl = await getTodayControlFromFirebase()
+      const staffOnly = (todayControl.data || []).filter(item => item.type === 'employee')
+      setTodayStaffLogs(staffOnly)
     } catch {
       // quiet catch
     }
-  }, [apiBase])
+  }, [])
 
   useEffect(() => {
     fetchTodayLogs()
@@ -165,17 +168,7 @@ export default function UserDashboard({
           note: `Clocked in via ${source}`,
         }
 
-        const res = await fetch(`${apiBase}/checkins`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        })
-
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.message || 'Clock-in failed')
+        const newRecord = await createCheckinInFirebase(payload)
 
         playSuccessBeep()
         setScanResult({
@@ -184,14 +177,13 @@ export default function UserDashboard({
           name: staffMember.name,
           role: staffMember.role,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          status: json.data?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
-          lateMins: json.data?.late_minutes || 0,
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          lateMins: newRecord?.late_minutes || 0,
         })
       } else {
         // Clock Out: find active check-in
-        const checkinRes = await fetch(`${apiBase}/checkins`)
-        const checkinsData = await checkinRes.json()
-        const active = (checkinsData.data || []).find(
+        const checkinsData = await getCheckinsFromFirebase()
+        const active = (checkinsData || []).find(
           c => c.status === 'checked_in' && (c.email === staffMember.email || c.name === staffMember.name)
         )
 
@@ -199,13 +191,7 @@ export default function UserDashboard({
           throw new Error(`${staffMember.name} is not currently clocked in.`)
         }
 
-        const res = await fetch(`${apiBase}/checkins/${active.id}/checkout`, {
-          method: 'POST',
-          headers: { 'Accept': 'application/json' },
-        })
-
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.message || 'Clock-out failed')
+        await checkoutInFirebase(active.id)
 
         playSuccessBeep()
         setScanResult({

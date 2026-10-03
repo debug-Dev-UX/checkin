@@ -43,6 +43,22 @@ import {
   SkeletonTable,
   SkeletonWidget
 } from './components/Skeleton'
+import {
+  initFirebaseDatabase,
+  getStatsFromFirebase,
+  getCheckinsFromFirebase,
+  getStaffFromFirebase,
+  createStaffInFirebase,
+  updateStaffInFirebase,
+  deleteStaffInFirebase,
+  createCheckinInFirebase,
+  checkoutInFirebase,
+  deleteCheckinInFirebase,
+  getTodayControlFromFirebase,
+  getSettingsFromFirebase,
+  saveSettingsInFirebase,
+  getPerformanceFromFirebase,
+} from './services/firebaseService'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
@@ -199,40 +215,27 @@ export default function App() {
 
   // Fetch backend status
   const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/status`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setSystemStatus(data)
-    } catch (err) {
-      setSystemStatus({
-        status: 'offline',
-        framework: 'Laravel Backend',
-        database: { connected: false, connection: 'mysql', database_name: 'checkin_db', error: err.message },
-      })
-    }
+    setSystemStatus({
+      status: 'online',
+      framework: 'Firebase Firestore',
+      database: { connected: true, connection: 'firestore', database_name: 'group-one-usea' },
+    })
   }, [])
 
   // Fetch Overview Data
   const fetchOverviewData = useCallback(async () => {
     setLoading(true)
     try {
-      const [statsRes, listRes] = await Promise.all([
-        fetch(`${API_BASE}/stats`),
-        fetch(`${API_BASE}/checkins`),
+      const [statsData, checkinsData] = await Promise.all([
+        getStatsFromFirebase(),
+        getCheckinsFromFirebase(),
       ])
-
-      if (statsRes.ok) {
-        const statsData = await statsRes.json()
-        setStats(statsData.data || { total_all: 0, active_now: 0, checked_out_today: 0, total_today: 0 })
+      if (statsData) {
+        setStats(statsData)
       }
-
-      if (listRes.ok) {
-        const listData = await listRes.json()
-        setCheckins(listData.data || [])
-      }
+      setCheckins(checkinsData || [])
     } catch {
-      showToast('Could not sync with backend API.', 'error')
+      showToast('Could not sync with Firebase.', 'error')
     } finally {
       setLoading(false)
     }
@@ -241,24 +244,13 @@ export default function App() {
   // Fetch Staff & Performance
   const fetchStaffData = useCallback(async () => {
     try {
-      const [staffRes, perfRes] = await Promise.all([
-        fetch(`${API_BASE}/staff`),
-        fetch(`${API_BASE}/performance`),
+      const [staffData, perfData] = await Promise.all([
+        getStaffFromFirebase(),
+        getPerformanceFromFirebase(),
       ])
-
-      if (staffRes.ok) {
-        const json = await staffRes.json()
-        setStaffList(json.data || [])
-      }
-
-      if (perfRes.ok) {
-        const json = await perfRes.json()
-        setPerformanceData(json.data || {
-          overall_punctuality: 0,
-          total_shifts: 0,
-          total_late_arrivals: 0,
-          staff_performance: [],
-        })
+      setStaffList(staffData || [])
+      if (perfData) {
+        setPerformanceData(perfData)
       }
     } catch {
       // quiet catch
@@ -268,34 +260,23 @@ export default function App() {
   // Fetch Control Room (Today & QR)
   const fetchControlData = useCallback(async () => {
     try {
-      const [todayRes, qrRes] = await Promise.all([
-        fetch(`${API_BASE}/control/today`),
-        fetch(`${API_BASE}/control/qr?type=${qrMode}`),
-      ])
-
-      if (todayRes.ok) {
-        const json = await todayRes.json()
-        setTodayData(json || { summary: {}, data: [] })
-      }
-
-      if (qrRes.ok) {
-        const json = await qrRes.json()
-        setQrConfig(json.data)
-      }
+      const todayCtrl = await getTodayControlFromFirebase()
+      setTodayData(todayCtrl || { summary: {}, data: [] })
+      setQrConfig({
+        target_url: `${window.location.origin}/#user`,
+        cafe_name: cafeSettings.cafe_name || 'Chafé'
+      })
     } catch {
       // quiet catch
     }
-  }, [qrMode])
+  }, [cafeSettings.cafe_name])
 
   // Fetch Settings
   const fetchSettings = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/settings`)
-      if (res.ok) {
-        const json = await res.json()
-        if (json.data) {
-          setCafeSettings(json.data)
-        }
+      const settings = await getSettingsFromFirebase()
+      if (settings) {
+        setCafeSettings(settings)
       }
     } catch {
       // quiet catch
@@ -308,6 +289,7 @@ export default function App() {
     let mounted = true
     const initApp = async () => {
       try {
+        await initFirebaseDatabase()
         await Promise.allSettled([
           fetchStatus(),
           fetchOverviewData(),
@@ -329,12 +311,7 @@ export default function App() {
   const handleCheckOut = async (id, name) => {
     setActionLoadingId(id)
     try {
-      const res = await fetch(`${API_BASE}/checkins/${id}/checkout`, {
-        method: 'POST',
-        headers: { 'Accept': 'application/json' },
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.message || 'Checkout failed')
+      await checkoutInFirebase(id)
       showToast(`${name || 'Guest'} checked out successfully!`)
       fetchOverviewData()
       fetchControlData()
@@ -356,17 +333,7 @@ export default function App() {
 
     setCheckinSubmitting(true)
     try {
-      const res = await fetch(`${API_BASE}/checkins`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(checkinForm),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.message || 'Check-in failed')
-
+      await createCheckinInFirebase(checkinForm)
       showToast(`${checkinForm.name} checked in!`)
       setIsCheckinModalOpen(false)
       setCheckinForm({
@@ -398,18 +365,8 @@ export default function App() {
 
     setStaffSubmitting(true)
     try {
-      const res = await fetch(`${API_BASE}/staff`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(staffForm),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.message || 'Failed to create staff member')
-
-      showToast(`Staff member ${staffForm.name} created! (Username: @${json.data?.username || staffForm.username})`)
+      const newStaff = await createStaffInFirebase(staffForm)
+      showToast(`Staff member ${staffForm.name} created! (Username: @${newStaff?.username || staffForm.username})`)
       setIsCreateStaffModalOpen(false)
       setStaffForm({
         name: '',
@@ -432,16 +389,7 @@ export default function App() {
   // Update Staff Role, Shift, or Credentials
   const handleUpdateStaff = async (staffId, updatedFields) => {
     try {
-      const res = await fetch(`${API_BASE}/staff/${staffId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(updatedFields),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.message || 'Failed to update staff')
+      await updateStaffInFirebase(staffId, updatedFields)
       showToast('Staff profile updated!')
       setEditingStaff(null)
       fetchStaffData()
@@ -455,15 +403,7 @@ export default function App() {
     e.preventDefault()
     setSettingsSaving(true)
     try {
-      const res = await fetch(`${API_BASE}/settings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(cafeSettings),
-      })
-      if (!res.ok) throw new Error('Failed to save settings')
+      await saveSettingsInFirebase(cafeSettings)
       showToast('Settings saved successfully!')
     } catch (err) {
       showToast(err.message, 'error')
@@ -983,7 +923,7 @@ export default function App() {
                                     title="Options"
                                     onClick={async () => {
                                       if (!window.confirm('Delete this record?')) return
-                                      await fetch(`${API_BASE}/checkins/${item.id}`, { method: 'DELETE' })
+                                      await deleteCheckinInFirebase(item.id)
                                       fetchOverviewData()
                                     }}
                                   >
@@ -1312,7 +1252,7 @@ export default function App() {
                                 title="Delete staff"
                                 onClick={async () => {
                                   if (!window.confirm(`Delete ${s.name}?`)) return
-                                  await fetch(`${API_BASE}/staff/${s.id}`, { method: 'DELETE' })
+                                  await deleteStaffInFirebase(s.id)
                                   fetchStaffData()
                                 }}
                               >

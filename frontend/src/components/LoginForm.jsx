@@ -5,6 +5,7 @@ import {
   IconEye,
   IconEyeOff
 } from '../Icons'
+import { loginWithFirebase } from '../services/firebaseService'
 
 export default function LoginForm({ apiBase, onLoginSuccess }) {
   const [username, setUsername] = useState('')
@@ -78,24 +79,7 @@ export default function LoginForm({ apiBase, onLoginSuccess }) {
     const trimmedUser = username.trim()
 
     try {
-      const res = await fetch(`${apiBase}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          username: trimmedUser,
-          password,
-        }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok || data.status !== 'success') {
-        throw new Error(data.message || 'Invalid username or password. Please try again.')
-      }
-
+      const data = await loginWithFirebase(trimmedUser, password)
       onLoginSuccess(data)
     } catch (err) {
       // Local fallback for admin if server is unreachable
