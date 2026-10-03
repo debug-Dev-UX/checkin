@@ -149,12 +149,14 @@ export async function loginWithFirebase(username, password) {
 
   // 2. Check Staff in Firestore
   let staffList = []
+  let firestoreErr = null
   try {
     const snap = await getDocs(collection(db, 'staff'))
     staffList = snap.docs
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(s => !DEMO_STAFF_IDS.includes(s.id))
-  } catch {
+  } catch (err) {
+    firestoreErr = err
     staffList = getLocal('staff', [])
   }
 
@@ -169,6 +171,9 @@ export async function loginWithFirebase(username, password) {
   )
 
   if (!staff) {
+    if (firestoreErr && (firestoreErr.code === 'permission-denied' || String(firestoreErr.message).includes('permission'))) {
+      throw new Error('Firestore Permission Denied: Rules are locked in Firebase Console. Please set rules to "allow read, write: if true;"')
+    }
     throw new Error('Invalid username or password. Please try again.')
   }
 

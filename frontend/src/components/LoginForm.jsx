@@ -77,13 +77,14 @@ export default function LoginForm({ apiBase, onLoginSuccess }) {
     setLoading(true)
     setServerError(null)
     const trimmedUser = username.trim()
+    const trimmedPass = (password || '').trim()
 
     try {
-      const data = await loginWithFirebase(trimmedUser, password)
+      const data = await loginWithFirebase(trimmedUser, trimmedPass)
       onLoginSuccess(data)
     } catch (err) {
       // Local fallback for admin if server is unreachable
-      if (trimmedUser.toLowerCase() === 'admin' && password === '123456') {
+      if (trimmedUser.toLowerCase() === 'admin' && trimmedPass === '123456') {
         onLoginSuccess({
           status: 'success',
           role: 'admin',
@@ -179,7 +180,10 @@ export default function LoginForm({ apiBase, onLoginSuccess }) {
                 value={password}
                 onChange={handlePasswordChange}
                 onBlur={() => handleBlur('password')}
-                autoComplete="new-password"
+                autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck="false"
                 disabled={loading}
               />
               <button
