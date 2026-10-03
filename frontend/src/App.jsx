@@ -58,11 +58,16 @@ import {
   saveSettingsInFirebase,
   getPerformanceFromFirebase,
   subscribeToLiveCheckins,
-  isTodayRecord
+  isTodayRecord,
+  getBranchesFromFirebase,
+  saveBranchesToFirebase
 } from './services/firebaseService'
 import {
   getStoreLocation,
-  setStoreLocation
+  setStoreLocation,
+  getBranches,
+  saveBranches,
+  DEFAULT_BRANCHES
 } from './services/locationService'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
@@ -179,6 +184,9 @@ export default function App() {
   })
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [storeLocation, setStoreLocationState] = useState(() => getStoreLocation())
+  const [branches, setBranches] = useState(() => getBranches())
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState('all')
+  const [isBranchesSaving, setIsBranchesSaving] = useState(false)
 
   // Filter & Search inside main table
   const [tableSearch, setTableSearch] = useState('')
@@ -231,6 +239,8 @@ export default function App() {
     username: '',
     password: '',
     role: 'Barista',
+    branch_id: 'branch_1',
+    branch_name: 'Chafé • BKK1 (សាខាទី ១)',
     shift_start: '07:30',
     shift_end: '16:00',
     hourly_rate: 20.00,
@@ -441,6 +451,38 @@ export default function App() {
     }
   }
 
+  // Fetch Branches
+  const fetchBranches = useCallback(async () => {
+    try {
+      const list = await getBranchesFromFirebase()
+      if (list && list.length > 0) {
+        setBranches(list)
+        saveBranches(list)
+      }
+    } catch {
+      // quiet
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchBranches()
+  }, [fetchBranches])
+
+  // Save Branch Settings
+  const handleSaveBranches = async (updatedBranches) => {
+    setIsBranchesSaving(true)
+    try {
+      await saveBranchesToFirebase(updatedBranches)
+      setBranches(updatedBranches)
+      saveBranches(updatedBranches)
+      showToast('Branch GPS & allowed scan distance saved successfully!', 'success')
+    } catch (err) {
+      showToast(err.message || 'Failed to save branches', 'error')
+    } finally {
+      setIsBranchesSaving(false)
+    }
+  }
+
   // Create Staff
   const handleCreateStaffSubmit = async (e) => {
     e.preventDefault()
@@ -451,8 +493,14 @@ export default function App() {
 
     setStaffSubmitting(true)
     try {
-      const newStaff = await createStaffInFirebase(staffForm)
-      showToast(`Staff member ${staffForm.name} created! (Username: @${newStaff?.username || staffForm.username})`)
+      const targetBranch = branches.find(b => b.id === staffForm.branch_id) || branches[0]
+      const payload = {
+        ...staffForm,
+        branch_id: staffForm.branch_id || targetBranch?.id || 'branch_1',
+        branch_name: staffForm.branch_id === 'all' ? 'All Branches (Floating)' : (targetBranch?.name || 'Chafé • BKK1 (សាខាទី ១)'),
+      }
+      const newStaff = await createStaffInFirebase(payload)
+      showToast(`Staff member ${staffForm.name} created for ${payload.branch_name}!`)
       setIsCreateStaffModalOpen(false)
       setStaffForm({
         name: '',
@@ -460,6 +508,8 @@ export default function App() {
         username: '',
         password: '',
         role: 'Barista',
+        branch_id: 'branch_1',
+        branch_name: 'Chafé • BKK1 (សាខាទី ១)',
         shift_start: '07:30',
         shift_end: '16:00',
         hourly_rate: 20.00,
@@ -472,7 +522,7 @@ export default function App() {
     }
   }
 
-  // Update Staff Role, Shift, or Credentials
+  // Update Staff Role, Shift, Branch or Credentials
   const handleUpdateStaff = async (staffId, updatedFields) => {
     try {
       await updateStaffInFirebase(staffId, updatedFields)
@@ -490,8 +540,8 @@ export default function App() {
     setSettingsSaving(true)
     try {
       await saveSettingsInFirebase(cafeSettings)
-      setStoreLocation(storeLocation)
-      showToast('Settings & Store GPS Location saved successfully!')
+      await handleSaveBranches(branches)
+      showToast('Settings & Multi-Branch GPS saved successfully!')
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -502,6 +552,12 @@ export default function App() {
   // Filtered Table Items
   const filteredRows = useMemo(() => {
     return checkins.filter(item => {
+      if (selectedBranchFilter !== 'all') {
+        const matchedStaff = staffList.find(s => s.id === item.staff_id || s.name === item.name)
+        const itemBranch = item.branch_id || matchedStaff?.branch_id || 'branch_1'
+        if (itemBranch !== selectedBranchFilter && itemBranch !== 'all') return false
+      }
+
       if (activeTableFilter === 'inside' && item.status !== 'checked_in') return false
       if (activeTableFilter === 'checked_out' && item.status !== 'checked_out') return false
 
@@ -521,7 +577,13 @@ export default function App() {
 
       return true
     })
-  }, [checkins, activeTableFilter, advancedFilter, tableSearch])
+  }, [checkins, activeTableFilter, advancedFilter, tableSearch, selectedBranchFilter, staffList])
+
+  // Filtered Staff List by Branch
+  const filteredStaffList = useMemo(() => {
+    if (selectedBranchFilter === 'all') return staffList
+    return staffList.filter(s => s.branch_id === selectedBranchFilter || (!s.branch_id && selectedBranchFilter === 'branch_1') || s.branch_id === 'all')
+  }, [staffList, selectedBranchFilter])
 
   const formatTime = (timeStr) => {
     if (!timeStr) return '-'
@@ -1122,7 +1184,21 @@ export default function App() {
 
                 {/* Sub Controls: Filter Pills & Quick Action */}
                 <div className="panel-sub-controls">
-                  <div className="pill-filter-group">
+                  <div className="pill-filter-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginRight: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>Branch (សាខា):</span>
+                      <select
+                        value={selectedBranchFilter}
+                        onChange={(e) => setSelectedBranchFilter(e.target.value)}
+                        style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: 700, color: '#0f172a' }}
+                      >
+                        <option value="all">🏢 All Branches (សាខាទាំងអស់)</option>
+                        {branches.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     <button
                       className={`pill-filter-btn ${activeTableFilter === 'today' ? 'active' : ''}`}
                       onClick={() => setActiveTableFilter('today')}
@@ -1573,9 +1649,22 @@ export default function App() {
           {navTab === 'staff' && (
             <div>
               <div className="content-panel">
-                <div className="panel-header-bar">
+                <div className="panel-header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                   <div className="panel-heading-title">CHAFÉ STAFF ROSTER & ROLE ASSIGNMENT</div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>Branch (សាខា):</span>
+                      <select
+                        value={selectedBranchFilter}
+                        onChange={(e) => setSelectedBranchFilter(e.target.value)}
+                        style={{ fontSize: '12px', padding: '5px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', background: '#f8fafc', fontWeight: 700, color: '#0f172a' }}
+                      >
+                        <option value="all">🏢 All Branches (សាខាទាំងអស់)</option>
+                        {branches.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <button
                       className="btn-primary"
                       style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
@@ -1593,6 +1682,7 @@ export default function App() {
                       <tr>
                         <th>Staff Name</th>
                         <th>Login ID (Username)</th>
+                        <th>Branch (សាខា)</th>
                         <th>Assigned Role</th>
                         <th>Shift Schedule Time</th>
                         <th>Hourly Pay</th>
@@ -1603,18 +1693,18 @@ export default function App() {
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan="7" style={{ padding: 0 }}>
-                            <SkeletonTable rows={6} columns={7} />
+                          <td colSpan="8" style={{ padding: 0 }}>
+                            <SkeletonTable rows={6} columns={8} />
                           </td>
                         </tr>
-                      ) : staffList.length === 0 ? (
+                      ) : filteredStaffList.length === 0 ? (
                         <tr>
-                          <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
-                            No staff members registered yet. Click "+ Create Staff" to add team members.
+                          <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
+                            No staff members found for the selected branch. Click "+ Create Staff" to add team members.
                           </td>
                         </tr>
                       ) : (
-                        staffList.map((s) => (
+                        filteredStaffList.map((s) => (
                           <tr key={s.id}>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1651,6 +1741,15 @@ export default function App() {
                                 style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0284c7', fontWeight: 700 }}
                               >
                                 @{s.username || 'staff'}
+                              </span>
+                            </td>
+
+                            <td>
+                              <span
+                                className={`branch-badge ${s.branch_id === 'branch_2' ? 'tk' : 'bkk1'}`}
+                                style={{ fontSize: '11px' }}
+                              >
+                                📍 {branches.find(b => b.id === s.branch_id)?.name || s.branch_name || 'BKK1 (សាខាទី ១)'}
                               </span>
                             </td>
 
@@ -1930,74 +2029,170 @@ export default function App() {
                   />
                 </div>
 
-                <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
                     <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
-                        📍 Store GPS Geofence & Location Validation
+                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>🏢</span> Store Branches & Geofence Rules (ការកំណត់សាខា & គម្លាតស្កេន)
                       </h4>
                       <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-                        Staff must allow real-time GPS location and be within store radius to check in/out.
+                        Configure store GPS coordinates and allowed scan radius per branch. Staff far from their branch cannot scan.
                       </p>
                     </div>
                     <button
                       type="button"
                       className="btn-secondary"
-                      style={{ fontSize: '11px', padding: '6px 12px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      style={{ fontSize: '11px', padding: '6px 12px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                       onClick={() => {
-                        if (navigator.geolocation) {
-                          navigator.geolocation.getCurrentPosition(
-                            (pos) => {
-                              setStoreLocationState(prev => ({
-                                ...prev,
-                                lat: parseFloat(pos.coords.latitude.toFixed(6)),
-                                lng: parseFloat(pos.coords.longitude.toFixed(6)),
-                              }))
-                              showToast(`GPS captured: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`, 'success')
-                            },
-                            (err) => {
-                              showToast(`Location error: ${err.message}`, 'error')
-                            }
-                          )
-                        } else {
-                          showToast('Geolocation not supported by browser', 'error')
+                        const newId = `branch_${Date.now()}`
+                        const newBranch = {
+                          id: newId,
+                          code: `B${branches.length + 1}`,
+                          name: `Chafé • Branch #${branches.length + 1} (សាខាទី ${branches.length + 1})`,
+                          address: 'Phnom Penh, Cambodia',
+                          lat: 11.5564,
+                          lng: 104.9282,
+                          radiusMeters: 200,
+                          isActive: true,
                         }
+                        setBranches(prev => [...prev, newBranch])
+                        showToast(`Added Branch #${branches.length + 1}`, 'info')
                       }}
                     >
-                      🎯 Capture My Current GPS
+                      <IconPlus size={12} color="#0f172a" />
+                      <span>+ Add Branch (បន្ថែមសាខា)</span>
                     </button>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                    <div className="form-group">
-                      <label className="form-label">Store Latitude</label>
-                      <input
-                        type="number"
-                        step="any"
-                        className="form-input"
-                        value={storeLocation.lat}
-                        onChange={(e) => setStoreLocationState({ ...storeLocation, lat: parseFloat(e.target.value) || 0 })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Store Longitude</label>
-                      <input
-                        type="number"
-                        step="any"
-                        className="form-input"
-                        value={storeLocation.lng}
-                        onChange={(e) => setStoreLocationState({ ...storeLocation, lng: parseFloat(e.target.value) || 0 })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Allowed Radius (Meters)</label>
-                      <input
-                        type="number"
-                        className="form-input"
-                        value={storeLocation.radiusMeters || 300}
-                        onChange={(e) => setStoreLocationState({ ...storeLocation, radiusMeters: parseInt(e.target.value) || 300 })}
-                      />
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {branches.map((b, idx) => (
+                      <div
+                        key={b.id}
+                        className="branch-management-card"
+                      >
+                        <div className="branch-card-header">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className={`branch-badge ${idx === 1 ? 'tk' : 'bkk1'}`}>
+                              សាខាទី {idx + 1}
+                            </span>
+                            <strong style={{ fontSize: '14px', color: '#0f172a' }}>{b.name}</strong>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="branch-radius-chip">
+                              🎯 Allowed: {b.radiusMeters || 200}m
+                            </span>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ fontSize: '11px', padding: '5px 10px', borderRadius: '7px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                              onClick={() => {
+                                if (navigator.geolocation) {
+                                  navigator.geolocation.getCurrentPosition(
+                                    (pos) => {
+                                      const updatedLat = parseFloat(pos.coords.latitude.toFixed(6))
+                                      const updatedLng = parseFloat(pos.coords.longitude.toFixed(6))
+                                      setBranches(prev => prev.map(item => item.id === b.id ? { ...item, lat: updatedLat, lng: updatedLng } : item))
+                                      showToast(`GPS captured for ${b.name}: ${updatedLat}, ${updatedLng}`, 'success')
+                                    },
+                                    (err) => {
+                                      showToast(`Location error: ${err.message}`, 'error')
+                                    }
+                                  )
+                                } else {
+                                  showToast('Geolocation not supported by browser', 'error')
+                                }
+                              }}
+                            >
+                              📍 Capture Current GPS
+                            </button>
+                            {branches.length > 1 && (
+                              <button
+                                type="button"
+                                style={{ background: '#fee2e2', border: 'none', color: '#dc2626', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+                                onClick={() => {
+                                  if (confirm(`Delete ${b.name}?`)) {
+                                    setBranches(prev => prev.filter(item => item.id !== b.id))
+                                  }
+                                }}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label className="form-label" style={{ fontSize: '11px' }}>Branch Name (ឈ្មោះសាខា)</label>
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={b.name}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                setBranches(prev => prev.map(item => item.id === b.id ? { ...item, name: val } : item))
+                              }}
+                            />
+                          </div>
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label className="form-label" style={{ fontSize: '11px' }}>Address / Location</label>
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={b.address || ''}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                setBranches(prev => prev.map(item => item.id === b.id ? { ...item, address: val } : item))
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '10px' }}>
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label className="form-label" style={{ fontSize: '11px' }}>Latitude (រយៈទទឹង)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              className="form-input"
+                              value={b.lat}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0
+                                setBranches(prev => prev.map(item => item.id === b.id ? { ...item, lat: val } : item))
+                              }}
+                            />
+                          </div>
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label className="form-label" style={{ fontSize: '11px' }}>Longitude (រយៈបណ្តោយ)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              className="form-input"
+                              value={b.lng}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0
+                                setBranches(prev => prev.map(item => item.id === b.id ? { ...item, lng: val } : item))
+                              }}
+                            />
+                          </div>
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label className="form-label" style={{ fontSize: '11px', color: '#b45309', fontWeight: 800 }}>
+                              Allowed Distance (គម្លាតអនុញ្ញាត - Meters)
+                            </label>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ borderColor: '#f59e0b', fontWeight: 700 }}
+                              value={b.radiusMeters || 200}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10) || 100
+                                setBranches(prev => prev.map(item => item.id === b.id ? { ...item, radiusMeters: val } : item))
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -2147,6 +2342,29 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
+                  <label className="form-label">Assigned Branch (សាខាដែលបានចាត់តាំង) *</label>
+                  <select
+                    className="form-select"
+                    value={staffForm.branch_id || 'branch_1'}
+                    onChange={(e) => {
+                      const sel = branches.find(b => b.id === e.target.value)
+                      setStaffForm({
+                        ...staffForm,
+                        branch_id: e.target.value,
+                        branch_name: sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : 'Chafé • BKK1 (សាខាទី ១)')
+                      })
+                    }}
+                  >
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.radiusMeters}m allowed scan radius)
+                      </option>
+                    ))}
+                    <option value="all">🌐 All Branches (សាខាទាំងអស់ - Floating Staff)</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
                   <label className="form-label">Assign Role</label>
                   <select
                     className="form-select"
@@ -2232,6 +2450,8 @@ export default function App() {
               handleUpdateStaff(editingStaff.id, {
                 name: editingStaff.name,
                 role: editingStaff.role,
+                branch_id: editingStaff.branch_id || 'branch_1',
+                branch_name: editingStaff.branch_name || 'Chafé • BKK1 (សាខាទី ១)',
                 shift_start: editingStaff.shift_start,
                 shift_end: editingStaff.shift_end,
                 username: editingStaff.username,
@@ -2284,6 +2504,29 @@ export default function App() {
                     onChange={(e) => setEditingStaff({ ...editingStaff, name: e.target.value })}
                     required
                   />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Assigned Branch (សាខាដែលបានចាត់តាំង)</label>
+                  <select
+                    className="form-select"
+                    value={editingStaff.branch_id || 'branch_1'}
+                    onChange={(e) => {
+                      const sel = branches.find(b => b.id === e.target.value)
+                      setEditingStaff({
+                        ...editingStaff,
+                        branch_id: e.target.value,
+                        branch_name: sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : 'Chafé • BKK1 (សាខាទី ១)')
+                      })
+                    }}
+                  >
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.radiusMeters}m allowed scan radius)
+                      </option>
+                    ))}
+                    <option value="all">🌐 All Branches (សាខាទាំងអស់ - Floating Staff)</option>
+                  </select>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>

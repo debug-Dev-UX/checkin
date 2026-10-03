@@ -1,60 +1,108 @@
 /**
-/**
- * Real-Time Geolocation Validation Service for Chafé Check-In / Check-Out
+ * Multi-Branch (សាខា) Geolocation Validation Service for Chafé
+ * Supports multiple café branches with custom GPS coordinates and admin-chosen scan radius.
  */
 
-// Default store location: Phnom Penh center or stored config
-export const DEFAULT_STORE_LOCATION = {
-  name: 'Chafé Specialty Coffee • Store #01',
-  lat: 11.5564,
-  lng: 104.9282,
-  radiusMeters: 300, // 300 meters allowed radius
-}
+// Default 2 Branches (សាខា)
+export const DEFAULT_BRANCHES = [
+  {
+    id: 'branch_1',
+    code: 'BKK1',
+    name: 'Chafé • BKK1 (សាខាទី ១)',
+    address: 'Street 302, Boeung Keng Kang 1, Phnom Penh',
+    lat: 11.5564,
+    lng: 104.9282,
+    radiusMeters: 200, // Admin-configurable allowed scan distance (meters)
+    isActive: true,
+  },
+  {
+    id: 'branch_2',
+    code: 'TK',
+    name: 'Chafé • Toul Kork (សាខាទី ២)',
+    address: 'Street 315, Toul Kork, Phnom Penh',
+    lat: 11.5732,
+    lng: 104.8988,
+    radiusMeters: 200, // Admin-configurable allowed scan distance (meters)
+    isActive: true,
+  },
+]
+
+export const DEFAULT_STORE_LOCATION = DEFAULT_BRANCHES[0]
+
+const BRANCHES_STORAGE_KEY = 'chafe_branches_config'
 
 /**
- * Get current configured store location
+ * Get all configured branches from localStorage / defaults
  */
-export function getStoreLocation() {
+export function getBranches() {
   try {
-    const saved = localStorage.getItem('chafe_store_location')
+    const saved = localStorage.getItem(BRANCHES_STORAGE_KEY)
     if (saved) {
       const parsed = JSON.parse(saved)
-      if (parsed.lat && parsed.lng) {
-        return {
-          ...DEFAULT_STORE_LOCATION,
-          ...parsed,
-        }
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed
       }
     }
   } catch {
     // quiet catch
   }
-  return DEFAULT_STORE_LOCATION
+  return DEFAULT_BRANCHES
 }
 
 /**
- * Set and persist store location coordinates
+ * Save and persist branches configuration
+ */
+export function saveBranches(branches) {
+  try {
+    localStorage.setItem(BRANCHES_STORAGE_KEY, JSON.stringify(branches))
+  } catch {
+    // quiet catch
+  }
+  return branches
+}
+
+/**
+ * Get branch by ID
+ */
+export function getBranchById(id) {
+  const branches = getBranches()
+  return branches.find(b => b.id === id) || branches[0] || DEFAULT_BRANCHES[0]
+}
+
+/**
+ * Backward compatibility: Get single primary store location
+ */
+export function getStoreLocation() {
+  const branches = getBranches()
+  return branches[0] || DEFAULT_STORE_LOCATION
+}
+
+/**
+ * Backward compatibility: Set primary store location
  */
 export function setStoreLocation(location) {
-  try {
-    const data = {
-      name: location.name || DEFAULT_STORE_LOCATION.name,
-      lat: parseFloat(location.lat),
-      lng: parseFloat(location.lng),
-      radiusMeters: parseInt(location.radiusMeters || 300, 10),
+  const branches = getBranches()
+  const updated = branches.map((b, i) => {
+    if (i === 0 || b.id === location.id) {
+      return {
+        ...b,
+        name: location.name || b.name,
+        lat: parseFloat(location.lat),
+        lng: parseFloat(location.lng),
+        radiusMeters: parseInt(location.radiusMeters || b.radiusMeters || 200, 10),
+      }
     }
-    localStorage.setItem('chafe_store_location', JSON.stringify(data))
-    return data
-  } catch {
-    return DEFAULT_STORE_LOCATION
-  }
+    return b
+  })
+  saveBranches(updated)
+  return updated[0]
 }
 
 /**
- * Calculate distance in meters between two GPS coordinates using the Haversine formula
+ * Calculate distance in meters between two GPS coordinates using Haversine formula
  */
 export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371e3 // Radius of Earth in meters
+  const R = 6371e3 // Earth radius in meters
   const φ1 = (lat1 * Math.PI) / 180
   const φ2 = (lat2 * Math.PI) / 180
   const Δφ = ((lat2 - lat1) * Math.PI) / 180
@@ -69,10 +117,10 @@ export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Verify real-time GPS location of user before check-in or check-out
- * Resolves if user is within the store radius, rejects with specific reasons if not.
+ * Verify real-time GPS location of staff before check-in or check-out
+ * Validates against the staff member's assigned branch (សាខា), or closest branch if floating
  */
-export function verifyRealtimeLocation(customStore = null) {
+export function verifyRealtimeLocationForStaff(staffUser = null, customBranches = null) {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject({
@@ -82,43 +130,101 @@ export function verifyRealtimeLocation(customStore = null) {
       return
     }
 
-    const store = customStore || getStoreLocation()
+    const branches = customBranches || getBranches()
+    const activeBranches = branches.filter(b => b.isActive !== false)
+
+    if (activeBranches.length === 0) {
+      resolve({ allowed: true, branch: DEFAULT_BRANCHES[0], distance: 0 })
+      return
+    }
+
+    // Determine target branch
+    let targetBranch = null
+    const assignedBranchId = staffUser?.branch_id
+
+    if (assignedBranchId && assignedBranchId !== 'all') {
+      targetBranch = activeBranches.find(b => b.id === assignedBranchId)
+    }
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const userLat = pos.coords.latitude
         const userLng = pos.coords.longitude
         const accuracy = Math.round(pos.coords.accuracy || 0)
-        const distance = calculateDistanceMeters(userLat, userLng, store.lat, store.lng)
 
-        if (distance <= store.radiusMeters) {
+        // 1. If assigned to a specific branch: strictly validate against that branch
+        if (targetBranch) {
+          const distance = calculateDistanceMeters(userLat, userLng, targetBranch.lat, targetBranch.lng)
+          const allowedRadius = targetBranch.radiusMeters || 200
+
+          if (distance <= allowedRadius) {
+            resolve({
+              allowed: true,
+              branch: targetBranch,
+              distance,
+              accuracy,
+              allowedRadius,
+              coords: { lat: userLat, lng: userLng },
+            })
+          } else {
+            reject({
+              code: 'FAR_FROM_STORE',
+              branch: targetBranch,
+              distance,
+              allowedRadius,
+              coords: { lat: userLat, lng: userLng },
+              message: `You are too far from ${targetBranch.name}! You are ${distance}m away. The admin has set the allowed scan radius to ${allowedRadius}m. Please move closer to the store to scan.`,
+            })
+          }
+          return
+        }
+
+        // 2. If staff is assigned to 'all' or no specific branch: check against all active branches
+        const results = activeBranches.map(b => {
+          const dist = calculateDistanceMeters(userLat, userLng, b.lat, b.lng)
+          const rad = b.radiusMeters || 200
+          return {
+            branch: b,
+            distance: dist,
+            allowedRadius: rad,
+            isWithin: dist <= rad,
+          }
+        })
+
+        // Find if within any branch
+        const matched = results.find(r => r.isWithin)
+        if (matched) {
           resolve({
             allowed: true,
-            distance,
+            branch: matched.branch,
+            distance: matched.distance,
             accuracy,
-            allowedRadius: store.radiusMeters,
+            allowedRadius: matched.allowedRadius,
             coords: { lat: userLat, lng: userLng },
-            store,
           })
-        } else {
-          reject({
-            code: 'FAR_FROM_STORE',
-            distance,
-            allowedRadius: store.radiusMeters,
-            coords: { lat: userLat, lng: userLng },
-            message: `Too far from store! You are ${distance}m away. Attendance can only be recorded within ${store.radiusMeters}m of the store.`,
-            store,
-          })
+          return
         }
+
+        // If not within any branch, report nearest branch
+        results.sort((a, b) => a.distance - b.distance)
+        const nearest = results[0]
+        reject({
+          code: 'FAR_FROM_STORE',
+          branch: nearest.branch,
+          distance: nearest.distance,
+          allowedRadius: nearest.allowedRadius,
+          coords: { lat: userLat, lng: userLng },
+          message: `Too far from store! Nearest branch is ${nearest.branch.name} (${nearest.distance}m away). Admin-configured allowed scan radius is ${nearest.allowedRadius}m.`,
+        })
       },
       (err) => {
-        let msg = 'Location permission is required to check in or check out. Please allow location access.'
+        let msg = 'Location permission is required to check in or check out. Please allow location access on your phone/browser.'
         if (err.code === 1) {
-          msg = 'Location permission was denied. You must allow location access to verify attendance at the store.'
+          msg = 'Location permission was denied. You must allow GPS location access to verify you are at the store before scanning.'
         } else if (err.code === 2) {
-          msg = 'Unable to determine your GPS location. Please turn on location services on your device.'
+          msg = 'Unable to determine your GPS location. Please make sure Location/GPS is turned on in your device settings.'
         } else if (err.code === 3) {
-          msg = 'Location request timed out. Please try again.'
+          msg = 'GPS location request timed out. Please try again.'
         }
         reject({
           code: 'PERMISSION_DENIED',
@@ -133,4 +239,14 @@ export function verifyRealtimeLocation(customStore = null) {
       }
     )
   })
+}
+
+/**
+ * Backward compatibility: verifyRealtimeLocation
+ */
+export function verifyRealtimeLocation(customStore = null) {
+  if (customStore) {
+    return verifyRealtimeLocationForStaff(null, [customStore])
+  }
+  return verifyRealtimeLocationForStaff(null)
 }

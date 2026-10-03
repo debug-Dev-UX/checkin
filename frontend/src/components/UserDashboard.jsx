@@ -29,8 +29,9 @@ import {
   updateStaffInFirebase
 } from '../services/firebaseService'
 import {
-  verifyRealtimeLocation,
-  getStoreLocation,
+  verifyRealtimeLocationForStaff,
+  getBranches,
+  getBranchById,
 } from '../services/locationService'
 
 /**
@@ -321,17 +322,18 @@ export default function UserDashboard({
     }
   }, [currentStaff, fetchTodayLogs, onShiftUpdated, verifiedLocation])
 
-  // Real-time location validation before opening camera scanner
+  // Real-time location validation before opening camera scanner (Multi-Branch aware)
   const handleInitiateScan = async (action) => {
     setPendingLocationAction(action)
     try {
       setIsProcessing(true)
       if (showToast) showToast('Verifying real-time GPS location...', 'info')
-      const loc = await verifyRealtimeLocation()
+      const loc = await verifyRealtimeLocationForStaff(currentStaff)
       setVerifiedLocation(loc)
       setPendingAction(action)
       setActiveTab('scan')
-      if (showToast) showToast(`GPS Verified! (${loc.distance}m from store)`, 'success')
+      const branchName = loc.branch?.name || 'Store'
+      if (showToast) showToast(`GPS Verified! (${loc.distance}m from ${branchName})`, 'success')
     } catch (err) {
       setLocationAlert(err)
       if (showToast) showToast(err.message, 'error')
@@ -520,7 +522,7 @@ export default function UserDashboard({
                   <div>
                     <div className="shift-detail-label">Host / Station</div>
                     <div className="shift-detail-val">
-                      {currentStaff?.role || 'Main Counter'} (Barista, Chafé)
+                      {currentStaff?.role || 'Barista'} • {currentStaff?.branch_name || 'BKK1 Branch (សាខាទី ១)'}
                     </div>
                   </div>
                   <div>
@@ -1200,10 +1202,15 @@ export default function UserDashboard({
             <p className="location-alert-text">
               {locationAlert.message}
             </p>
-            {locationAlert.distance && (
+            {locationAlert.distance !== undefined && (
               <div className="location-alert-details">
-                Current Distance: <strong>{locationAlert.distance}m</strong> away<br />
-                Allowed Store Range: <strong>{locationAlert.allowedRadius || 300}m</strong>
+                {locationAlert.branch && (
+                  <div style={{ marginBottom: '6px', color: '#1e293b' }}>
+                    🏢 Branch: <strong>{locationAlert.branch.name}</strong>
+                  </div>
+                )}
+                Your Current Distance: <strong>{locationAlert.distance}m</strong> away<br />
+                Allowed Scan Distance (Set by Admin): <strong>{locationAlert.allowedRadius || 200}m</strong>
               </div>
             )}
             <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>

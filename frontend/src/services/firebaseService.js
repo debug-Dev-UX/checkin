@@ -714,3 +714,56 @@ export async function getPerformanceFromFirebase() {
     })
   }
 }
+
+/**
+ * Multi-Branch (សាខា) Operations
+ */
+export async function getBranchesFromFirebase() {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'branches'))
+    if (snap.exists()) {
+      const data = snap.data()
+      if (Array.isArray(data.list) && data.list.length > 0) {
+        return data.list
+      }
+    }
+  } catch {
+    // quiet catch
+  }
+  return getLocal('branches', [
+    {
+      id: 'branch_1',
+      code: 'BKK1',
+      name: 'Chafé • BKK1 (សាខាទី ១)',
+      address: 'Street 302, Boeung Keng Kang 1, Phnom Penh',
+      lat: 11.5564,
+      lng: 104.9282,
+      radiusMeters: 200,
+      isActive: true,
+    },
+    {
+      id: 'branch_2',
+      code: 'TK',
+      name: 'Chafé • Toul Kork (សាខាទី ២)',
+      address: 'Street 315, Toul Kork, Phnom Penh',
+      lat: 11.5732,
+      lng: 104.8988,
+      radiusMeters: 200,
+      isActive: true,
+    },
+  ])
+}
+
+export async function saveBranchesToFirebase(branchesList) {
+  try {
+    await setDoc(doc(db, 'settings', 'branches'), { list: branchesList, updated_at: new Date().toISOString() }, { merge: true })
+  } catch {
+    // quiet catch
+  }
+  setLocal('branches', branchesList)
+  try {
+    localStorage.setItem('chafe_branches_config', JSON.stringify(branchesList))
+  } catch {}
+  return branchesList
+}
+
