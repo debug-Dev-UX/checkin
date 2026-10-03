@@ -80,6 +80,19 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
     fetchDayoffs()
   }, [fetchDayoffs])
 
+  // Close modal on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isModalOpen) {
+        setIsModalOpen(false)
+      }
+    }
+    if (isModalOpen) {
+      window.addEventListener('keydown', handleKeyDown)
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isModalOpen])
+
   // Navigation handlers
   const handlePrevMonth = () => {
     setViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
@@ -1000,182 +1013,194 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
       )}
 
       {/* ============================================================== */}
-      {/* MODAL: ASSIGN DAY OFF / LEAVE */}
+      {/* MODAL: ASSIGN DAY OFF / LEAVE (POPUP MODAL) */}
       {/* ============================================================== */}
       {isModalOpen && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="modal-dialog" style={{ maxWidth: '480px' }}>
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setIsModalOpen(false)}
+        >
+          <div
+            className="modal-content"
+            style={{ maxWidth: '500px', width: '100%', borderRadius: '10px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <IconCalendar size={18} color="#0f172a" />
+                <IconCalendar size={18} color="#f97316" />
                 <h3 className="modal-title">Assign Day Off / Leave</h3>
               </div>
               <button
                 type="button"
-                className="modal-close-btn"
+                className="btn-close"
                 onClick={() => setIsModalOpen(false)}
+                title="Close"
               >
-                &times;
+                ✕
               </button>
             </div>
 
-            <form onSubmit={handleAssignSubmit} className="modal-form" autoComplete="off" noValidate>
-              {/* Select Staff */}
-              <div className="form-group">
-                <label className="form-label" htmlFor="assign-staff">
-                  Select Staff Member <span className="form-required">*</span>
-                </label>
-                <select
-                  id="assign-staff"
-                  className={`form-input ${formErrors.staff ? 'input-error' : ''}`}
-                  value={formStaffId}
-                  onChange={(e) => {
-                    setFormStaffId(e.target.value)
-                    if (formErrors.staff) setFormErrors(prev => ({ ...prev, staff: null }))
-                  }}
-                >
-                  <option value="">-- Select a staff member --</option>
-                  {staffList.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.role}) - Shift: {s.shift_start} to {s.shift_end}
-                    </option>
-                  ))}
-                </select>
-                {formErrors.staff && (
-                  <span className="form-error-msg">{formErrors.staff}</span>
-                )}
-              </div>
-
-              {/* Mode: Single Day vs Date Range */}
-              <div className="form-group">
-                <label className="form-label">Duration Mode</label>
-                <div style={{ display: 'flex', gap: '14px' }}>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="assign_mode"
-                      checked={assignMode === 'single'}
-                      onChange={() => {
-                        setAssignMode('single')
-                        setFormErrors(prev => ({ ...prev, date: null, date_start: null, date_end: null }))
-                      }}
-                    />
-                    <span>Single Day</span>
-                  </label>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="assign_mode"
-                      checked={assignMode === 'range'}
-                      onChange={() => {
-                        setAssignMode('range')
-                        setFormErrors(prev => ({ ...prev, date: null, date_start: null, date_end: null }))
-                      }}
-                    />
-                    <span>Date Range (Multi-day)</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Date Inputs */}
-              {assignMode === 'single' ? (
+            <form onSubmit={handleAssignSubmit} autoComplete="off" noValidate>
+              <div className="modal-body" style={{ maxHeight: 'calc(85vh - 120px)', overflowY: 'auto' }}>
+                {/* Select Staff */}
                 <div className="form-group">
-                  <label className="form-label" htmlFor="assign-date">
-                    Day Off Date <span className="form-required">*</span>
+                  <label className="form-label" htmlFor="assign-staff">
+                    Select Staff Member <span className="form-required">*</span>
                   </label>
-                  <input
-                    id="assign-date"
-                    type="date"
-                    className={`form-input ${formErrors.date ? 'input-error' : ''}`}
-                    value={formDate}
+                  <select
+                    id="assign-staff"
+                    className={`form-input ${formErrors.staff ? 'input-error' : ''}`}
+                    value={formStaffId}
                     onChange={(e) => {
-                      setFormDate(e.target.value)
-                      if (formErrors.date) setFormErrors(prev => ({ ...prev, date: null }))
+                      setFormStaffId(e.target.value)
+                      if (formErrors.staff) setFormErrors(prev => ({ ...prev, staff: null }))
                     }}
-                  />
-                  {formErrors.date && (
-                    <span className="form-error-msg">{formErrors.date}</span>
+                  >
+                    <option value="">-- Select a staff member --</option>
+                    {staffList.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.role}) - Shift: {s.shift_start} to {s.shift_end}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.staff && (
+                    <span className="form-error-msg">{formErrors.staff}</span>
                   )}
                 </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="assign-start">
-                      Start Date <span className="form-required">*</span>
+
+                {/* Mode: Single Day vs Date Range */}
+                <div className="form-group">
+                  <label className="form-label">Duration Mode</label>
+                  <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: assignMode === 'single' ? '600' : '400' }}>
+                      <input
+                        type="radio"
+                        name="assign_mode"
+                        checked={assignMode === 'single'}
+                        onChange={() => {
+                          setAssignMode('single')
+                          setFormErrors(prev => ({ ...prev, date: null, date_start: null, date_end: null }))
+                        }}
+                      />
+                      <span>Single Day</span>
                     </label>
-                    <input
-                      id="assign-start"
-                      type="date"
-                      className={`form-input ${formErrors.date_start ? 'input-error' : ''}`}
-                      value={formDateStart}
-                      onChange={(e) => {
-                        setFormDateStart(e.target.value)
-                        if (formErrors.date_start) setFormErrors(prev => ({ ...prev, date_start: null }))
-                      }}
-                    />
-                    {formErrors.date_start && (
-                      <span className="form-error-msg">{formErrors.date_start}</span>
-                    )}
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="assign-end">
-                      End Date <span className="form-required">*</span>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: assignMode === 'range' ? '600' : '400' }}>
+                      <input
+                        type="radio"
+                        name="assign_mode"
+                        checked={assignMode === 'range'}
+                        onChange={() => {
+                          setAssignMode('range')
+                          setFormErrors(prev => ({ ...prev, date: null, date_start: null, date_end: null }))
+                        }}
+                      />
+                      <span>Date Range (Multi-day)</span>
                     </label>
-                    <input
-                      id="assign-end"
-                      type="date"
-                      className={`form-input ${formErrors.date_end ? 'input-error' : ''}`}
-                      value={formDateEnd}
-                      min={formDateStart}
-                      onChange={(e) => {
-                        setFormDateEnd(e.target.value)
-                        if (formErrors.date_end) setFormErrors(prev => ({ ...prev, date_end: null }))
-                      }}
-                    />
-                    {formErrors.date_end && (
-                      <span className="form-error-msg">{formErrors.date_end}</span>
-                    )}
                   </div>
                 </div>
-              )}
 
-              {/* Leave Type */}
-              <div className="form-group">
-                <label className="form-label" htmlFor="assign-type">
-                  Leave / Day Off Type <span className="form-required">*</span>
-                </label>
-                <select
-                  id="assign-type"
-                  className="form-input"
-                  value={formType}
-                  onChange={(e) => setFormType(e.target.value)}
-                >
-                  {LEAVE_TYPES.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.icon} {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                {/* Date Inputs */}
+                {assignMode === 'single' ? (
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="assign-date">
+                      Day Off Date <span className="form-required">*</span>
+                    </label>
+                    <input
+                      id="assign-date"
+                      type="date"
+                      className={`form-input ${formErrors.date ? 'input-error' : ''}`}
+                      value={formDate}
+                      onChange={(e) => {
+                        setFormDate(e.target.value)
+                        if (formErrors.date) setFormErrors(prev => ({ ...prev, date: null }))
+                      }}
+                    />
+                    {formErrors.date && (
+                      <span className="form-error-msg">{formErrors.date}</span>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="assign-start">
+                        Start Date <span className="form-required">*</span>
+                      </label>
+                      <input
+                        id="assign-start"
+                        type="date"
+                        className={`form-input ${formErrors.date_start ? 'input-error' : ''}`}
+                        value={formDateStart}
+                        onChange={(e) => {
+                          setFormDateStart(e.target.value)
+                          if (formErrors.date_start) setFormErrors(prev => ({ ...prev, date_start: null }))
+                        }}
+                      />
+                      {formErrors.date_start && (
+                        <span className="form-error-msg">{formErrors.date_start}</span>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="assign-end">
+                        End Date <span className="form-required">*</span>
+                      </label>
+                      <input
+                        id="assign-end"
+                        type="date"
+                        className={`form-input ${formErrors.date_end ? 'input-error' : ''}`}
+                        value={formDateEnd}
+                        min={formDateStart}
+                        onChange={(e) => {
+                          setFormDateEnd(e.target.value)
+                          if (formErrors.date_end) setFormErrors(prev => ({ ...prev, date_end: null }))
+                        }}
+                      />
+                      {formErrors.date_end && (
+                        <span className="form-error-msg">{formErrors.date_end}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-              {/* Reason / Note */}
-              <div className="form-group">
-                <label className="form-label" htmlFor="assign-reason">
-                  Reason / Notes (Optional)
-                </label>
-                <input
-                  id="assign-reason"
-                  type="text"
-                  className="form-input"
-                  placeholder="Enter notes or reason"
-                  value={formReason}
-                  onChange={(e) => setFormReason(e.target.value)}
-                  autoComplete="off"
-                />
+                {/* Leave Type */}
+                <div className="form-group">
+                  <label className="form-label" htmlFor="assign-type">
+                    Leave / Day Off Type <span className="form-required">*</span>
+                  </label>
+                  <select
+                    id="assign-type"
+                    className="form-input"
+                    value={formType}
+                    onChange={(e) => setFormType(e.target.value)}
+                  >
+                    {LEAVE_TYPES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.icon} {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Reason / Note */}
+                <div className="form-group">
+                  <label className="form-label" htmlFor="assign-reason">
+                    Reason / Notes (Optional)
+                  </label>
+                  <input
+                    id="assign-reason"
+                    type="text"
+                    className="form-input"
+                    placeholder="Enter notes or reason"
+                    value={formReason}
+                    onChange={(e) => setFormReason(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
               </div>
 
               {/* Footer */}
-              <div className="modal-footer" style={{ marginTop: '20px' }}>
+              <div className="modal-footer">
                 <button
                   type="button"
                   className="btn-secondary"
