@@ -60,6 +60,10 @@ import {
   subscribeToLiveCheckins,
   isTodayRecord
 } from './services/firebaseService'
+import {
+  getStoreLocation,
+  setStoreLocation
+} from './services/locationService'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
@@ -174,6 +178,7 @@ export default function App() {
     wifi_password: 'coffee2026',
   })
   const [settingsSaving, setSettingsSaving] = useState(false)
+  const [storeLocation, setStoreLocationState] = useState(() => getStoreLocation())
 
   // Filter & Search inside main table
   const [tableSearch, setTableSearch] = useState('')
@@ -485,7 +490,8 @@ export default function App() {
     setSettingsSaving(true)
     try {
       await saveSettingsInFirebase(cafeSettings)
-      showToast('Settings saved successfully!')
+      setStoreLocation(storeLocation)
+      showToast('Settings & Store GPS Location saved successfully!')
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -1243,12 +1249,38 @@ export default function App() {
                       ) : (
                         filteredRows.map((item) => {
                           const isInside = item.status === 'checked_in'
+                          const matchedStaff = staffList.find(s => s.id === item.staff_id || s.name === item.name)
+                          const photo = item.photo_url || matchedStaff?.photo_url || ''
                           return (
                             <tr key={item.id}>
                               <td>
-                                <div className="task-name-text">{item.name}</div>
-                                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                                  {item.note || item.email}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <div className="table-staff-avatar-wrap">
+                                    {photo ? (
+                                      <img
+                                        src={photo}
+                                        alt={item.name}
+                                        className="table-staff-avatar-img"
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = 'none'
+                                          const fb = e.currentTarget.nextElementSibling
+                                          if (fb) fb.style.display = 'flex'
+                                        }}
+                                      />
+                                    ) : null}
+                                    <div
+                                      className="table-staff-avatar-initials"
+                                      style={{ display: photo ? 'none' : 'flex' }}
+                                    >
+                                      {(item.name || 'G').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="task-name-text">{item.name}</div>
+                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                                      {item.note || item.email}
+                                    </div>
+                                  </div>
                                 </div>
                               </td>
 
@@ -1458,12 +1490,38 @@ export default function App() {
                       ) : (
                         (performanceData.staff_performance || []).map((staff) => {
                           const isGood = staff.punctuality_score >= 90
+                          const matchedStaff = staffList.find(s => s.id === staff.staff_id || s.name === staff.name)
+                          const photo = staff.photo_url || matchedStaff?.photo_url || ''
 
                           return (
                             <tr key={staff.staff_id}>
                               <td>
-                                <div className="task-name-text">{staff.name}</div>
-                                <div style={{ fontSize: '11px', color: '#94a3b8' }}>{staff.email}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <div className="table-staff-avatar-wrap">
+                                    {photo ? (
+                                      <img
+                                        src={photo}
+                                        alt={staff.name}
+                                        className="table-staff-avatar-img"
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = 'none'
+                                          const fb = e.currentTarget.nextElementSibling
+                                          if (fb) fb.style.display = 'flex'
+                                        }}
+                                      />
+                                    ) : null}
+                                    <div
+                                      className="table-staff-avatar-initials"
+                                      style={{ display: photo ? 'none' : 'flex' }}
+                                    >
+                                      {(staff.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="task-name-text">{staff.name}</div>
+                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>{staff.email}</div>
+                                  </div>
+                                </div>
                               </td>
 
                               <td>
@@ -1559,8 +1617,32 @@ export default function App() {
                         staffList.map((s) => (
                           <tr key={s.id}>
                             <td>
-                              <div className="task-name-text">{s.name}</div>
-                              <div style={{ fontSize: '11px', color: '#94a3b8' }}>{s.email}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div className="table-staff-avatar-wrap">
+                                  {s.photo_url ? (
+                                    <img
+                                      src={s.photo_url}
+                                      alt={s.name}
+                                      className="table-staff-avatar-img"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none'
+                                        const fb = e.currentTarget.nextElementSibling
+                                        if (fb) fb.style.display = 'flex'
+                                      }}
+                                    />
+                                  ) : null}
+                                  <div
+                                    className="table-staff-avatar-initials"
+                                    style={{ display: s.photo_url ? 'none' : 'flex' }}
+                                  >
+                                    {(s.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="task-name-text">{s.name}</div>
+                                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>{s.email}</div>
+                                </div>
+                              </div>
                             </td>
 
                             <td>
@@ -1740,9 +1822,35 @@ export default function App() {
                         ) : (
                           (todayData.data || []).map((row) => {
                             const isInside = row.status === 'checked_in'
+                            const matchedStaff = staffList.find(s => s.id === row.staff_id || s.name === row.name)
+                            const photo = row.photo_url || matchedStaff?.photo_url || ''
                             return (
                               <tr key={row.id}>
-                                <td><strong>{row.name}</strong></td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <div className="table-staff-avatar-wrap" style={{ width: '32px', height: '32px' }}>
+                                      {photo ? (
+                                        <img
+                                          src={photo}
+                                          alt={row.name}
+                                          className="table-staff-avatar-img"
+                                          onError={(e) => {
+                                            e.currentTarget.style.display = 'none'
+                                            const fb = e.currentTarget.nextElementSibling
+                                            if (fb) fb.style.display = 'flex'
+                                          }}
+                                        />
+                                      ) : null}
+                                      <div
+                                        className="table-staff-avatar-initials"
+                                        style={{ display: photo ? 'none' : 'flex', fontSize: '11px' }}
+                                      >
+                                        {(row.name || 'G').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                                      </div>
+                                    </div>
+                                    <strong>{row.name}</strong>
+                                  </div>
+                                </td>
                                 <td>{row.location || 'Table'}</td>
                                 <td>{formatTime(row.check_in_at)}</td>
                                 <td>{isInside ? '-' : formatTime(row.check_out_at)}</td>
@@ -1820,6 +1928,77 @@ export default function App() {
                     value={cafeSettings.seating_capacity}
                     onChange={(e) => setCafeSettings({ ...cafeSettings, seating_capacity: parseInt(e.target.value) || 48 })}
                   />
+                </div>
+
+                <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
+                        📍 Store GPS Geofence & Location Validation
+                      </h4>
+                      <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                        Staff must allow real-time GPS location and be within store radius to check in/out.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '11px', padding: '6px 12px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      onClick={() => {
+                        if (navigator.geolocation) {
+                          navigator.geolocation.getCurrentPosition(
+                            (pos) => {
+                              setStoreLocationState(prev => ({
+                                ...prev,
+                                lat: parseFloat(pos.coords.latitude.toFixed(6)),
+                                lng: parseFloat(pos.coords.longitude.toFixed(6)),
+                              }))
+                              showToast(`GPS captured: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`, 'success')
+                            },
+                            (err) => {
+                              showToast(`Location error: ${err.message}`, 'error')
+                            }
+                          )
+                        } else {
+                          showToast('Geolocation not supported by browser', 'error')
+                        }
+                      }}
+                    >
+                      🎯 Capture My Current GPS
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Store Latitude</label>
+                      <input
+                        type="number"
+                        step="any"
+                        className="form-input"
+                        value={storeLocation.lat}
+                        onChange={(e) => setStoreLocationState({ ...storeLocation, lat: parseFloat(e.target.value) || 0 })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Store Longitude</label>
+                      <input
+                        type="number"
+                        step="any"
+                        className="form-input"
+                        value={storeLocation.lng}
+                        onChange={(e) => setStoreLocationState({ ...storeLocation, lng: parseFloat(e.target.value) || 0 })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Allowed Radius (Meters)</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={storeLocation.radiusMeters || 300}
+                        onChange={(e) => setStoreLocationState({ ...storeLocation, radiusMeters: parseInt(e.target.value) || 300 })}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
@@ -2005,6 +2184,25 @@ export default function App() {
                     />
                   </div>
                 </div>
+
+                <div className="form-group">
+                  <label className="form-label">Staff Profile Photo (Optional)</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="form-input"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        const reader = new FileReader()
+                        reader.onload = () => {
+                          setStaffForm(prev => ({ ...prev, photo_url: reader.result }))
+                        }
+                        reader.readAsDataURL(file)
+                      }
+                    }}
+                  />
+                </div>
               </div>
 
               <div className="modal-footer">
@@ -2038,9 +2236,45 @@ export default function App() {
                 shift_end: editingStaff.shift_end,
                 username: editingStaff.username,
                 password: editingStaff.new_password || undefined,
+                photo_url: editingStaff.photo_url || undefined,
               })
             }}>
               <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Staff Profile Photo</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div className="table-staff-avatar-wrap" style={{ width: '48px', height: '48px' }}>
+                      {editingStaff.photo_url ? (
+                        <img
+                          src={editingStaff.photo_url}
+                          alt={editingStaff.name}
+                          className="table-staff-avatar-img"
+                        />
+                      ) : (
+                        <div className="table-staff-avatar-initials">
+                          {(editingStaff.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="form-input"
+                      style={{ flex: 1 }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          const reader = new FileReader()
+                          reader.onload = () => {
+                            setEditingStaff(prev => ({ ...prev, photo_url: reader.result }))
+                          }
+                          reader.readAsDataURL(file)
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">Full Name</label>
                   <input

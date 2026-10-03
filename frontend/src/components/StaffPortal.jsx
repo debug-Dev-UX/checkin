@@ -29,8 +29,13 @@ import {
   createCheckinInFirebase,
   checkoutInFirebase,
   subscribeToLiveCheckins,
+  updateStaffInFirebase,
   isTodayRecord
 } from '../services/firebaseService'
+import {
+  verifyRealtimeLocation,
+  getStoreLocation,
+} from '../services/locationService'
 
 function playSuccessBeep() {
   try {
@@ -79,6 +84,26 @@ export default function StaffPortal({
   const [scannedQrData, setScannedQrData] = useState(null)
   const selectedScanActionRef = useRef(null)
   selectedScanActionRef.current = selectedScanAction
+
+  // Real-time Geolocation State & Profile state
+  const [locationAlert, setLocationAlert] = useState(null) // null | { message, distance, code, allowedRadius }
+  const [verifiedLocation, setVerifiedLocation] = useState(null)
+  const [pendingLocationAction, setPendingLocationAction] = useState(null)
+  const [staffProfile, setStaffProfile] = useState(() => {
+    try {
+      const saved = localStorage.getItem('chafe_custom_staff_profile')
+      if (saved) return { ...staffUser, ...JSON.parse(saved) }
+    } catch { /* quiet */ }
+    return staffUser || {}
+  })
+
+  useEffect(() => {
+    if (staffUser) {
+      setStaffProfile(prev => ({ ...prev, ...staffUser }))
+    }
+  }, [staffUser])
+
+  const staffPhotoUrl = staffProfile?.photo_url || staffUser?.photo_url || localStorage.getItem('chafe_profile_avatar') || ''
 
   // Camera QR scanner state - ALWAYS back camera by default
   const [cameraFacing, setCameraFacing] = useState('environment') // 'environment' (back) | 'user' (front)
@@ -194,15 +219,20 @@ export default function StaffPortal({
         // CLOCK IN
         const payload = {
           staff_id: staffUser.id,
-          name: staffUser.name,
-          email: staffUser.email,
+          name: staffProfile?.name || staffUser.name,
+          email: staffProfile?.email || staffUser.email,
+          photo_url: staffPhotoUrl || null,
           type: 'employee',
-          department: staffUser.role || 'Service Team',
+          department: staffProfile?.role || staffUser.role || 'Service Team',
           badge_no: `STAFF-${staffUser.id || 'MEM'}`,
           location: 'Staff Mobile Portal',
+          latitude: verifiedLocation?.coords?.lat || null,
+          longitude: verifiedLocation?.coords?.lng || null,
+          distance_to_store_meters: verifiedLocation?.distance || null,
+          location_verified: !!verifiedLocation,
           note: todayDayoff
             ? `Clocked in on Day Off (${todayDayoff.type})`
-            : 'Clocked in via Store QR Scan',
+            : `Clocked in via Store QR (GPS Verified ${verifiedLocation?.distance ?? 0}m)`,
         }
 
         const newRecord = await createCheckinInFirebase(payload)
@@ -247,6 +277,25 @@ export default function StaffPortal({
       setShowActionModal(false)
       setSelectedScanAction(null)
       setScannedQrData(null)
+    }
+  }
+
+  // Real-time location validation before opening camera scanner
+  const handleInitiateScan = async (action) => {
+    setPendingLocationAction(action)
+    try {
+      setProcessing(true)
+      if (showToast) showToast('Verifying real-time GPS location...', 'info')
+      const loc = await verifyRealtimeLocation()
+      setVerifiedLocation(loc)
+      setSelectedScanAction(action)
+      setActiveTab('scan')
+      if (showToast) showToast(`GPS Verified! (${loc.distance}m from store)`, 'success')
+    } catch (err) {
+      setLocationAlert(err)
+      if (showToast) showToast(err.message, 'error')
+    } finally {
+      setProcessing(false)
     }
   }
 
@@ -526,11 +575,28 @@ export default function StaffPortal({
               <div className="mobile-shift-card">
                 <div className="shift-card-top-row">
                   <div className="shift-card-user-info">
-                    <div className="shift-card-avatar">
-                      {initials}
+                    <div className="shift-card-avatar" style={{ overflow: 'hidden', position: 'relative' }}>
+                      {staffPhotoUrl ? (
+                        <img
+                          src={staffPhotoUrl}
+                          alt={staffProfile?.name || staffUser?.name || 'Staff'}
+                          className="shift-card-avatar-img"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                            const fallback = e.currentTarget.nextElementSibling
+                            if (fallback) fallback.style.display = 'flex'
+                          }}
+                        />
+                      ) : null}
+                      <span
+                        className="shift-card-avatar-fallback"
+                        style={{ display: staffPhotoUrl ? 'none' : 'flex' }}
+                      >
+                        {initials}
+                      </span>
                     </div>
                     <div>
-                      <h2 className="shift-card-name">{staffUser?.name || 'Staff Member'}</h2>
+                      <h2 className="shift-card-name">{staffProfile?.name || staffUser?.name || 'Staff Member'}</h2>
                       <div className="shift-card-time">{formattedShiftDateTime}</div>
                     </div>
                   </div>
@@ -578,10 +644,8 @@ export default function StaffPortal({
                 <button
                   type="button"
                   className={`mobile-action-card ${!activeCheckin ? 'active-state' : ''}`}
-                  onClick={() => {
-                    setSelectedScanAction('in')
-                    setActiveTab('scan')
-                  }}
+                  onClick={() => handleInitiateScan('in')}
+                  disabled={processing}
                 >
                   <div className="mobile-action-icon">
                     <IconDoorIn size={36} color="#f59e0b" />
@@ -596,10 +660,8 @@ export default function StaffPortal({
                 <button
                   type="button"
                   className={`mobile-action-card ${activeCheckin ? 'active-state' : ''}`}
-                  onClick={() => {
-                    setSelectedScanAction('out')
-                    setActiveTab('scan')
-                  }}
+                  onClick={() => handleInitiateScan('out')}
+                  disabled={processing}
                 >
                   <div className="mobile-action-icon">
                     <IconDoorOut size={36} color="#f59e0b" />
@@ -753,31 +815,6 @@ export default function StaffPortal({
                   title="Close scanner"
                 >
                   ✕
-                </button>
-              </div>
-
-              {/* Mode Selector Tabs inside Scanner */}
-              <div className="pro-scanner-mode-bar">
-                <button
-                  type="button"
-                  className={`scanner-mode-tab in-tab ${selectedScanAction === 'in' ? 'active-mode' : ''}`}
-                  onClick={() => setSelectedScanAction('in')}
-                >
-                  <span>🟢 Clock In</span>
-                </button>
-                <button
-                  type="button"
-                  className={`scanner-mode-tab out-tab ${selectedScanAction === 'out' ? 'active-mode' : ''}`}
-                  onClick={() => setSelectedScanAction('out')}
-                >
-                  <span>🔴 Clock Out</span>
-                </button>
-                <button
-                  type="button"
-                  className={`scanner-mode-tab ask-tab ${selectedScanAction === null ? 'active-mode' : ''}`}
-                  onClick={() => setSelectedScanAction(null)}
-                >
-                  <span>❓ Ask on Scan</span>
                 </button>
               </div>
 
@@ -1093,17 +1130,20 @@ export default function StaffPortal({
         {/* ============================================================== */}
         {activeTab === 'profile' && (
           <ProfileView
-            user={staffUser}
-            onUpdateUser={(updated) => {
+            user={staffProfile}
+            onUpdateUser={async (updated) => {
+              setStaffProfile(prev => ({ ...prev, ...updated }))
               if (staffUser) {
                 Object.assign(staffUser, updated)
+                if (staffUser.id) {
+                  await updateStaffInFirebase(staffUser.id, updated)
+                }
               }
             }}
             onBack={() => setActiveTab('clock')}
             onLogout={onLogout}
             onShowBadge={() => setActiveTab('badge')}
             showToast={showToast}
-            isDesktopWide={window.innerWidth >= 1024}
           />
         )}
       </main>
@@ -1137,22 +1177,7 @@ export default function StaffPortal({
             <span>Schedule</span>
           </button>
 
-          {/* Item 3: QR Code (Camera Scanner) */}
-          <button
-            type="button"
-            className={`mobile-bottom-tab-btn ${activeTab === 'scan' ? 'active' : ''}`}
-            onClick={() => {
-              setSelectedScanAction(null)
-              setActiveTab('scan')
-            }}
-          >
-            <div className="mobile-tab-icon">
-              <IconCamera size={23} />
-            </div>
-            <span>QR Code</span>
-          </button>
-
-          {/* Item 4: Profile */}
+          {/* Item 3: Profile */}
           <button
             type="button"
             className={`mobile-bottom-tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
@@ -1565,6 +1590,49 @@ export default function StaffPortal({
                 disabled={processing}
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Location Validation Alert Modal */}
+      {locationAlert && (
+        <div className="location-alert-backdrop" onClick={() => setLocationAlert(null)}>
+          <div className="location-alert-card" onClick={(e) => e.stopPropagation()}>
+            <div className="location-alert-icon">📍</div>
+            <h3 className="location-alert-title">Real-Time Location Required</h3>
+            <p className="location-alert-text">
+              {locationAlert.message}
+            </p>
+            {locationAlert.distance && (
+              <div className="location-alert-details">
+                Current Distance: <strong>{locationAlert.distance}m</strong> away<br />
+                Allowed Store Range: <strong>{locationAlert.allowedRadius || 300}m</strong>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ flex: 1, padding: '12px', borderRadius: '10px' }}
+                onClick={() => setLocationAlert(null)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ flex: 1, padding: '12px', borderRadius: '10px' }}
+                onClick={() => {
+                  const act = pendingLocationAction
+                  setLocationAlert(null)
+                  if (act) {
+                    handleInitiateScan(act)
+                  }
+                }}
+              >
+                Try Again 🔄
               </button>
             </div>
           </div>

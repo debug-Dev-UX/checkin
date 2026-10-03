@@ -75,6 +75,17 @@ export default function ProfileView({
         const result = reader.result
         setAvatarUrl(result)
         localStorage.setItem('chafe_profile_avatar', result)
+        try {
+          const saved = localStorage.getItem('chafe_custom_staff_profile')
+          const existing = saved ? JSON.parse(saved) : {}
+          localStorage.setItem('chafe_custom_staff_profile', JSON.stringify({ ...existing, ...(user || {}), photo_url: result }))
+        } catch { /* quiet */ }
+        if (onUpdateUser) {
+          onUpdateUser({
+            ...(user || {}),
+            photo_url: result,
+          })
+        }
         showToast?.(
           appLang === 'kh' ? 'រូបភាពកម្រងព័ត៌មានត្រូវបានធ្វើបច្ចុប្បន្នភាព!' : 'Profile picture updated!',
           'success'
