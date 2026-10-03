@@ -54,10 +54,13 @@ export default function StaffPortal({
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [actionResult, setActionResult] = useState(null)
-  const [activeTab, setActiveTab] = useState('clock') // 'clock' | 'schedule' | 'history' | 'badge'
+  const [activeTab, setActiveTab] = useState('clock') // 'clock' | 'schedule' | 'scan' | 'history' | 'badge'
   const [dayoffFilter, setDayoffFilter] = useState('all') // 'all' | 'upcoming' | 'past'
 
-  // Camera QR scanner optional toggle
+  // Camera QR scanner state - ALWAYS back camera by default
+  const [cameraFacing, setCameraFacing] = useState('environment') // 'environment' (back) | 'user' (front)
+  const [torchOn, setTorchOn] = useState(false)
+  const isScanningRef = useRef(false)
   const [showCamera, setShowCamera] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const videoRef = useRef(null)
@@ -200,7 +203,7 @@ export default function StaffPortal({
     }
   }
 
-  // Camera functions
+  // Camera functions - ALWAYS PREFER BACK CAMERA (environment)
   const stopCamera = useCallback(() => {
     if (animFrameIdRef.current) {
       cancelAnimationFrame(animFrameIdRef.current)
@@ -214,14 +217,39 @@ export default function StaffPortal({
       videoRef.current.srcObject = null
     }
     setCameraActive(false)
+    setTorchOn(false)
   }, [])
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (facing = cameraFacing) => {
     stopCamera()
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-      })
+      let stream = null
+      // 1. Always attempt back camera first with ideal constraints
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        })
+      } catch {
+        try {
+          // 2. Fallback to exact facingMode string
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facing },
+            audio: false,
+          })
+        } catch {
+          // 3. Fallback to default available video device (e.g. laptop webcam)
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          })
+        }
+      }
+
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
@@ -229,19 +257,46 @@ export default function StaffPortal({
         setCameraActive(true)
       }
     } catch (err) {
-      if (showToast) showToast('Could not start camera: ' + err.message, 'error')
+      if (showToast) showToast('Could not access back camera: ' + err.message, 'error')
+      setCameraActive(false)
       setShowCamera(false)
     }
-  }, [showToast, stopCamera])
+  }, [cameraFacing, showToast, stopCamera])
+
+  const handleToggleFacing = () => {
+    const nextFacing = cameraFacing === 'environment' ? 'user' : 'environment'
+    setCameraFacing(nextFacing)
+    startCamera(nextFacing)
+  }
+
+  const handleToggleTorch = async () => {
+    if (!streamRef.current) return
+    const track = streamRef.current.getVideoTracks()[0]
+    if (!track) return
+    const capabilities = track.getCapabilities?.() || {}
+    if (!capabilities.torch) {
+      if (showToast) showToast('Flashlight not supported on this camera lens', 'info')
+      return
+    }
+    try {
+      const nextTorch = !torchOn
+      await track.applyConstraints({
+        advanced: [{ torch: nextTorch }],
+      })
+      setTorchOn(nextTorch)
+    } catch {
+      if (showToast) showToast('Could not toggle flashlight', 'error')
+    }
+  }
 
   useEffect(() => {
-    if (showCamera) {
-      startCamera()
+    if (activeTab === 'scan' || showCamera) {
+      startCamera(cameraFacing)
     } else {
       stopCamera()
     }
     return () => stopCamera()
-  }, [showCamera, startCamera, stopCamera])
+  }, [activeTab, showCamera, cameraFacing, startCamera, stopCamera])
 
   // Continuous frame loop with jsQR for QR scan
   useEffect(() => {
@@ -266,9 +321,18 @@ export default function StaffPortal({
           inversionAttempts: 'dontInvert',
         })
 
-        if (code && code.data) {
+        if (code && code.data && !isScanningRef.current) {
+          isScanningRef.current = true
+          playSuccessBeep()
+          if (navigator.vibrate) {
+            try { navigator.vibrate([100, 50, 100]) } catch { /* ignore */ }
+          }
           handleClockAction()
+          setActiveTab('clock')
           setShowCamera(false)
+          setTimeout(() => {
+            isScanningRef.current = false
+          }, 3000)
           return
         }
       }
@@ -492,6 +556,15 @@ export default function StaffPortal({
 
           <button
             type="button"
+            className={`pro-tab-btn ${activeTab === 'scan' ? 'active-tab' : ''}`}
+            onClick={() => setActiveTab('scan')}
+          >
+            <span className="tab-icon">📷</span>
+            <span>Scan (Rear Camera)</span>
+          </button>
+
+          <button
+            type="button"
             className={`pro-tab-btn ${activeTab === 'history' ? 'active-tab' : ''}`}
             onClick={() => setActiveTab('history')}
           >
@@ -581,41 +654,36 @@ export default function StaffPortal({
                       {activeCheckin ? 'Ready to Clock Out?' : 'Attendance via QR Badge Pass'}
                     </h4>
                     <p className="pro-scan-guide-desc">
-                      Present your personal Digital ID QR Pass at the entrance terminal scanner, or use the camera scanner below.
+                      Tap the center <strong>SCAN</strong> button in the bottom menu, or use the camera button below to scan your badge with the rear camera.
                     </p>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  className="pro-btn-quick-badge"
-                  onClick={() => setActiveTab('badge')}
-                >
-                  <span>View My Digital ID QR Pass</span>
-                  <span style={{ fontSize: '15px' }}>→</span>
-                </button>
-              </div>
+                <div className="pro-scan-actions-grid">
+                  <button
+                    type="button"
+                    className="pro-btn-quick-scan"
+                    onClick={() => setActiveTab('scan')}
+                  >
+                    <IconCamera size={16} />
+                    <span>Open Back Camera Scanner</span>
+                  </button>
 
-              {/* Camera Scanner Toggle */}
-              <div className="pro-camera-toggle-section">
-                <button
-                  type="button"
-                  className="pro-btn-camera-toggle"
-                  onClick={() => setShowCamera(!showCamera)}
-                >
-                  <IconCamera size={16} />
-                  <span>{showCamera ? 'Close Badge Camera Scanner' : 'Scan Badge with Camera'}</span>
-                </button>
+                  <button
+                    type="button"
+                    className="pro-btn-quick-badge"
+                    onClick={() => setActiveTab('badge')}
+                  >
+                    <IconQrCode size={16} />
+                    <span>View My Digital ID QR Pass</span>
+                  </button>
+                </div>
 
-                {showCamera && (
-                  <div className="pro-camera-stream-wrapper">
-                    <video ref={videoRef} playsInline muted className="pro-camera-video" />
-                    <canvas ref={canvasRef} style={{ display: 'none' }} />
-                    <div className="pro-camera-hint">
-                      Hold your Staff QR Code in front of the lens to auto clock
-                    </div>
-                  </div>
-                )}
+                <div className="pro-camera-hint-footer">
+                  <span className="pro-lens-badge">
+                    📷 Rear Camera Lens: Ready for Instant Auto-Scan
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -690,6 +758,111 @@ export default function StaffPortal({
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 3: DEDICATED APP CAMERA SCANNER (CENTER SCAN TAB) */}
+        {/* ============================================================== */}
+        {activeTab === 'scan' && (
+          <div className="pro-app-scanner-screen">
+            <div className="pro-scanner-card">
+              <div className="pro-scanner-header">
+                <div className="pro-scanner-header-left">
+                  <span className="pro-scanner-title">CAMERA QR SCANNER</span>
+                  <span className="pro-scanner-lens-badge">
+                    {cameraFacing === 'environment' ? '📷 BACK CAMERA (REAR)' : '🤳 FRONT CAMERA'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="pro-btn-scanner-close"
+                  onClick={() => setActiveTab('clock')}
+                  title="Close scanner"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Viewfinder Screen */}
+              <div className="pro-viewfinder-wrapper">
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  className="pro-viewfinder-video"
+                />
+                <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+                {/* Viewfinder Target Mask */}
+                <div className="pro-viewfinder-overlay">
+                  <div className="pro-target-reticle">
+                    {/* 4 Corner Brackets */}
+                    <div className="corner top-left"></div>
+                    <div className="corner top-right"></div>
+                    <div className="corner bottom-left"></div>
+                    <div className="corner bottom-right"></div>
+
+                    {/* Animated Scanning Laser */}
+                    <div className="pro-scanning-laser"></div>
+
+                    <div className="pro-reticle-hint">
+                      Align Employee QR Badge inside frame
+                    </div>
+                  </div>
+                </div>
+
+                {!cameraActive && (
+                  <div className="pro-viewfinder-loading">
+                    <div className="pro-spinner"></div>
+                    <span>Initializing Back Camera...</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Scanner Control Bar */}
+              <div className="pro-scanner-controls">
+                <button
+                  type="button"
+                  className="pro-scanner-ctrl-btn"
+                  onClick={handleToggleFacing}
+                  title="Flip camera"
+                >
+                  <IconRefresh size={16} />
+                  <span>{cameraFacing === 'environment' ? 'Switch to Front' : 'Switch to Back'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`pro-scanner-ctrl-btn ${torchOn ? 'active' : ''}`}
+                  onClick={handleToggleTorch}
+                  title="Toggle flashlight"
+                >
+                  <span>{torchOn ? '🔦 Flash On' : '💡 Flashlight'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="pro-scanner-ctrl-btn primary"
+                  onClick={() => setActiveTab('badge')}
+                  title="Display My ID Pass"
+                >
+                  <IconQrCode size={16} />
+                  <span>Show My Pass</span>
+                </button>
+              </div>
+
+              {/* Status footer notice */}
+              <div className="pro-scanner-footer-notice">
+                <div className="notice-icon">⚡</div>
+                <div className="notice-text">
+                  <strong>
+                    {activeCheckin ? 'Ready to Clock Out (End Shift)' : 'Ready to Clock In (Start Shift)'}
+                  </strong>
+                  <p>Hold your QR badge steady in front of the back camera lens to auto-record attendance.</p>
                 </div>
               </div>
             </div>
@@ -907,6 +1080,81 @@ export default function StaffPortal({
           </div>
         )}
       </main>
+
+      {/* ============================================================== */}
+      {/* 9. MOBILE-FIRST APP BOTTOM DOCK NAVIGATION (MENU BOTTOM SCAN CENTER) */}
+      {/* ============================================================== */}
+      <nav className="pro-app-bottom-nav">
+        <div className="pro-bottom-nav-inner">
+          {/* Tab 1: Attendance / Clock */}
+          <button
+            type="button"
+            className={`pro-bottom-nav-btn ${activeTab === 'clock' ? 'active' : ''}`}
+            onClick={() => setActiveTab('clock')}
+          >
+            <div className="bottom-btn-icon-wrap">
+              <IconClock size={20} />
+            </div>
+            <span className="bottom-btn-label">Attendance</span>
+          </button>
+
+          {/* Tab 2: Schedule & Leaves */}
+          <button
+            type="button"
+            className={`pro-bottom-nav-btn ${activeTab === 'schedule' ? 'active' : ''}`}
+            onClick={() => setActiveTab('schedule')}
+          >
+            <div className="bottom-btn-icon-wrap">
+              <IconCalendar size={20} />
+              {dayoffs.length > 0 && (
+                <span className="bottom-btn-badge">{dayoffs.length}</span>
+              )}
+            </div>
+            <span className="bottom-btn-label">Schedule</span>
+          </button>
+
+          {/* Tab 3: CENTER SCAN ACTION BUTTON (ELEVATED FAB) */}
+          <div className="pro-bottom-scan-fab-wrap">
+            <button
+              type="button"
+              className={`pro-bottom-scan-fab ${activeTab === 'scan' ? 'active-scan' : ''}`}
+              onClick={() => setActiveTab(activeTab === 'scan' ? 'clock' : 'scan')}
+              aria-label="Scan QR Code Badge with Back Camera"
+            >
+              <div className="fab-scan-glow"></div>
+              <div className="fab-scan-pulse-ring"></div>
+              <div className="fab-scan-core">
+                <IconCamera size={26} color="#ffffff" />
+                <span className="fab-scan-label">SCAN</span>
+              </div>
+            </button>
+          </div>
+
+          {/* Tab 4: History / Timesheet */}
+          <button
+            type="button"
+            className={`pro-bottom-nav-btn ${activeTab === 'history' ? 'active' : ''}`}
+            onClick={() => setActiveTab('history')}
+          >
+            <div className="bottom-btn-icon-wrap">
+              <span style={{ fontSize: '18px', lineHeight: 1 }}>📜</span>
+            </div>
+            <span className="bottom-btn-label">Timesheet</span>
+          </button>
+
+          {/* Tab 5: Digital ID Badge */}
+          <button
+            type="button"
+            className={`pro-bottom-nav-btn ${activeTab === 'badge' ? 'active' : ''}`}
+            onClick={() => setActiveTab('badge')}
+          >
+            <div className="bottom-btn-icon-wrap">
+              <span style={{ fontSize: '18px', lineHeight: 1 }}>🪪</span>
+            </div>
+            <span className="bottom-btn-label">My Pass</span>
+          </button>
+        </div>
+      </nav>
     </div>
   )
 }
