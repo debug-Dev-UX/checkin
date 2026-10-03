@@ -166,6 +166,10 @@ export default function App() {
     operating_hours: '07:00 AM - 10:00 PM',
     late_grace_period_mins: 10,
     seating_capacity: 48,
+    patio_capacity: 16,
+    barista_target: 2,
+    weekly_perf_alert: true,
+    monthly_perf_alert: true,
     wifi_ssid: 'Chafe_Specialty_Guest',
     wifi_password: 'coffee2026',
   })
@@ -174,6 +178,25 @@ export default function App() {
   // Filter & Search inside main table
   const [tableSearch, setTableSearch] = useState('')
   const [activeTableFilter, setActiveTableFilter] = useState('today') // 'today' | 'inside' | 'checked_out'
+  const [isTableFilterMenuOpen, setIsTableFilterMenuOpen] = useState(false)
+  const [advancedFilter, setAdvancedFilter] = useState('all') // 'all' | 'late' | 'on_time' | 'staff' | 'guest'
+
+  // Header Menus & Modals
+  const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false)
+  const [isMessagesOpen, setIsMessagesOpen] = useState(false)
+  const [messagesTab, setMessagesTab] = useState('all') // 'all' | 'checkin_out' | 'late' | 'performance'
+  const [isPerfModalOpen, setIsPerfModalOpen] = useState(false)
+  const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+
+  // Track read notification IDs
+  const [readAlertIds, setReadAlertIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('chafe_read_alerts') || '[]')
+    } catch {
+      return []
+    }
+  })
 
   // Modals
   const [isCheckinModalOpen, setIsCheckinModalOpen] = useState(false)
@@ -476,6 +499,11 @@ export default function App() {
       if (activeTableFilter === 'inside' && item.status !== 'checked_in') return false
       if (activeTableFilter === 'checked_out' && item.status !== 'checked_out') return false
 
+      if (advancedFilter === 'late' && item.punctuality_status !== 'late') return false
+      if (advancedFilter === 'on_time' && item.punctuality_status === 'late') return false
+      if (advancedFilter === 'staff' && item.type !== 'employee') return false
+      if (advancedFilter === 'guest' && item.type === 'employee') return false
+
       if (tableSearch.trim()) {
         const q = tableSearch.toLowerCase()
         const matchName = item.name?.toLowerCase().includes(q)
@@ -487,7 +515,7 @@ export default function App() {
 
       return true
     })
-  }, [checkins, activeTableFilter, tableSearch])
+  }, [checkins, activeTableFilter, advancedFilter, tableSearch])
 
   const formatTime = (timeStr) => {
     if (!timeStr) return '-'
@@ -501,12 +529,190 @@ export default function App() {
     return `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}/${d.getFullYear()}`
   }
 
+  // Live System Alerts & Messages
+  const allAlerts = useMemo(() => {
+    const list = []
+
+    // 1. Weekly Performance Alert (1/Week)
+    if (cafeSettings.weekly_perf_alert !== false) {
+      list.push({
+        id: 'alert_weekly_perf',
+        category: 'performance',
+        severity: 'info',
+        icon: '📊',
+        badge: '1/Week Alert',
+        title: 'Weekly Attendance & Punctuality Digest',
+        message: `Weekly staff punctuality rating is ${performanceData.overall_punctuality || 100}%. ${performanceData.total_late_arrivals || 0} late arrivals recorded across ${performanceData.total_shifts || 0} shifts this week.`,
+        timestamp: 'Active for this week',
+        targetTab: 'performance',
+      })
+    }
+
+    // 2. Monthly Performance Alert (1/Month)
+    if (cafeSettings.monthly_perf_alert !== false) {
+      list.push({
+        id: 'alert_monthly_perf',
+        category: 'performance',
+        severity: 'success',
+        icon: '🏆',
+        badge: '1/Month Review',
+        title: 'Monthly Staff Performance Review',
+        message: `Monthly roster attendance review active. ${staffList.length} staff roster members registered. Punctuality standard at ${performanceData.overall_punctuality || 100}%. Action plans maintained.`,
+        timestamp: 'Active for this month',
+        targetTab: 'performance',
+      })
+    }
+
+    // 3. Late Check-In Alerts
+    const lateRecords = checkins.filter(c => c.punctuality_status === 'late')
+    lateRecords.forEach((c) => {
+      list.push({
+        id: `late_${c.id}`,
+        category: 'late',
+        severity: 'warning',
+        icon: '⚠️',
+        badge: 'Late Alert',
+        title: `Late Check-In Alert: ${c.name}`,
+        message: `${c.name} clocked in at ${formatTime(c.check_in_at || c.created_at)} (Exceeded ${cafeSettings.late_grace_period_mins || 10}m grace period).`,
+        timestamp: formatDate(c.check_in_at || c.created_at) + ' ' + formatTime(c.check_in_at || c.created_at),
+        targetTab: 'performance',
+      })
+    })
+
+    // 4. Live Check-In / Check-Out Alerts from recent activity
+    checkins.forEach((c) => {
+      if (c.status === 'checked_in') {
+        list.push({
+          id: `in_${c.id}`,
+          category: 'checkin_out',
+          severity: 'success',
+          icon: '🟢',
+          badge: 'Check-In',
+          title: `Staff Check-In: ${c.name}`,
+          message: `${c.name} clocked in at ${formatTime(c.check_in_at || c.created_at)} at ${c.location || 'Main Counter'}.`,
+          timestamp: formatDate(c.check_in_at || c.created_at) + ' ' + formatTime(c.check_in_at || c.created_at),
+          targetTab: 'overview',
+        })
+      } else if (c.status === 'checked_out') {
+        list.push({
+          id: `out_${c.id}`,
+          category: 'checkin_out',
+          severity: 'info',
+          icon: '🔵',
+          badge: 'Check-Out',
+          title: `Staff Check-Out: ${c.name}`,
+          message: `${c.name} completed shift and clocked out at ${formatTime(c.check_out_at || c.created_at)}.`,
+          timestamp: formatDate(c.check_out_at || c.created_at) + ' ' + formatTime(c.check_out_at || c.created_at),
+          targetTab: 'overview',
+        })
+      }
+    })
+
+    return list
+  }, [checkins, performanceData, staffList, cafeSettings])
+
+  const unreadAlertsCount = useMemo(() => {
+    return allAlerts.filter(a => !readAlertIds.includes(a.id)).length
+  }, [allAlerts, readAlertIds])
+
+  const handleMarkAllAlertsRead = () => {
+    const allIds = allAlerts.map(a => a.id)
+    setReadAlertIds(allIds)
+    try {
+      localStorage.setItem('chafe_read_alerts', JSON.stringify(allIds))
+    } catch {}
+    showToast('All alerts marked as read', 'success')
+  }
+
+  const handleToggleAlertRead = (id) => {
+    setReadAlertIds(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+      try {
+        localStorage.setItem('chafe_read_alerts', JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }
+
+  // Handlers for goals & performance modals
+  const handleSaveGoals = async (e) => {
+    e.preventDefault()
+    setSettingsSaving(true)
+    try {
+      await saveSettingsInFirebase(cafeSettings)
+      showToast('Capacity & Goals updated successfully!', 'success')
+      setIsGoalsModalOpen(false)
+    } catch {
+      showToast('Failed to save capacity settings', 'error')
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
+  const handleSavePerfSettings = async (e) => {
+    e.preventDefault()
+    setSettingsSaving(true)
+    try {
+      await saveSettingsInFirebase(cafeSettings)
+      showToast('Performance alert schedule saved!', 'success')
+      setIsPerfModalOpen(false)
+    } catch {
+      showToast('Failed to save performance settings', 'error')
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
+  const handleTriggerWeeklyAlert = () => {
+    showToast('Weekly Performance Summary alert generated!', 'success')
+    setIsMessagesOpen(true)
+  }
+
+  const handleTriggerMonthlyAlert = () => {
+    showToast('Monthly Staff Performance Review alert generated!', 'success')
+    setIsMessagesOpen(true)
+  }
+
+  // Click outside and escape listeners for dropdowns and popups
+  useEffect(() => {
+    const handleDocumentClick = (e) => {
+      if (!e.target.closest('.admin-dropdown-container')) {
+        setIsAdminMenuOpen(false)
+      }
+      if (!e.target.closest('.pill-filter-container')) {
+        setIsTableFilterMenuOpen(false)
+      }
+    }
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsCheckinModalOpen(false)
+        setIsCreateStaffModalOpen(false)
+        setEditingStaff(null)
+        setIsAdminMenuOpen(false)
+        setIsMessagesOpen(false)
+        setIsTableFilterMenuOpen(false)
+        setIsPerfModalOpen(false)
+        setIsGoalsModalOpen(false)
+        setIsProfileModalOpen(false)
+      }
+    }
+    document.addEventListener('click', handleDocumentClick)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('click', handleDocumentClick)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
+
   // Seating capacity percentages (0 Data accurate)
   const seatingCap = cafeSettings.seating_capacity || 48
+  const patioCap = cafeSettings.patio_capacity || 16
+  const baristaTarget = cafeSettings.barista_target || 2
   const currentActive = stats.active_now ?? 0
   const occupancyPct = seatingCap > 0 ? Math.min(100, Math.round((currentActive / seatingCap) * 100)) : 0
+  const patioOccupancyPct = patioCap > 0 ? Math.min(100, Math.round(((stats.patio_active || 0) / patioCap) * 100)) : 0
   const staffOnShiftCount = staffList.filter(s => s.is_on_shift).length
-  const staffCoveragePct = staffList.length > 0 ? Math.min(100, Math.round((staffOnShiftCount / staffList.length) * 100)) : 0
+  const staffCoveragePct = baristaTarget > 0 ? Math.min(100, Math.round((staffOnShiftCount / baristaTarget) * 100)) : 0
   // Initial full-page loading screen
   if (initialLoading) {
     return <LoadingPage message="Connecting to Chafé Server..." />
@@ -697,18 +903,80 @@ export default function App() {
 
           {/* Topbar Right Controls */}
           <div className="top-navbar-right">
-            <button className="admin-dropdown-btn">
-              <IconGear size={14} color="#64748b" />
-              <span>System Administrator</span>
-              <IconChevronDown size={11} color="#94a3b8" />
-            </button>
+            {/* Admin Dropdown Menu */}
+            <div className="admin-dropdown-container">
+              <button
+                className="admin-dropdown-btn"
+                onClick={() => setIsAdminMenuOpen(!isAdminMenuOpen)}
+                title="System Administrator Options"
+              >
+                <IconGear size={14} color="#64748b" />
+                <span>System Administrator</span>
+                <IconChevronDown size={11} color="#94a3b8" />
+              </button>
 
-            <button className="icon-badge-btn" title="Messages">
+              {isAdminMenuOpen && (
+                <div className="admin-dropdown-menu">
+                  <div className="admin-dropdown-header">Quick Navigation</div>
+                  <button
+                    className="admin-dropdown-item"
+                    onClick={() => { setNavTab('settings'); setIsAdminMenuOpen(false) }}
+                  >
+                    <IconGear size={14} color="#f97316" />
+                    <span>System Settings</span>
+                  </button>
+                  <button
+                    className="admin-dropdown-item"
+                    onClick={() => { setNavTab('staff'); setIsAdminMenuOpen(false) }}
+                  >
+                    <IconUsers size={14} color="#0284c7" />
+                    <span>Staff Directory</span>
+                  </button>
+                  <button
+                    className="admin-dropdown-item"
+                    onClick={() => { setNavTab('performance'); setIsAdminMenuOpen(false) }}
+                  >
+                    <IconTrophy size={14} color="#10b981" />
+                    <span>Performance Reviews</span>
+                  </button>
+                  <button
+                    className="admin-dropdown-item"
+                    onClick={() => { setNavTab('dayoffs'); setIsAdminMenuOpen(false) }}
+                  >
+                    <IconCalendar size={14} color="#d97706" />
+                    <span>Day Off Calendar</span>
+                  </button>
+                  <div style={{ height: '1px', background: '#f1f5f9', margin: '4px 0' }} />
+                  <button
+                    className="admin-dropdown-item"
+                    onClick={() => { setIsAdminMenuOpen(false); handleLogout() }}
+                    style={{ color: '#ef4444' }}
+                  >
+                    <IconLogOut size={14} color="#ef4444" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Messages & Alerts Envelope */}
+            <button
+              className="icon-badge-btn"
+              title="System Alerts & Messages"
+              onClick={() => setIsMessagesOpen(true)}
+            >
               <IconEnvelope size={17} color="#64748b" />
-              <span className="badge-count">0</span>
+              <span className={`badge-count ${unreadAlertsCount === 0 ? 'zero' : ''}`}>
+                {unreadAlertsCount}
+              </span>
             </button>
 
-            <div className="user-thumbnail-header">
+            {/* Administrator Profile Thumbnail */}
+            <div
+              className="user-thumbnail-header"
+              onClick={() => setIsProfileModalOpen(true)}
+              title="Click to view Administrator Profile"
+            >
               <div className="user-thumbnail-avatar">
                 <IconUserCircle size={18} color="#475569" />
               </div>
@@ -747,8 +1015,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Subheading row: Arrow Pointer + Start */}
-          {navTab !== 'staff-scan' && (
+          {/* Subheading row: Arrow Pointer + Start (Only on Overview page) */}
+          {navTab === 'overview' && (
             <div className="section-subheading-row">
               <IconArrowPointer size={16} color="#1e293b" />
               <span>Start</span>
@@ -756,15 +1024,19 @@ export default function App() {
           )}
 
           {/* ============================================================== */}
-          {/* 4 COLOR BANNER KPI CARDS (With Shimmer Skeleton on Loading) */}
+          {/* 4 COLOR BANNER KPI CARDS (Only on Overview page) */}
           {/* ============================================================== */}
-          {navTab !== 'staff-scan' && (
+          {navTab === 'overview' && (
             loading ? (
               <SkeletonBannerCards />
             ) : (
               <section className="kpi-cards-row" aria-label="Staff Attendance KPIs">
                 {/* Card 1: Vivid Magenta (TOTAL STAFF) */}
-                <div className="kpi-banner-card magenta">
+                <div
+                  className="kpi-banner-card magenta"
+                  onClick={() => setNavTab('staff')}
+                  title="Click to view Staff Roster"
+                >
                   <div className="kpi-banner-icon">
                     <IconUsers size={40} color="#ffffff" />
                   </div>
@@ -775,7 +1047,11 @@ export default function App() {
                 </div>
 
                 {/* Card 2: Vivid Cyan (CHECK IN TODAY) */}
-                <div className="kpi-banner-card cyan">
+                <div
+                  className="kpi-banner-card cyan"
+                  onClick={() => setActiveTableFilter('inside')}
+                  title="Click to filter to Checked-In staff"
+                >
                   <div className="kpi-banner-icon">
                     <IconPeaceHand size={42} color="#ffffff" />
                   </div>
@@ -786,7 +1062,11 @@ export default function App() {
                 </div>
 
                 {/* Card 3: Vivid Green (CHECK OUT TODAY) */}
-                <div className="kpi-banner-card green">
+                <div
+                  className="kpi-banner-card green"
+                  onClick={() => setActiveTableFilter('checked_out')}
+                  title="Click to filter to Departed staff"
+                >
                   <div className="kpi-banner-icon">
                     <IconCocktail size={42} color="#ffffff" />
                   </div>
@@ -797,7 +1077,11 @@ export default function App() {
                 </div>
 
                 {/* Card 4: Vivid Amber/Orange (DAYOFF TODAY) */}
-                <div className="kpi-banner-card amber">
+                <div
+                  className="kpi-banner-card amber"
+                  onClick={() => setNavTab('dayoffs')}
+                  title="Click to view Day Off Calendar"
+                >
                   <div className="kpi-banner-icon">
                     <IconCalendar size={40} color="#ffffff" />
                   </div>
@@ -821,7 +1105,11 @@ export default function App() {
                   <div className="panel-heading-title">
                     TASKS & NOTIFICATIONS (CHECK-IN / CHECK-OUT)
                   </div>
-                  <button className="panel-gear-btn" title="Panel settings">
+                  <button
+                    className="panel-gear-btn"
+                    title="Open Messages & Alerts Center"
+                    onClick={() => setIsMessagesOpen(true)}
+                  >
                     <IconGear size={16} />
                   </button>
                 </div>
@@ -847,10 +1135,64 @@ export default function App() {
                     >
                       Departed
                     </button>
-                    <button className="pill-filter-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <span>Filter</span>
-                      <IconChevronDown size={10} />
-                    </button>
+
+                    {/* Filter Dropdown */}
+                    <div className="pill-filter-container">
+                      <button
+                        className={`pill-filter-btn ${advancedFilter !== 'all' ? 'active' : ''}`}
+                        onClick={() => setIsTableFilterMenuOpen(!isTableFilterMenuOpen)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <span>
+                          {advancedFilter === 'all' && 'Filter'}
+                          {advancedFilter === 'late' && 'Filter: Late Shifts'}
+                          {advancedFilter === 'on_time' && 'Filter: On-Time'}
+                          {advancedFilter === 'staff' && 'Filter: Staff Only'}
+                          {advancedFilter === 'guest' && 'Filter: Guests Only'}
+                        </span>
+                        <IconChevronDown size={10} />
+                      </button>
+
+                      {isTableFilterMenuOpen && (
+                        <div className="filter-dropdown-menu">
+                          <button
+                            className={`filter-dropdown-item ${advancedFilter === 'all' ? 'active' : ''}`}
+                            onClick={() => { setAdvancedFilter('all'); setIsTableFilterMenuOpen(false) }}
+                          >
+                            <span>All Records</span>
+                            {advancedFilter === 'all' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                          <button
+                            className={`filter-dropdown-item ${advancedFilter === 'late' ? 'active' : ''}`}
+                            onClick={() => { setAdvancedFilter('late'); setIsTableFilterMenuOpen(false) }}
+                          >
+                            <span style={{ color: '#dc2626' }}>⚠️ Late Arrivals Only</span>
+                            {advancedFilter === 'late' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                          <button
+                            className={`filter-dropdown-item ${advancedFilter === 'on_time' ? 'active' : ''}`}
+                            onClick={() => { setAdvancedFilter('on_time'); setIsTableFilterMenuOpen(false) }}
+                          >
+                            <span>✓ On-Time Shifts Only</span>
+                            {advancedFilter === 'on_time' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                          <button
+                            className={`filter-dropdown-item ${advancedFilter === 'staff' ? 'active' : ''}`}
+                            onClick={() => { setAdvancedFilter('staff'); setIsTableFilterMenuOpen(false) }}
+                          >
+                            <span>👥 Staff Members Only</span>
+                            {advancedFilter === 'staff' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                          <button
+                            className={`filter-dropdown-item ${advancedFilter === 'guest' ? 'active' : ''}`}
+                            onClick={() => { setAdvancedFilter('guest'); setIsTableFilterMenuOpen(false) }}
+                          >
+                            <span>☕ Guests / Visitors Only</span>
+                            {advancedFilter === 'guest' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <button
@@ -974,7 +1316,11 @@ export default function App() {
                 <div className="content-panel">
                   <div className="panel-header-bar">
                     <div className="panel-heading-title">MY PERFORMANCE</div>
-                    <button className="panel-gear-btn">
+                    <button
+                      className="panel-gear-btn"
+                      onClick={() => setIsPerfModalOpen(true)}
+                      title="Configure Performance Alerts (1/Week & 1/Month)"
+                    >
                       <IconGear size={16} />
                     </button>
                   </div>
@@ -1022,7 +1368,11 @@ export default function App() {
                 <div className="content-panel">
                   <div className="panel-header-bar">
                     <div className="panel-heading-title">SEATING CAPACITY & GOALS</div>
-                    <button className="panel-gear-btn">
+                    <button
+                      className="panel-gear-btn"
+                      onClick={() => setIsGoalsModalOpen(true)}
+                      title="Configure Seating Capacity & Targets"
+                    >
                       <IconGear size={16} />
                     </button>
                   </div>
@@ -1046,19 +1396,19 @@ export default function App() {
 
                     <div className="widget-row">
                       <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                        Garden Patio Seating (0 / 16)
+                        Garden Patio Seating (0 / {patioCap})
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <div className="progress-bar-container">
-                          <div className="progress-bar-inner" style={{ width: '0%' }}></div>
+                          <div className="progress-bar-inner" style={{ width: `${patioOccupancyPct}%` }}></div>
                         </div>
-                        <span style={{ fontSize: '11px', fontWeight: 700, width: '32px' }}>0%</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, width: '32px' }}>{patioOccupancyPct}%</span>
                       </div>
                     </div>
 
                     <div className="widget-row">
                       <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                        Barista Shift Coverage ({staffOnShiftCount} / {staffList.length})
+                        Barista Shift Coverage ({staffOnShiftCount} / {baristaTarget})
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <div className="progress-bar-container">
@@ -1767,6 +2117,400 @@ export default function App() {
                 <button type="submit" className="btn-primary">Save Changes</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: LIVE MESSAGES & SYSTEM ALERTS CENTER */}
+      {/* ============================================================== */}
+      {isMessagesOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setIsMessagesOpen(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '640px', width: '100%', borderRadius: '12px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <IconEnvelope size={18} color="#f97316" />
+                <h2 className="modal-title">Live System Messages & Alerts</h2>
+                {unreadAlertsCount > 0 && (
+                  <span className="badge-count" style={{ marginLeft: '4px' }}>
+                    {unreadAlertsCount} unread
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {unreadAlertsCount > 0 && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ fontSize: '11px', padding: '3px 8px' }}
+                    onClick={handleMarkAllAlertsRead}
+                  >
+                    Mark All Read
+                  </button>
+                )}
+                <button className="btn-close" onClick={() => setIsMessagesOpen(false)}>✕</button>
+              </div>
+            </div>
+
+            {/* Category tabs */}
+            <div style={{ display: 'flex', gap: '6px', padding: '12px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', overflowX: 'auto' }}>
+              <button
+                className={`pill-filter-btn ${messagesTab === 'all' ? 'active' : ''}`}
+                style={{ fontSize: '11px', padding: '4px 10px' }}
+                onClick={() => setMessagesTab('all')}
+              >
+                All Alerts ({allAlerts.length})
+              </button>
+              <button
+                className={`pill-filter-btn ${messagesTab === 'checkin_out' ? 'active' : ''}`}
+                style={{ fontSize: '11px', padding: '4px 10px' }}
+                onClick={() => setMessagesTab('checkin_out')}
+              >
+                🟢 Check-In / Out ({allAlerts.filter(a => a.category === 'checkin_out').length})
+              </button>
+              <button
+                className={`pill-filter-btn ${messagesTab === 'late' ? 'active' : ''}`}
+                style={{ fontSize: '11px', padding: '4px 10px' }}
+                onClick={() => setMessagesTab('late')}
+              >
+                ⚠️ Late Alerts ({allAlerts.filter(a => a.category === 'late').length})
+              </button>
+              <button
+                className={`pill-filter-btn ${messagesTab === 'performance' ? 'active' : ''}`}
+                style={{ fontSize: '11px', padding: '4px 10px' }}
+                onClick={() => setMessagesTab('performance')}
+              >
+                📊 Performance (1/Wk & 1/Mo) ({allAlerts.filter(a => a.category === 'performance').length})
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ maxHeight: '420px', overflowY: 'auto', padding: '16px 20px' }}>
+              {allAlerts.filter(a => messagesTab === 'all' || a.category === messagesTab).length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px 16px', color: '#64748b' }}>
+                  <IconCheck size={28} color="#10b981" style={{ marginBottom: '8px' }} />
+                  <p style={{ margin: 0, fontWeight: 600 }}>No alerts in this category.</p>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#94a3b8' }}>Everything is running on schedule.</p>
+                </div>
+              ) : (
+                allAlerts
+                  .filter(a => messagesTab === 'all' || a.category === messagesTab)
+                  .map((alert) => {
+                    const isUnread = !readAlertIds.includes(alert.id)
+                    return (
+                      <div
+                        key={alert.id}
+                        className={`alert-card-item ${isUnread ? 'unread' : ''}`}
+                      >
+                        <div style={{ fontSize: '20px', lineHeight: 1, marginTop: '2px' }}>
+                          {alert.icon}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span className={`alert-badge-tag ${alert.category}`}>
+                                {alert.badge}
+                              </span>
+                              <strong style={{ fontSize: '13px', color: '#0f172a' }}>{alert.title}</strong>
+                            </div>
+                            <span style={{ fontSize: '11px', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                              {alert.timestamp}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '12px', color: '#475569', margin: '0 0 8px 0', lineHeight: 1.45 }}>
+                            {alert.message}
+                          </p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ fontSize: '11px', padding: '3px 8px', color: '#0284c7' }}
+                              onClick={() => {
+                                setIsMessagesOpen(false)
+                                if (alert.targetTab) setNavTab(alert.targetTab)
+                              }}
+                            >
+                              {alert.targetTab === 'performance' ? 'View Performance Roster →' : 'View in Table →'}
+                            </button>
+                            <button
+                              type="button"
+                              style={{ background: 'transparent', border: 'none', fontSize: '11px', color: '#94a3b8', cursor: 'pointer', textDecoration: 'underline' }}
+                              onClick={() => handleToggleAlertRead(alert.id)}
+                            >
+                              {isUnread ? 'Mark as read' : 'Mark unread'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+              )}
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                Auto-syncs check-ins, late alerts & weekly/monthly reports
+              </span>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setIsMessagesOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: PERFORMANCE ALERTS & REVIEW CONFIGURATION */}
+      {/* ============================================================== */}
+      {isPerfModalOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setIsPerfModalOpen(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '520px', width: '100%', borderRadius: '12px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <IconTrophy size={18} color="#f97316" />
+                <h2 className="modal-title">Performance Review & Alert Schedule</h2>
+              </div>
+              <button className="btn-close" onClick={() => setIsPerfModalOpen(false)}>✕</button>
+            </div>
+
+            <form onSubmit={handleSavePerfSettings}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* 1/Week Performance Alert */}
+                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '13px', color: '#0f172a' }}>
+                    <input
+                      type="checkbox"
+                      checked={cafeSettings.weekly_perf_alert !== false}
+                      onChange={(e) => setCafeSettings({ ...cafeSettings, weekly_perf_alert: e.target.checked })}
+                    />
+                    <span>Weekly Performance Alert (1/Week)</span>
+                  </label>
+                  <p style={{ margin: '6px 0 8px 24px', fontSize: '12px', color: '#64748b' }}>
+                    Sends a weekly digest alert highlighting overall punctuality rate and flagged late shifts across all roster staff.
+                  </p>
+                  <div style={{ marginLeft: '24px' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '11px', padding: '4px 10px' }}
+                      onClick={handleTriggerWeeklyAlert}
+                    >
+                      ⚡ Trigger 1/Week Alert Now
+                    </button>
+                  </div>
+                </div>
+
+                {/* 1/Month Performance Review */}
+                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '13px', color: '#0f172a' }}>
+                    <input
+                      type="checkbox"
+                      checked={cafeSettings.monthly_perf_alert !== false}
+                      onChange={(e) => setCafeSettings({ ...cafeSettings, monthly_perf_alert: e.target.checked })}
+                    />
+                    <span>Monthly Performance Review Milestone (1/Month)</span>
+                  </label>
+                  <p style={{ margin: '6px 0 8px 24px', fontSize: '12px', color: '#64748b' }}>
+                    Consolidates monthly attendance, opens scheduled review windows, and flags action plans for late shifts.
+                  </p>
+                  <div style={{ marginLeft: '24px' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '11px', padding: '4px 10px' }}
+                      onClick={handleTriggerMonthlyAlert}
+                    >
+                      ⚡ Trigger 1/Month Review Now
+                    </button>
+                  </div>
+                </div>
+
+                {/* Late Shift Grace Period */}
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Late Shift Grace Period (Minutes)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    className="form-input"
+                    value={cafeSettings.late_grace_period_mins || 10}
+                    onChange={(e) => setCafeSettings({ ...cafeSettings, late_grace_period_mins: parseInt(e.target.value) || 0 })}
+                  />
+                  <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginTop: '4px' }}>
+                    Staff checking in after this grace period will trigger a Late Check-In Alert.
+                  </span>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => { setIsPerfModalOpen(false); setNavTab('performance') }}
+                >
+                  Go to Performance Page →
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={settingsSaving}
+                >
+                  {settingsSaving ? 'Saving...' : 'Save Schedule Settings'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: SEATING CAPACITY & GOALS CONFIGURATION */}
+      {/* ============================================================== */}
+      {isGoalsModalOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setIsGoalsModalOpen(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '480px', width: '100%', borderRadius: '12px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <IconGear size={18} color="#f97316" />
+                <h2 className="modal-title">Configure Seating Capacity & Goals</h2>
+              </div>
+              <button className="btn-close" onClick={() => setIsGoalsModalOpen(false)}>✕</button>
+            </div>
+
+            <form onSubmit={handleSaveGoals}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Main Dining Seating Capacity</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="form-input"
+                    value={cafeSettings.seating_capacity || 48}
+                    onChange={(e) => setCafeSettings({ ...cafeSettings, seating_capacity: parseInt(e.target.value) || 1 })}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Garden Patio Seating Capacity</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="form-input"
+                    value={cafeSettings.patio_capacity || 16}
+                    onChange={(e) => setCafeSettings({ ...cafeSettings, patio_capacity: parseInt(e.target.value) || 1 })}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Barista Shift Coverage Target</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="form-input"
+                    value={cafeSettings.barista_target || 2}
+                    onChange={(e) => setCafeSettings({ ...cafeSettings, barista_target: parseInt(e.target.value) || 1 })}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsGoalsModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={settingsSaving}
+                >
+                  {settingsSaving ? 'Saving...' : 'Save Goals & Capacity'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: ADMINISTRATOR PROFILE & STATUS */}
+      {/* ============================================================== */}
+      {isProfileModalOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setIsProfileModalOpen(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '420px', width: '100%', borderRadius: '12px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <IconUserCircle size={20} color="#f97316" />
+                <h2 className="modal-title">Administrator Profile</h2>
+              </div>
+              <button className="btn-close" onClick={() => setIsProfileModalOpen(false)}>✕</button>
+            </div>
+
+            <div className="modal-body" style={{ textAlign: 'center', padding: '24px 20px' }}>
+              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#ffedd5', color: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                <IconUserCircle size={40} color="#ea580c" />
+              </div>
+              <h3 style={{ margin: '0 0 4px', fontSize: '17px', color: '#0f172a' }}>System Administrator</h3>
+              <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748b' }}>admin@chafe.internal</p>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', color: '#059669', padding: '4px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 700 }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }}></span>
+                Full Enterprise Access Active
+              </div>
+
+              <div style={{ marginTop: '20px', textAlign: 'left', background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                  <span style={{ color: '#64748b' }}>Role:</span>
+                  <strong>Root Admin / Manager</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                  <span style={{ color: '#64748b' }}>Version:</span>
+                  <span>v2.4.0 Live Enterprise</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                  <span style={{ color: '#64748b' }}>Active Alerts:</span>
+                  <strong style={{ color: '#ea580c' }}>{allAlerts.length} Messages</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ color: '#ef4444' }}
+                onClick={() => { setIsProfileModalOpen(false); handleLogout() }}
+              >
+                Sign Out
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setIsProfileModalOpen(false)}
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

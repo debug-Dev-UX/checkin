@@ -307,9 +307,15 @@ body {
   gap: 16px;
 }
 
+.admin-dropdown-container {
+  position: relative;
+}
+
 .admin-dropdown-btn {
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  border-radius: 6px;
   font-size: 13px;
   font-weight: 600;
   color: #334155;
@@ -317,11 +323,63 @@ body {
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-dropdown-btn:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.admin-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+  min-width: 220px;
+  z-index: 200;
+  padding: 6px 0;
+  animation: modalFadeIn 0.15s ease-out;
+}
+
+.admin-dropdown-header {
+  padding: 8px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.admin-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.admin-dropdown-item:hover {
+  background: #f8fafc;
+  color: #0f172a;
 }
 
 .icon-badge-btn {
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
+  padding: 5px 8px;
+  border-radius: 6px;
   position: relative;
   font-size: 16px;
   color: #64748b;
@@ -329,15 +387,140 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.icon-badge-btn:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
 }
 
 .badge-count {
-  background-color: #10b981;
+  background-color: #f97316;
   color: #ffffff;
   font-size: 10px;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 9999px;
+  min-width: 16px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.badge-count.zero {
+  background-color: #94a3b8;
+}
+
+.pill-filter-container {
+  position: relative;
+  display: inline-block;
+}
+
+.filter-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+  min-width: 200px;
+  z-index: 100;
+  padding: 6px 0;
+  animation: modalFadeIn 0.15s ease-out;
+}
+
+.filter-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.filter-dropdown-item:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.filter-dropdown-item.active {
+  background: #fff7ed;
+  color: #ea580c;
+  font-weight: 700;
+}
+
+/* NOTIFICATION ALERT ITEMS */
+.alert-card-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  margin-bottom: 8px;
+  transition: all 0.15s ease;
+}
+
+.alert-card-item.unread {
+  background: #f8fafc;
+  border-left: 4px solid #f97316;
+}
+
+.alert-card-item:hover {
+  background: #f1f5f9;
+}
+
+.alert-badge-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+
+.alert-badge-tag.late {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.alert-badge-tag.checkin {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.alert-badge-tag.checkout {
+  background: #f0f9ff;
+  color: #0284c7;
+  border: 1px solid #bae6fd;
+}
+
+.alert-badge-tag.performance {
+  background: #f5f3ff;
+  color: #7c3aed;
+  border: 1px solid #ddd6fe;
+}
+
+.kpi-banner-card {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.kpi-banner-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px -2px rgba(0, 0, 0, 0.12);
 }
 
 .user-thumbnail-header {
