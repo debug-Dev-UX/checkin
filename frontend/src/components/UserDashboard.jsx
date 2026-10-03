@@ -1,12 +1,24 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import jsQR from 'jsqr'
 import {
   IconCamera,
   IconCheck,
   IconClock,
+  IconCalendar,
   IconRefresh,
   IconUserCircle,
-  IconGear
+  IconGear,
+  IconDoorIn,
+  IconDoorOut,
+  IconBell,
+  IconPhone,
+  IconMenu,
+  IconSearch,
+  IconHome,
+  IconCoffee,
+  IconTrophy,
+  IconQrCode,
+  IconLogOut
 } from '../Icons'
 import {
   getTodayControlFromFirebase,
@@ -16,7 +28,7 @@ import {
 } from '../services/firebaseService'
 
 /**
- * Web Audio API chime on successful scan
+ * Web Audio API chime on successful scan / action
  */
 function playSuccessBeep() {
   try {
@@ -39,12 +51,11 @@ function playSuccessBeep() {
     osc.start()
     osc.stop(ctx.currentTime + 0.25)
   } catch {
-    // AudioContext might be restricted until user gesture
+    // quiet catch
   }
 }
 
 export default function UserDashboard({
-  apiBase,
   staffList = [],
   onShiftUpdated,
   onSwitchToAdmin,
@@ -57,13 +68,21 @@ export default function UserDashboard({
   // Clock
   const [currentTime, setCurrentTime] = useState(new Date())
 
-  // Scanner state
+  // Active view tab: 'clock' (Home) | 'schedule' | 'scan' | 'profile'
+  const [activeTab, setActiveTab] = useState('clock')
+
+  // Search & Navigation state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [activeModal, setActiveModal] = useState(null) // null | 'performance' | 'station' | 'alerts' | 'profile' | 'support' | 'action_confirm'
+  const [pendingAction, setPendingAction] = useState(null) // 'in' | 'out'
+
+  // Scanner state - ALWAYS back camera by default
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraFacing, setCameraFacing] = useState('environment') // 'environment' | 'user'
   const [cameraError, setCameraError] = useState(null)
-  const [scanMode, setScanMode] = useState('in') // 'in' = Clock In | 'out' = Clock Out
   const [isProcessing, setIsProcessing] = useState(false)
-  const [selectedStaffId, setSelectedStaffId] = useState('')
+  const [selectedStaffId, setSelectedStaffId] = useState(staffList[0]?.id?.toString() || '')
 
   // Result & logs
   const [scanResult, setScanResult] = useState(null)
@@ -75,6 +94,36 @@ export default function UserDashboard({
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
+
+  // Sync selected staff id if empty
+  useEffect(() => {
+    if (!selectedStaffId && staffList.length > 0) {
+      setSelectedStaffId(staffList[0].id.toString())
+    }
+  }, [staffList, selectedStaffId])
+
+  // Current selected staff member
+  const currentStaff = useMemo(() => {
+    return staffList.find(s => s.id?.toString() === selectedStaffId) || staffList[0] || {
+      id: 1,
+      name: 'Trinity Walls',
+      role: 'Head Barista',
+      department: 'Main Counter',
+      shift_start: '07:30',
+      shift_end: '16:00',
+    }
+  }, [staffList, selectedStaffId])
+
+  // Initials
+  const initials = useMemo(() => {
+    if (!currentStaff?.name) return 'ST'
+    return currentStaff.name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .substring(0, 2)
+      .toUpperCase()
+  }, [currentStaff])
 
   // Fetch today's staff logs
   const fetchTodayLogs = useCallback(async () => {
@@ -90,6 +139,15 @@ export default function UserDashboard({
   useEffect(() => {
     fetchTodayLogs()
   }, [fetchTodayLogs])
+
+  // Check if selected staff is currently checked in
+  const activeRecord = useMemo(() => {
+    return todayStaffLogs.find(
+      l => (l.name === currentStaff?.name || l.email === currentStaff?.email) && l.status === 'checked_in'
+    )
+  }, [todayStaffLogs, currentStaff])
+
+  const isCheckedIn = Boolean(activeRecord)
 
   // Stop camera stream cleanly
   const stopCamera = useCallback(() => {
@@ -107,35 +165,42 @@ export default function UserDashboard({
     setCameraActive(false)
   }, [])
 
-  // Start camera stream
+  // Start camera stream (ALWAYS BACK CAMERA PREFERRED)
   const startCamera = useCallback(async () => {
     stopCamera()
     setCameraError(null)
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setCameraError('Camera access is not supported by your browser. Use the roster below to clock in.')
+      setCameraError('Camera access not supported by your browser.')
       return
     }
 
     try {
-      const constraints = {
-        video: {
-          facingMode: cameraFacing,
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
+      let stream = null
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: cameraFacing },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        })
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        })
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
       streamRef.current = stream
-
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
         setCameraActive(true)
       }
     } catch (err) {
-      setCameraError(`Camera error: ${err.message || 'Permission denied'}. Please allow camera access or use the 1-tap roster below.`)
+      setCameraError(`Camera error: ${err.message || 'Permission denied'}`)
       setCameraActive(false)
     }
   }, [cameraFacing, stopCamera])
@@ -145,26 +210,29 @@ export default function UserDashboard({
   }
 
   useEffect(() => {
-    if (cameraActive) {
+    if (activeTab === 'scan') {
       startCamera()
+    } else {
+      stopCamera()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraFacing])
+    return () => stopCamera()
+  }, [activeTab, cameraFacing, startCamera, stopCamera])
 
   // Execute staff clock-in / clock-out
-  const handleExecuteClock = useCallback(async (staffMember, source = 'Camera Scan') => {
+  const handleExecuteClock = useCallback(async (actionType, staffMember = currentStaff, source = 'Quick Touch') => {
     if (!staffMember) return
     setIsProcessing(true)
 
     try {
-      if (scanMode === 'in') {
+      if (actionType === 'in') {
         const payload = {
+          staff_id: staffMember.id,
           name: staffMember.name,
           email: staffMember.email,
           type: 'employee',
-          department: staffMember.role || 'Service',
+          department: staffMember.role || staffMember.department || 'Service',
           badge_no: `STAFF-${staffMember.id || 'ROSTER'}`,
-          location: 'Staff Entrance Terminal',
+          location: 'Main Counter Terminal',
           note: `Clocked in via ${source}`,
         }
 
@@ -178,10 +246,9 @@ export default function UserDashboard({
           role: staffMember.role,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
-          lateMins: newRecord?.late_minutes || 0,
         })
       } else {
-        // Clock Out: find active check-in
+        // Clock Out
         const checkinsData = await getCheckinsFromFirebase()
         const active = (checkinsData || []).find(
           c => c.status === 'checked_in' && (c.email === staffMember.email || c.name === staffMember.name)
@@ -191,7 +258,7 @@ export default function UserDashboard({
           throw new Error(`${staffMember.name} is not currently clocked in.`)
         }
 
-        await checkoutInFirebase(active.id)
+        await checkoutInFirebase(active.id, staffMember.id)
 
         playSuccessBeep()
         setScanResult({
@@ -200,29 +267,30 @@ export default function UserDashboard({
           name: staffMember.name,
           role: staffMember.role,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          status: 'Shift Completed',
+          status: 'Shift Completed ✓',
         })
       }
 
-      fetchTodayLogs()
+      await fetchTodayLogs()
       if (onShiftUpdated) onShiftUpdated()
 
       setTimeout(() => {
         setScanResult(null)
-        setLastScannedCode(null)
-      }, 4500)
+      }, 5000)
     } catch (err) {
       setScanResult({
         type: 'error',
         message: err.message,
       })
-      setTimeout(() => setScanResult(null), 4500)
+      setTimeout(() => setScanResult(null), 5000)
     } finally {
       setIsProcessing(false)
+      setActiveModal(null)
+      setPendingAction(null)
     }
-  }, [apiBase, fetchTodayLogs, onShiftUpdated, scanMode])
+  }, [currentStaff, fetchTodayLogs, onShiftUpdated])
 
-  // Continuous frame loop with jsQR
+  // Continuous frame loop with jsQR for scan tab
   useEffect(() => {
     let active = true
 
@@ -248,23 +316,18 @@ export default function UserDashboard({
           const text = code.data.toLowerCase()
 
           let matchedStaff = staffList.find(s =>
-            text.includes(s.email.toLowerCase()) ||
-            text.includes(s.name.toLowerCase()) ||
+            text.includes(s.email?.toLowerCase() || '---') ||
+            text.includes(s.name?.toLowerCase() || '---') ||
             text.includes(`staff-${s.id}`)
           )
 
-          if (!matchedStaff && staffList.length > 0) {
-            matchedStaff = staffList.find(s => s.id.toString() === selectedStaffId) || staffList[0]
-          }
+          if (!matchedStaff) matchedStaff = currentStaff
 
           if (matchedStaff) {
-            handleExecuteClock(matchedStaff, 'Camera QR Scan')
-          } else {
-            setScanResult({
-              type: 'info',
-              message: `QR code detected: "${code.data}". Please select staff profile below to complete.`,
-            })
-            setTimeout(() => setScanResult(null), 4500)
+            playSuccessBeep()
+            // Popup action modal to choose Check In or Check Out
+            setPendingAction(isCheckedIn ? 'out' : 'in')
+            setActiveModal('action_confirm')
           }
         }
       }
@@ -282,288 +345,381 @@ export default function UserDashboard({
         cancelAnimationFrame(animFrameIdRef.current)
       }
     }
-  }, [cameraActive, isProcessing, lastScannedCode, staffList, selectedStaffId, handleExecuteClock])
+  }, [cameraActive, isProcessing, lastScannedCode, staffList, currentStaff, isCheckedIn])
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => stopCamera()
-  }, [stopCamera])
+  // Hub items matching 3x3 grid
+  const hubItems = useMemo(() => [
+    { id: 'roster', title: 'Shift Roster', icon: <IconCalendar size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
+    { id: 'dayoff', title: 'Day Off', icon: <span style={{ fontSize: '24px', lineHeight: 1 }}>🌴</span>, action: () => setActiveTab('schedule') },
+    { id: 'perf', title: 'Performance', icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
+    { id: 'logs', title: 'Shift Logs', icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
+    { id: 'station', title: 'Station', icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
+    { id: 'badge', title: 'ID Badge', icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
+    { id: 'alerts', title: 'Store Alerts', icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
+    { id: 'profile', title: 'My Profile', icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveModal('profile') },
+    { id: 'support', title: 'Support', icon: <IconPhone size={24} color="#ffffff" />, action: () => setActiveModal('support') },
+  ], [])
+
+  const filteredHubItems = useMemo(() => {
+    if (!searchQuery.trim()) return hubItems
+    return hubItems.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()))
+  }, [hubItems, searchQuery])
+
+  // Formatted date and time string matching reference screenshot style (e.g. 10.00 am | 27 Nov 2026)
+  const formattedShiftDateTime = useMemo(() => {
+    const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase().replace(' ', ' ')
+    const dateStr = currentTime.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })
+    return `${timeStr} | ${dateStr}`
+  }, [currentTime])
 
   return (
-    <div className="user-portal-root">
-      {/* Top Navbar for Staff / User */}
-      <header className="user-portal-header">
-        <div className="user-portal-brand">
-          <span className="brand-name">Chafé</span>
-          <span className="brand-tag">Staff Portal</span>
-        </div>
-
-        {/* Live Digital Clock */}
-        <div className="user-portal-clock">
-          <div className="live-clock-time">
-            {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </div>
-          <div className="live-clock-date">
-            {currentTime.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
-          </div>
-        </div>
-
-        {/* Switch to Admin Dashboard Button */}
-        <div className="user-portal-actions">
+    <div className="mobile-app-layout-wrapper">
+      {/* ============================================================== */}
+      {/* 1. TOP MOBILE APP BAR (MENU, SEARCH, NOTIFICATION BELL)       */}
+      {/* ============================================================== */}
+      <header className="mobile-app-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button
-            className="btn-switch-admin"
-            onClick={onSwitchToAdmin}
-            title="Switch to Admin Dashboard"
+            type="button"
+            className="mobile-header-menu-btn"
+            onClick={() => setIsDrawerOpen(true)}
+            title="Open Menu"
+            aria-label="Open Navigation Menu"
           >
-            <IconGear size={15} />
-            <span>Admin Dashboard</span>
+            <IconMenu size={22} color="#ffffff" />
           </button>
+          <div className="mobile-header-brand-title">
+            Chafé • Staff Terminal
+          </div>
         </div>
+
+        <div className="mobile-header-search-bar">
+          <span className="mobile-header-search-icon">
+            <IconSearch size={16} />
+          </span>
+          <input
+            type="text"
+            className="mobile-header-search-input"
+            placeholder="Search here"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <button
+          type="button"
+          className="mobile-header-bell-btn"
+          onClick={() => setActiveModal('alerts')}
+          title="Store Alerts & Notifications"
+          aria-label="View Alerts"
+        >
+          <IconBell size={20} color="#ffffff" />
+          <span className="mobile-bell-badge"></span>
+        </button>
       </header>
 
-      {/* Main Staff Container */}
-      <main className="user-portal-content">
-        {/* Welcome Banner */}
-        <div className="user-welcome-card">
-          <div>
-            <h1 className="user-welcome-title">Staff Attendance & Camera Check-In</h1>
-            <p className="user-welcome-subtitle">
-              Open your camera to scan your QR badge, or tap your name below to clock in / out.
-            </p>
-          </div>
+      {/* Main Container */}
+      <main style={{ flex: 1 }}>
+        {/* ============================================================== */}
+        {/* TAB 1: HOME VIEW (FULL RESPONSIVE DESKTOP & MOBILE)           */}
+        {/* ============================================================== */}
+        {activeTab === 'clock' && (
+          <div className="responsive-home-grid">
+            {/* Left Column: Shift Details & Action Buttons */}
+            <div className="responsive-left-column">
+              {/* 1. TODAY'S SHIFT CARD (UPCOMING MEETINGS IN MOCKUP) */}
+              <div className="mobile-shift-card">
+                <div className="shift-card-top-row">
+                  <div className="shift-card-user-info">
+                    <div className="shift-card-avatar">
+                      {initials}
+                    </div>
+                    <div>
+                      <h2 className="shift-card-name">{currentStaff?.name || 'Trinity Walls'}</h2>
+                      <div className="shift-card-time">{formattedShiftDateTime}</div>
+                    </div>
+                  </div>
 
-          {/* Quick Mode Toggle */}
-          <div className="portal-mode-toggle">
-            <button
-              className={`portal-mode-btn ${scanMode === 'in' ? 'active-in' : ''}`}
-              onClick={() => setScanMode('in')}
-            >
-              ☀️ Clock In (Start Shift)
-            </button>
-            <button
-              className={`portal-mode-btn ${scanMode === 'out' ? 'active-out' : ''}`}
-              onClick={() => setScanMode('out')}
-            >
-              🌙 Clock Out (End Shift)
-            </button>
-          </div>
-        </div>
+                  <div className="shift-card-approved-badge">
+                    {isCheckedIn ? 'On Shift' : 'Approved'}
+                  </div>
+                </div>
 
-        {/* Scan Result Notification */}
-        {scanResult && (
-          <div className={`scan-feedback-banner ${scanResult.type}`} style={{ marginBottom: '20px' }}>
-            {scanResult.type === 'success' && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <IconCheck size={20} color="#ffffff" />
+                <div className="shift-card-details-grid">
+                  <div>
+                    <div className="shift-detail-label">Host / Station</div>
+                    <div className="shift-detail-val">
+                      {currentStaff?.role || 'Main Counter'} (Barista, Chafé)
+                    </div>
                   </div>
                   <div>
-                    <strong style={{ fontSize: '15px' }}>{scanResult.action} Confirmed!</strong>
-                    <div style={{ fontSize: '13px', marginTop: '2px' }}>
-                      {scanResult.name} ({scanResult.role}) • {scanResult.time}
+                    <div className="shift-detail-label">Purpose of Visit / Shift</div>
+                    <div className="shift-detail-val">
+                      {isCheckedIn
+                        ? 'Active On Shift ✓'
+                        : `${currentStaff?.shift_start || '07:30'} - ${currentStaff?.shift_end || '16:00'}`}
                     </div>
                   </div>
                 </div>
-                <span className="badge-status-pill green" style={{ fontSize: '12px', padding: '4px 10px' }}>
-                  {scanResult.status}
+
+                {/* Staff Switcher for Store Terminal */}
+                {staffList.length > 1 && (
+                  <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Switch Staff Profile:</span>
+                    <select
+                      value={selectedStaffId}
+                      onChange={(e) => setSelectedStaffId(e.target.value)}
+                      style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', fontWeight: 600 }}
+                    >
+                      {staffList.map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Feedback Banner */}
+              {scanResult && (
+                <div
+                  className={`pro-action-alert ${scanResult.type === 'success' ? 'alert-success' : 'alert-error'}`}
+                  style={{ margin: '0 0 16px' }}
+                >
+                  <div className="alert-icon-box">{scanResult.type === 'success' ? '✓' : '⚠️'}</div>
+                  <div className="alert-content">
+                    <strong>{scanResult.action ? `${scanResult.action} Confirmed!` : scanResult.message}</strong>
+                    {scanResult.name && <div>{scanResult.name} • {scanResult.time} • {scanResult.status}</div>}
+                  </div>
+                </div>
+              )}
+
+              {/* 2. TWO LARGE ACTION CARDS: CHECK - IN & CHECK - OUT (GOLDEN BORDER) */}
+              <div className="mobile-action-cards-grid">
+                {/* Check - In Card */}
+                <button
+                  type="button"
+                  className={`mobile-action-card ${!isCheckedIn ? 'active-state' : ''}`}
+                  onClick={() => handleExecuteClock('in')}
+                  disabled={isProcessing}
+                >
+                  <div className="mobile-action-icon">
+                    <IconDoorIn size={36} color="#f59e0b" />
+                  </div>
+                  <div className="mobile-action-label">Check - In</div>
+                  <div className="mobile-action-sublabel">
+                    {!isCheckedIn ? 'Ready to Start' : 'Already on Shift'}
+                  </div>
+                </button>
+
+                {/* Check - Out Card */}
+                <button
+                  type="button"
+                  className={`mobile-action-card ${isCheckedIn ? 'active-state' : ''}`}
+                  onClick={() => handleExecuteClock('out')}
+                  disabled={isProcessing}
+                >
+                  <div className="mobile-action-icon">
+                    <IconDoorOut size={36} color="#f59e0b" />
+                  </div>
+                  <div className="mobile-action-label">Check - Out</div>
+                  <div className="mobile-action-sublabel">
+                    {isCheckedIn ? 'Complete Shift' : 'No Active Shift'}
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Right Column: Work Hub 3x3 Grid & Today's Attendance Activity */}
+            <div className="responsive-right-column">
+              {/* 3. SECTION HEADING: TYPE OF VISIT / WORK HUB */}
+              <div className="mobile-section-heading">
+                <span>Type of Visit</span>
+                <span
+                  className="mobile-section-heading-sub"
+                  onClick={() => setActiveTab('schedule')}
+                >
+                  Today ({todayStaffLogs.length}) →
                 </span>
               </div>
-            )}
 
-            {scanResult.type === 'error' && (
-              <div>
-                <strong>Clock Error:</strong> {scanResult.message}
+              {/* 4. 3x3 FEATURE GRID (9 SQUARE BUTTONS) */}
+              <div className="mobile-grid-3x3">
+                {filteredHubItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="mobile-grid-card"
+                    onClick={item.action}
+                    title={item.title}
+                  >
+                    <div className="mobile-grid-card-icon">
+                      {item.icon}
+                    </div>
+                    <div className="mobile-grid-card-label">
+                      {item.title}
+                    </div>
+                  </button>
+                ))}
               </div>
-            )}
 
-            {scanResult.type === 'info' && (
-              <div>{scanResult.message}</div>
-            )}
+              {/* Desktop Recent Shift Activity Card */}
+              <div className="desktop-recent-shifts-card">
+                <div className="desktop-recent-header">
+                  <span>TODAY'S SHIFT ACTIVITY</span>
+                  <button
+                    type="button"
+                    className="pro-link-btn"
+                    onClick={() => setActiveTab('schedule')}
+                  >
+                    View All ({todayStaffLogs.length}) →
+                  </button>
+                </div>
+                {todayStaffLogs.length === 0 ? (
+                  <div style={{ color: '#94a3b8', fontSize: '12px', padding: '8px 0' }}>
+                    No staff clocked in today yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {todayStaffLogs.slice(0, 3).map((log) => (
+                      <div
+                        key={log.id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '10px 12px',
+                          borderRadius: '10px',
+                          background: '#f8fafc',
+                          border: '1px solid #f1f5f9'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a' }}>
+                            {log.name}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>
+                            {log.department} • {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                          </div>
+                        </div>
+                        <span className={`pro-badge ${log.status === 'checked_in' ? 'badge-emerald' : 'badge-slate'}`}>
+                          {log.status === 'checked_in' ? 'Active' : 'Completed'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Central Grid: Camera Scanner & Staff Quick Clock */}
-        <div className="user-portal-grid">
-          {/* Left Column: Live Camera Box */}
-          <div className="user-panel camera-card">
-            <div className="user-panel-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <IconCamera size={18} color="#f97316" />
-                <span style={{ fontWeight: 800 }}>CAMERA QR SCANNER</span>
+        {/* ============================================================== */}
+        {/* TAB 2: CAMERA SCANNER (CENTER SCAN ACTION)                     */}
+        {/* ============================================================== */}
+        {activeTab === 'scan' && (
+          <div style={{ padding: '18px' }}>
+            <div className="pro-card" style={{ padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>CAMERA QR SCANNER</h3>
+                  <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 700 }}>● BACK CAMERA ACTIVE</span>
+                </div>
+                <button
+                  type="button"
+                  className="pro-btn-secondary"
+                  onClick={() => setActiveTab('clock')}
+                  style={{ padding: '5px 10px', fontSize: '12px' }}
+                >
+                  ✕ Close
+                </button>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span className={`status-indicator-dot ${cameraActive ? 'active' : ''}`} />
-                <span style={{ fontSize: '11px', fontWeight: 700, color: cameraActive ? '#10b981' : '#94a3b8' }}>
-                  {cameraActive ? 'Camera Live' : 'Camera Stopped'}
-                </span>
+              {/* Viewfinder Video */}
+              <div className="camera-viewfinder-box" style={{ borderRadius: '16px', overflow: 'hidden' }}>
+                <video
+                  ref={videoRef}
+                  className="camera-video-element"
+                  playsInline
+                  muted
+                />
+                <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+                <div className="scanner-reticle-overlay">
+                  <div className="reticle-corner top-left" />
+                  <div className="reticle-corner top-right" />
+                  <div className="reticle-corner bottom-left" />
+                  <div className="reticle-corner bottom-right" />
+                  {cameraActive && <div className="scanning-laser-line" />}
+                </div>
+
+                {!cameraActive && (
+                  <div className="camera-off-overlay">
+                    <div style={{ fontSize: '36px' }}>📷</div>
+                    <strong>Starting Back Camera...</strong>
+                  </div>
+                )}
               </div>
-            </div>
 
-            {/* Video Box */}
-            <div className="camera-viewfinder-box">
-              <video
-                ref={videoRef}
-                className="camera-video-element"
-                playsInline
-                muted
-              />
-
-              {/* Glowing Corner Target Overlay */}
-              <div className="scanner-reticle-overlay">
-                <div className="reticle-corner top-left" />
-                <div className="reticle-corner top-right" />
-                <div className="reticle-corner bottom-left" />
-                <div className="reticle-corner bottom-right" />
-                {cameraActive && <div className="scanning-laser-line" />}
-              </div>
-
-              {/* Overlay Prompt when Camera is Off */}
-              {!cameraActive && (
-                <div className="camera-off-overlay">
-                  <div style={{ fontSize: '48px', marginBottom: '8px' }}>📷</div>
-                  <strong style={{ fontSize: '15px', color: '#1e293b' }}>Camera is Offline</strong>
-                  <p style={{ fontSize: '12px', color: '#64748b', maxWidth: '280px', marginTop: '6px' }}>
-                    Open your camera to scan your physical badge or QR card.
-                  </p>
-                  <button
-                    className="btn-primary"
-                    style={{ marginTop: '16px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontSize: '13px' }}
-                    onClick={startCamera}
-                  >
-                    <IconCamera size={16} color="#ffffff" />
-                    <span>Open Camera</span>
-                  </button>
+              {cameraError && (
+                <div className="camera-error-banner" style={{ marginTop: '12px' }}>
+                  ⚠️ {cameraError}
                 </div>
               )}
-            </div>
 
-            {/* Camera Error */}
-            {cameraError && (
-              <div className="camera-error-banner">
-                ⚠️ {cameraError}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleToggleFacing}
+                  style={{ flex: 1, padding: '10px', fontSize: '12px' }}
+                >
+                  <IconRefresh size={14} />
+                  <span>Flip ({cameraFacing === 'environment' ? 'Rear' : 'Front'})</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => handleExecuteClock(isCheckedIn ? 'out' : 'in')}
+                  style={{ flex: 1, padding: '10px', fontSize: '12px' }}
+                >
+                  <span>1-Tap {isCheckedIn ? 'Clock Out' : 'Clock In'}</span>
+                </button>
               </div>
-            )}
-
-            {/* Controls */}
-            <div className="camera-control-bar">
-              {cameraActive ? (
-                <button className="btn-secondary" onClick={stopCamera}>
-                  Stop Camera
-                </button>
-              ) : (
-                <button className="btn-primary" onClick={startCamera}>
-                  Start Camera
-                </button>
-              )}
-
-              <button
-                className="btn-secondary"
-                onClick={handleToggleFacing}
-                title="Switch camera"
-              >
-                <IconRefresh size={14} />
-                <span>Flip ({cameraFacing === 'environment' ? 'Rear' : 'Front'})</span>
-              </button>
-
-              <button
-                className="btn-secondary"
-                onClick={() => {
-                  const staff = staffList.find(s => s.id.toString() === selectedStaffId) || staffList[0]
-                  if (staff) {
-                    handleExecuteClock(staff, 'Terminal Quick Scan')
-                  } else {
-                    alert('Please create staff members first in the Admin Dashboard.')
-                  }
-                }}
-                disabled={staffList.length === 0}
-              >
-                ⚡ Quick Scan
-              </button>
             </div>
           </div>
+        )}
 
-          {/* Right Column: 1-Tap Staff Roster & Today Status */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Staff 1-Tap Clock In */}
-            <div className="user-panel" style={{ padding: '20px' }}>
-              <div className="user-panel-header" style={{ marginBottom: '14px' }}>
-                <span style={{ fontWeight: 800 }}>TAP YOUR NAME TO {scanMode === 'in' ? 'CLOCK IN' : 'CLOCK OUT'}</span>
-              </div>
-
-              {staffList.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '24px', color: '#64748b', fontSize: '13px' }}>
-                  No staff members created yet.
-                  <div style={{ marginTop: '10px' }}>
-                    <button className="btn-secondary" onClick={onSwitchToAdmin}>
-                      Go to Admin Dashboard to add staff
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {staffList.map((s) => {
-                    const isCheckedIn = todayStaffLogs.some(l => l.name === s.name && l.status === 'checked_in')
-                    return (
-                      <div key={s.id} className="user-staff-card">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div className="user-avatar-circle" style={{ width: '38px', height: '38px' }}>
-                            <IconUserCircle size={22} color="#475569" />
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a' }}>{s.name}</div>
-                            <div style={{ fontSize: '11px', color: '#64748b' }}>
-                              {s.role} • Shift: ⏰ {s.shift_start} - {s.shift_end}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span className={`badge-status-pill ${isCheckedIn ? 'green' : 'blue'}`}>
-                            {isCheckedIn ? 'On Shift' : 'Off Duty'}
-                          </span>
-
-                          <button
-                            className={scanMode === 'in' ? 'btn-primary' : 'btn-secondary'}
-                            style={{ fontSize: '11px', padding: '6px 12px' }}
-                            onClick={() => handleExecuteClock(s, 'Manual Click')}
-                            disabled={isProcessing}
-                          >
-                            {scanMode === 'in' ? 'Clock In' : 'Clock Out'}
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Today's Recent Clock-Ins */}
-            <div className="user-panel" style={{ padding: '20px' }}>
-              <div className="user-panel-header" style={{ marginBottom: '12px' }}>
-                <span style={{ fontWeight: 800 }}>TODAY&apos;S SHIFT ACTIVITY</span>
-                <span style={{ fontSize: '11px', color: '#64748b' }}>{todayStaffLogs.length} shifts logged</span>
+        {/* ============================================================== */}
+        {/* TAB 3: SCHEDULE / ROSTER VIEW                                  */}
+        {/* ============================================================== */}
+        {activeTab === 'schedule' && (
+          <div style={{ padding: '18px' }}>
+            <div className="pro-card" style={{ padding: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800 }}>TODAY'S ATTENDANCE</h3>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>{todayStaffLogs.length} shifts logged</span>
               </div>
 
               {todayStaffLogs.length === 0 ? (
-                <div style={{ fontSize: '12px', color: '#94a3b8', textAlign: 'center', padding: '16px' }}>
-                  No staff members have clocked in today yet.
+                <div style={{ textAlign: 'center', padding: '24px 10px', color: '#94a3b8', fontSize: '13px' }}>
+                  No staff clocked in today yet.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {todayStaffLogs.map(log => (
-                    <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                    <div
+                      key={log.id}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #f1f5f9' }}
+                    >
                       <div>
-                        <strong>{log.name}</strong>
-                        <div style={{ fontSize: '10px', color: '#94a3b8' }}>
-                          {log.department} • In: {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                        <strong style={{ fontSize: '13px', color: '#0f172a' }}>{log.name}</strong>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>
+                          {log.department} • {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
                         </div>
                       </div>
-
-                      <span className={`badge-status-pill ${log.status === 'checked_in' ? 'green' : 'blue'}`}>
-                        {log.status === 'checked_in' ? 'Active On Shift' : 'Checked Out'}
+                      <span className={`pro-badge ${log.status === 'checked_in' ? 'badge-emerald' : 'badge-slate'}`}>
+                        {log.status === 'checked_in' ? 'Active' : 'Completed'}
                       </span>
                     </div>
                   ))}
@@ -571,8 +727,376 @@ export default function UserDashboard({
               )}
             </div>
           </div>
-        </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 4: PROFILE / PASS VIEW                                     */}
+        {/* ============================================================== */}
+        {activeTab === 'profile' && (
+          <div style={{ padding: '18px' }}>
+            <div className="pro-badge-tab-container">
+              <div className="pro-id-badge-card">
+                <div className="id-badge-top-banner">
+                  <span className="id-badge-brand">CHAFÉ SPECIALTY COFFEE</span>
+                  <span className="id-badge-chip">STAFF PASS</span>
+                </div>
+
+                <div className="id-badge-body">
+                  <div className="id-badge-avatar-wrap">
+                    <div className="id-badge-avatar">{initials}</div>
+                  </div>
+
+                  <h3 className="id-badge-name">{currentStaff?.name}</h3>
+                  <div className="id-badge-role">{currentStaff?.role || 'Staff Member'}</div>
+                  <div className="id-badge-code">STAFF ID: #{String(currentStaff?.id || 'MEM').slice(-6).toUpperCase()}</div>
+
+                  <div className="id-badge-qr-box">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=STAFF-${encodeURIComponent(currentStaff?.id || '1')}&color=0f172a&bgcolor=ffffff`}
+                      alt="Staff QR Pass"
+                      className="id-badge-qr-image"
+                      style={{ width: '160px', height: '160px' }}
+                    />
+                    <span className="id-badge-qr-caption">1-Tap Scan Code</span>
+                  </div>
+
+                  <div className="id-badge-footer">
+                    <p>Hold this pass against entrance scanners to verify attendance.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* ============================================================== */}
+      {/* 5. MOBILE-FIRST FIXED BOTTOM NAVIGATION (MATCHING SCREENSHOT)  */}
+      {/* ============================================================== */}
+      <nav className="mobile-fixed-bottom-bar">
+        <div className="mobile-bottom-bar-inner">
+          {/* Item 1: Home */}
+          <button
+            type="button"
+            className={`mobile-bottom-tab-btn ${activeTab === 'clock' ? 'active' : ''}`}
+            onClick={() => setActiveTab('clock')}
+          >
+            <div className="mobile-tab-icon">
+              <IconHome size={22} />
+            </div>
+            <span>Home</span>
+          </button>
+
+          {/* Item 2: Schedule */}
+          <button
+            type="button"
+            className={`mobile-bottom-tab-btn ${activeTab === 'schedule' ? 'active' : ''}`}
+            onClick={() => setActiveTab('schedule')}
+          >
+            <div className="mobile-tab-icon">
+              <IconCalendar size={22} />
+            </div>
+            <span>Schedule</span>
+          </button>
+
+          {/* Item 3: QR Code (Camera Scanner) */}
+          <button
+            type="button"
+            className={`mobile-bottom-tab-btn ${activeTab === 'scan' ? 'active' : ''}`}
+            onClick={() => setActiveTab('scan')}
+          >
+            <div className="mobile-tab-icon">
+              <IconCamera size={23} />
+            </div>
+            <span>QR Code</span>
+          </button>
+
+          {/* Item 4: Profile / Pass */}
+          <button
+            type="button"
+            className={`mobile-bottom-tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
+            onClick={() => setActiveTab('profile')}
+          >
+            <div className="mobile-tab-icon">
+              <IconUserCircle size={22} />
+            </div>
+            <span>Profile</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* ============================================================== */}
+      {/* 6. MOBILE SLIDE DRAWER (HAMBURGER MENU)                        */}
+      {/* ============================================================== */}
+      {isDrawerOpen && (
+        <div className="mobile-app-drawer-backdrop" onClick={() => setIsDrawerOpen(false)}>
+          <div className="mobile-app-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <div className="drawer-avatar-row">
+                <div className="drawer-avatar">{initials}</div>
+                <div>
+                  <div className="drawer-name">{currentStaff?.name || 'Staff Member'}</div>
+                  <div className="drawer-role">☕ {currentStaff?.role || 'Staff'} • Chafé</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="drawer-body">
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setActiveTab('clock'); setIsDrawerOpen(false) }}
+              >
+                <IconHome size={18} color="#0284c7" />
+                <span>Home Dashboard</span>
+              </button>
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setActiveTab('schedule'); setIsDrawerOpen(false) }}
+              >
+                <IconCalendar size={18} color="#10b981" />
+                <span>Shift Schedule</span>
+              </button>
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setActiveTab('scan'); setIsDrawerOpen(false) }}
+              >
+                <IconCamera size={18} color="#f59e0b" />
+                <span>Camera Scanner</span>
+              </button>
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setActiveTab('profile'); setIsDrawerOpen(false) }}
+              >
+                <IconQrCode size={18} color="#06b6d4" />
+                <span>Digital ID Badge</span>
+              </button>
+
+              <div style={{ height: '1px', background: '#f1f5f9', margin: '8px 0' }} />
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setActiveModal('performance'); setIsDrawerOpen(false) }}
+              >
+                <IconTrophy size={18} color="#eab308" />
+                <span>Performance Review</span>
+              </button>
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setActiveModal('station'); setIsDrawerOpen(false) }}
+              >
+                <IconCoffee size={18} color="#d97706" />
+                <span>Station Assignment</span>
+              </button>
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setActiveModal('alerts'); setIsDrawerOpen(false) }}
+              >
+                <IconBell size={18} color="#ec4899" />
+                <span>Store Alerts</span>
+              </button>
+
+              {onSwitchToAdmin && (
+                <>
+                  <div style={{ height: '1px', background: '#f1f5f9', margin: '8px 0' }} />
+                  <button
+                    type="button"
+                    className="drawer-nav-item"
+                    onClick={() => { setIsDrawerOpen(false); onSwitchToAdmin() }}
+                    style={{ color: '#0284c7', fontWeight: 700 }}
+                  >
+                    <IconGear size={18} color="#0284c7" />
+                    <span>Switch to Admin Dashboard</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 7. FEATURE MODALS (PERFORMANCE, STATION, ALERTS, PROFILE, SUPPORT) */}
+      {/* ============================================================== */}
+      {activeModal && activeModal !== 'action_confirm' && (
+        <div className="mobile-feature-modal-backdrop" onClick={() => setActiveModal(null)}>
+          <div className="mobile-feature-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-feature-modal-header">
+              <h3 className="mobile-feature-modal-title">
+                {activeModal === 'performance' && <><span>🏆</span> Staff Performance Review</>}
+                {activeModal === 'station' && <><span>☕</span> Assigned Counter Station</>}
+                {activeModal === 'alerts' && <><span>🔔</span> Store Announcements</>}
+                {activeModal === 'profile' && <><span>👤</span> Staff Profile</>}
+                {activeModal === 'support' && <><span>📞</span> Store Support</>}
+              </h3>
+              <button
+                type="button"
+                className="mobile-feature-modal-close"
+                onClick={() => setActiveModal(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mobile-feature-modal-body">
+              {activeModal === 'performance' && (
+                <div>
+                  <div style={{ textAlign: 'center', padding: '10px 0 20px' }}>
+                    <div style={{ fontSize: '38px', fontWeight: 900, color: '#10b981' }}>100%</div>
+                    <div style={{ fontSize: '13px', color: '#64748b', fontWeight: 700 }}>Overall Punctuality Standard</div>
+                  </div>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px', fontSize: '12.5px', color: '#166534', lineHeight: 1.5 }}>
+                    ⭐ <strong>Good Standing:</strong> Shift records are synced with cloud timesheets in real-time.
+                  </div>
+                </div>
+              )}
+
+              {activeModal === 'station' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
+                    <span style={{ color: '#64748b' }}>Assigned Bar Station:</span>
+                    <strong style={{ color: '#0f172a' }}>Main Espresso Bar #1</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
+                    <span style={{ color: '#64748b' }}>Espresso Machine:</span>
+                    <strong style={{ color: '#0f172a' }}>La Marzocco Linea PB (Ready ✓)</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b' }}>Sanitization:</span>
+                    <strong style={{ color: '#10b981' }}>Complete & Temperature Set (65°C)</strong>
+                  </div>
+                </div>
+              )}
+
+              {activeModal === 'alerts' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '12px', fontSize: '12.5px' }}>
+                    <div style={{ fontWeight: 800, color: '#1e40af', marginBottom: '4px' }}>☕ Single Origin Bean Refill</div>
+                    <div style={{ color: '#3b82f6' }}>Please replenish Colombian hopper before midday peak.</div>
+                  </div>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '12px', fontSize: '12.5px' }}>
+                    <div style={{ fontWeight: 800, color: '#166534', marginBottom: '4px' }}>📅 Weekly Roster Published</div>
+                    <div style={{ color: '#15803d' }}>New schedule is available in your profile.</div>
+                  </div>
+                </div>
+              )}
+
+              {activeModal === 'profile' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b' }}>Name:</span>
+                    <strong style={{ color: '#0f172a' }}>{currentStaff?.name}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b' }}>Role:</span>
+                    <strong style={{ color: '#0f172a' }}>{currentStaff?.role}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b' }}>Shift:</span>
+                    <strong style={{ color: '#0f172a' }}>{currentStaff?.shift_start} - {currentStaff?.shift_end}</strong>
+                  </div>
+                </div>
+              )}
+
+              {activeModal === 'support' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
+                  <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px' }}>
+                    <div style={{ fontWeight: 800 }}>☕ Manager Hotline:</div>
+                    <div style={{ color: '#64748b' }}>+1 (555) 234-5678</div>
+                  </div>
+                  <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px' }}>
+                    <div style={{ fontWeight: 800 }}>📧 Shift Operations:</div>
+                    <div style={{ color: '#64748b' }}>operations@chafe.internal</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Confirmation Modal */}
+      {activeModal === 'action_confirm' && (
+        <div className="staff-modal-backdrop" onClick={() => setActiveModal(null)}>
+          <div className="staff-action-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="staff-modal-header">
+              <div className="staff-modal-title-box">
+                <span className="staff-modal-badge">⚡ QR SCAN CONFIRMED</span>
+                <h3 className="staff-modal-title">Confirm Attendance Action</h3>
+                <p className="staff-modal-subtitle">
+                  Select your attendance status for {currentStaff?.name}:
+                </p>
+              </div>
+              <button
+                type="button"
+                className="staff-modal-close"
+                onClick={() => setActiveModal(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="staff-modal-body">
+              <div
+                className={`modal-action-card card-in ${!isCheckedIn ? 'recommended' : ''}`}
+                onClick={() => handleExecuteClock('in')}
+              >
+                <div className="action-card-icon-col">
+                  <div className="action-icon-circle in-circle">
+                    <span style={{ fontSize: '26px' }}>🟢</span>
+                  </div>
+                </div>
+                <div className="action-card-content">
+                  <h4 className="action-card-title">Clock In (Check In)</h4>
+                  <p className="action-card-desc">Verify your arrival time.</p>
+                </div>
+                <div className="action-card-arrow">
+                  <span className="action-proceed-btn in-btn">Confirm In ✓</span>
+                </div>
+              </div>
+
+              <div
+                className={`modal-action-card card-out ${isCheckedIn ? 'recommended' : ''}`}
+                onClick={() => handleExecuteClock('out')}
+              >
+                <div className="action-card-icon-col">
+                  <div className="action-icon-circle out-circle">
+                    <span style={{ fontSize: '26px' }}>🔴</span>
+                  </div>
+                </div>
+                <div className="action-card-content">
+                  <h4 className="action-card-title">Clock Out (Check Out)</h4>
+                  <p className="action-card-desc">Complete your working hours.</p>
+                </div>
+                <div className="action-card-arrow">
+                  <span className="action-proceed-btn out-btn">Confirm Out ✓</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="staff-modal-footer">
+              <button
+                type="button"
+                className="btn-modal-cancel"
+                onClick={() => setActiveModal(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
