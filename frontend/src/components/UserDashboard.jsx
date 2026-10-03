@@ -20,6 +20,7 @@ import {
   IconQrCode,
   IconLogOut
 } from '../Icons'
+import ProfileView from './ProfileView'
 import {
   getTodayControlFromFirebase,
   getCheckinsFromFirebase,
@@ -354,9 +355,9 @@ export default function UserDashboard({
     { id: 'perf', title: 'Performance', icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
     { id: 'logs', title: 'Shift Logs', icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
     { id: 'station', title: 'Station', icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
-    { id: 'badge', title: 'ID Badge', icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
+    { id: 'badge', title: 'ID Badge', icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('badge') },
     { id: 'alerts', title: 'Store Alerts', icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
-    { id: 'profile', title: 'My Profile', icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveModal('profile') },
+    { id: 'profile', title: 'My Profile', icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
     { id: 'support', title: 'Support', icon: <IconPhone size={24} color="#ffffff" />, action: () => setActiveModal('support') },
   ], [])
 
@@ -730,9 +731,31 @@ export default function UserDashboard({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 4: PROFILE / PASS VIEW                                     */}
+        {/* TAB 4: PROFILE TEMPLATE (MATCHING USER REFERENCE TEMPLATE)     */}
         {/* ============================================================== */}
         {activeTab === 'profile' && (
+          <ProfileView
+            user={currentStaff}
+            onUpdateUser={(updated) => {
+              if (currentStaff) {
+                setCurrentStaff(prev => ({ ...prev, ...updated }))
+              }
+            }}
+            onBack={() => setActiveTab('clock')}
+            onLogout={() => {
+              showToast?.('Staff signed out', 'info')
+              window.location.hash = '#login'
+            }}
+            onShowBadge={() => setActiveTab('badge')}
+            showToast={showToast}
+            isDesktopWide={window.innerWidth >= 1024}
+          />
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 5: DIGITAL ID BADGE / PASS VIEW                            */}
+        {/* ============================================================== */}
+        {activeTab === 'badge' && (
           <div style={{ padding: '18px' }}>
             <div className="pro-badge-tab-container">
               <div className="pro-id-badge-card">
@@ -873,6 +896,15 @@ export default function UserDashboard({
                 type="button"
                 className="drawer-nav-item"
                 onClick={() => { setActiveTab('profile'); setIsDrawerOpen(false) }}
+              >
+                <IconUserCircle size={18} color="#10b981" />
+                <span>My Profile & Settings</span>
+              </button>
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setActiveTab('badge'); setIsDrawerOpen(false) }}
               >
                 <IconQrCode size={18} color="#06b6d4" />
                 <span>Digital ID Badge</span>

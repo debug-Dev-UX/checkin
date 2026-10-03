@@ -22,6 +22,7 @@ import {
   IconCoffee,
 } from '../Icons'
 import { Skeleton } from './Skeleton'
+import ProfileView from './ProfileView'
 import {
   getCheckinsFromFirebase,
   getStaffDayoffsFromFirebase,
@@ -437,7 +438,7 @@ export default function StaffPortal({
     { id: 'station', title: 'Station', icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
     { id: 'badge', title: 'ID Badge', icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('badge') },
     { id: 'alerts', title: 'Store Alerts', icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
-    { id: 'profile', title: 'My Profile', icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveModal('profile') },
+    { id: 'profile', title: 'My Profile', icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
     { id: 'support', title: 'Support', icon: <IconPhone size={24} color="#ffffff" />, action: () => setActiveModal('support') },
   ], [])
 
@@ -1080,6 +1081,25 @@ export default function StaffPortal({
             </div>
           </div>
         )}
+
+        {/* ============================================================== */}
+        {/* 9. TAB 5: PROFILE TEMPLATE (MATCHING USER REFERENCE TEMPLATE)  */}
+        {/* ============================================================== */}
+        {activeTab === 'profile' && (
+          <ProfileView
+            user={staffUser}
+            onUpdateUser={(updated) => {
+              if (staffUser) {
+                Object.assign(staffUser, updated)
+              }
+            }}
+            onBack={() => setActiveTab('clock')}
+            onLogout={onLogout}
+            onShowBadge={() => setActiveTab('badge')}
+            showToast={showToast}
+            isDesktopWide={window.innerWidth >= 1024}
+          />
+        )}
       </main>
 
       {/* ============================================================== */}
@@ -1126,11 +1146,11 @@ export default function StaffPortal({
             <span>QR Code</span>
           </button>
 
-          {/* Item 4: Profile / Pass */}
+          {/* Item 4: Profile */}
           <button
             type="button"
-            className={`mobile-bottom-tab-btn ${activeTab === 'badge' ? 'active' : ''}`}
-            onClick={() => setActiveTab('badge')}
+            className={`mobile-bottom-tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
+            onClick={() => setActiveTab('profile')}
           >
             <div className="mobile-tab-icon">
               <IconUserCircle size={22} />
@@ -1191,6 +1211,15 @@ export default function StaffPortal({
               >
                 <IconClock size={18} color="#8b5cf6" />
                 <span>Shift History & Timesheet</span>
+              </button>
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setActiveTab('profile'); setIsDrawerOpen(false) }}
+              >
+                <IconUserCircle size={18} color="#10b981" />
+                <span>My Profile & Settings</span>
               </button>
 
               <button
