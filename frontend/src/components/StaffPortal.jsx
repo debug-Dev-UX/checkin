@@ -18,7 +18,9 @@ import {
   getCheckinsFromFirebase,
   getStaffDayoffsFromFirebase,
   createCheckinInFirebase,
-  checkoutInFirebase
+  checkoutInFirebase,
+  subscribeToLiveCheckins,
+  isTodayRecord
 } from '../services/firebaseService'
 
 function playSuccessBeep() {
@@ -56,6 +58,13 @@ export default function StaffPortal({
   const [actionResult, setActionResult] = useState(null)
   const [activeTab, setActiveTab] = useState('clock') // 'clock' | 'schedule' | 'scan' | 'history' | 'badge'
   const [dayoffFilter, setDayoffFilter] = useState('all') // 'all' | 'upcoming' | 'past'
+
+  // Action Modal State (Popup modal asking Check In or Check Out)
+  const [showActionModal, setShowActionModal] = useState(false)
+  const [selectedScanAction, setSelectedScanAction] = useState(null) // 'in' | 'out' | null
+  const [scannedQrData, setScannedQrData] = useState(null)
+  const selectedScanActionRef = useRef(null)
+  selectedScanActionRef.current = selectedScanAction
 
   // Camera QR scanner state - ALWAYS back camera by default
   const [cameraFacing, setCameraFacing] = useState('environment') // 'environment' (back) | 'user' (front)
@@ -121,6 +130,20 @@ export default function StaffPortal({
     fetchStaffStatus()
   }, [fetchStaffStatus])
 
+  // Real-time live check-ins subscription: automatically updates on any scan from any device
+  useEffect(() => {
+    if (!staffUser || !staffUser.id) return
+    const unsubscribe = subscribeToLiveCheckins((allCheckins) => {
+      const userRecords = (allCheckins || []).filter(
+        c => c.staff_id === staffUser.id || c.email === staffUser.email || c.name === staffUser.name
+      )
+      const currentActive = userRecords.find(c => c.status === 'checked_in')
+      setActiveCheckin(currentActive || null)
+      setRecentLogs(userRecords)
+    })
+    return () => unsubscribe()
+  }, [staffUser])
+
   // Today ISO date string
   const todayStr = new Date().toISOString().split('T')[0]
   const todayDayoff = dayoffs.find(d => String(d.date).substring(0, 10) === todayStr)
@@ -146,13 +169,14 @@ export default function StaffPortal({
     })
   }, [dayoffs, dayoffFilter, todayStr])
 
-  // Execute Clock In / Clock Out
-  const handleClockAction = async () => {
+  // Execute explicit Clock In or Clock Out
+  const handleExecuteAttendance = async (actionType) => {
+    if (processing) return
     setProcessing(true)
     setActionResult(null)
 
     try {
-      if (!activeCheckin) {
+      if (actionType === 'in') {
         // CLOCK IN
         const payload = {
           staff_id: staffUser.id,
@@ -164,27 +188,31 @@ export default function StaffPortal({
           location: 'Staff Mobile Portal',
           note: todayDayoff
             ? `Clocked in on Day Off (${todayDayoff.type})`
-            : 'Clocked in via Staff Badge Scan',
+            : 'Clocked in via Store QR Scan',
         }
 
         const newRecord = await createCheckinInFirebase(payload)
 
         playSuccessBeep()
+        setActiveCheckin(newRecord)
+        setRecentLogs(prev => [newRecord, ...(prev || [])])
         setActionResult({
           type: 'success',
-          action: 'Shift Started Successfully!',
+          action: 'Shift Started Successfully! (Clocked In)',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
         })
         if (showToast) showToast(`Clocked in! Welcome, ${staffUser.name}`, 'success')
       } else {
         // CLOCK OUT
-        await checkoutInFirebase(activeCheckin.id)
+        await checkoutInFirebase(activeCheckin?.id, staffUser.id)
 
         playSuccessBeep()
+        setActiveCheckin(null)
+        setRecentLogs(prev => (prev || []).map(c => (c.status === 'checked_in' ? { ...c, status: 'checked_out', check_out_at: new Date().toISOString() } : c)))
         setActionResult({
           type: 'success',
-          action: 'Shift Completed Successfully!',
+          action: 'Shift Completed Successfully! (Clocked Out)',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: 'Shift Logged to Timesheet ✓',
         })
@@ -192,6 +220,8 @@ export default function StaffPortal({
       }
 
       await fetchStaffStatus()
+      setActiveTab('clock')
+      setShowCamera(false)
     } catch (err) {
       setActionResult({
         type: 'error',
@@ -200,7 +230,17 @@ export default function StaffPortal({
       if (showToast) showToast(err.message, 'error')
     } finally {
       setProcessing(false)
+      setShowActionModal(false)
+      setSelectedScanAction(null)
+      setScannedQrData(null)
     }
+  }
+
+  // Open modal helper
+  const handleOpenActionModal = (preselected = null) => {
+    setSelectedScanAction(preselected)
+    setScannedQrData(null)
+    setShowActionModal(true)
   }
 
   // Camera functions - ALWAYS PREFER BACK CAMERA (environment)
@@ -327,12 +367,21 @@ export default function StaffPortal({
           if (navigator.vibrate) {
             try { navigator.vibrate([100, 50, 100]) } catch { /* ignore */ }
           }
-          handleClockAction()
-          setActiveTab('clock')
-          setShowCamera(false)
+
+          const currentAction = selectedScanActionRef.current
+          if (currentAction === 'in') {
+            handleExecuteAttendance('in')
+          } else if (currentAction === 'out') {
+            handleExecuteAttendance('out')
+          } else {
+            // No action was chosen beforehand: pop up modal to ask Check In or Check Out!
+            setScannedQrData(code.data)
+            setShowActionModal(true)
+          }
+
           setTimeout(() => {
             isScanningRef.current = false
-          }, 3000)
+          }, 2500)
           return
         }
       }
@@ -646,27 +695,42 @@ export default function StaffPortal({
               )}
 
               {/* Badge Scanning Instruction Card */}
+              {/* Direct Clock In & Clock Out Action Cards */}
               <div className="pro-terminal-scan-guide">
-                <div className="pro-scan-guide-card">
-                  <div className="pro-scan-guide-icon">🪪</div>
-                  <div className="pro-scan-guide-body">
-                    <h4 className="pro-scan-guide-title">
-                      {activeCheckin ? 'Ready to Clock Out?' : 'Attendance via QR Badge Pass'}
-                    </h4>
-                    <p className="pro-scan-guide-desc">
-                      Tap the center <strong>SCAN</strong> button in the bottom menu, or use the camera button below to scan your badge with the rear camera.
-                    </p>
-                  </div>
+                <div className="pro-direct-clock-cards">
+                  <button
+                    type="button"
+                    className={`pro-direct-action-btn in-btn ${!activeCheckin ? 'highlight' : ''}`}
+                    onClick={() => handleOpenActionModal('in')}
+                  >
+                    <div className="action-btn-circle">🟢</div>
+                    <div className="action-btn-text">
+                      <span className="action-btn-title">Clock In</span>
+                      <span className="action-btn-sub">{!activeCheckin ? 'Ready to Start Shift' : 'Already on Shift'}</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`pro-direct-action-btn out-btn ${activeCheckin ? 'highlight' : ''}`}
+                    onClick={() => handleOpenActionModal('out')}
+                  >
+                    <div className="action-btn-circle">🔴</div>
+                    <div className="action-btn-text">
+                      <span className="action-btn-title">Clock Out</span>
+                      <span className="action-btn-sub">{activeCheckin ? 'Complete Shift Now' : 'No Active Shift'}</span>
+                    </div>
+                  </button>
                 </div>
 
-                <div className="pro-scan-actions-grid">
+                <div className="pro-scan-actions-grid" style={{ marginTop: '10px' }}>
                   <button
                     type="button"
                     className="pro-btn-quick-scan"
-                    onClick={() => setActiveTab('scan')}
+                    onClick={() => handleOpenActionModal()}
                   >
                     <IconCamera size={16} />
-                    <span>Open Back Camera Scanner</span>
+                    <span>Scan Store QR Code</span>
                   </button>
 
                   <button
@@ -675,13 +739,13 @@ export default function StaffPortal({
                     onClick={() => setActiveTab('badge')}
                   >
                     <IconQrCode size={16} />
-                    <span>View My Digital ID QR Pass</span>
+                    <span>View My ID Pass</span>
                   </button>
                 </div>
 
                 <div className="pro-camera-hint-footer">
                   <span className="pro-lens-badge">
-                    📷 Rear Camera Lens: Ready for Instant Auto-Scan
+                    📷 One Universal QR Code: Scan to Check In or Check Out
                   </span>
                 </div>
               </div>
@@ -772,9 +836,21 @@ export default function StaffPortal({
             <div className="pro-scanner-card">
               <div className="pro-scanner-header">
                 <div className="pro-scanner-header-left">
-                  <span className="pro-scanner-title">CAMERA QR SCANNER</span>
-                  <span className="pro-scanner-lens-badge">
-                    {cameraFacing === 'environment' ? '📷 BACK CAMERA (REAR)' : '🤳 FRONT CAMERA'}
+                  <span className="pro-scanner-title">
+                    {selectedScanAction === 'in'
+                      ? 'SCAN QR TO CLOCK IN'
+                      : selectedScanAction === 'out'
+                      ? 'SCAN QR TO CLOCK OUT'
+                      : 'CAMERA QR SCANNER'}
+                  </span>
+                  <span className={`pro-scanner-lens-badge ${selectedScanAction ? 'badge-' + selectedScanAction : ''}`}>
+                    {selectedScanAction === 'in'
+                      ? '🟢 CHECK IN MODE'
+                      : selectedScanAction === 'out'
+                      ? '🔴 CHECK OUT MODE'
+                      : cameraFacing === 'environment'
+                      ? '📷 BACK CAMERA (REAR)'
+                      : '🤳 FRONT CAMERA'}
                   </span>
                 </div>
                 <button
@@ -784,6 +860,31 @@ export default function StaffPortal({
                   title="Close scanner"
                 >
                   ✕
+                </button>
+              </div>
+
+              {/* Mode Selector Tabs inside Scanner */}
+              <div className="pro-scanner-mode-bar">
+                <button
+                  type="button"
+                  className={`scanner-mode-tab in-tab ${selectedScanAction === 'in' ? 'active-mode' : ''}`}
+                  onClick={() => setSelectedScanAction('in')}
+                >
+                  <span>🟢 Clock In</span>
+                </button>
+                <button
+                  type="button"
+                  className={`scanner-mode-tab out-tab ${selectedScanAction === 'out' ? 'active-mode' : ''}`}
+                  onClick={() => setSelectedScanAction('out')}
+                >
+                  <span>🔴 Clock Out</span>
+                </button>
+                <button
+                  type="button"
+                  className={`scanner-mode-tab ask-tab ${selectedScanAction === null ? 'active-mode' : ''}`}
+                  onClick={() => setSelectedScanAction(null)}
+                >
+                  <span>❓ Ask on Scan</span>
                 </button>
               </div>
 
@@ -799,7 +900,7 @@ export default function StaffPortal({
 
                 {/* Viewfinder Target Mask */}
                 <div className="pro-viewfinder-overlay">
-                  <div className="pro-target-reticle">
+                  <div className={`pro-target-reticle ${selectedScanAction === 'in' ? 'reticle-in' : selectedScanAction === 'out' ? 'reticle-out' : ''}`}>
                     {/* 4 Corner Brackets */}
                     <div className="corner top-left"></div>
                     <div className="corner top-right"></div>
@@ -810,7 +911,11 @@ export default function StaffPortal({
                     <div className="pro-scanning-laser"></div>
 
                     <div className="pro-reticle-hint">
-                      Align Employee QR Badge inside frame
+                      {selectedScanAction === 'in'
+                        ? '🟢 Point at Store QR to Clock In'
+                        : selectedScanAction === 'out'
+                        ? '🔴 Point at Store QR to Clock Out'
+                        : 'Align Store QR (Modal will ask Check In or Out)'}
                     </div>
                   </div>
                 </div>
@@ -860,9 +965,19 @@ export default function StaffPortal({
                 <div className="notice-icon">⚡</div>
                 <div className="notice-text">
                   <strong>
-                    {activeCheckin ? 'Ready to Clock Out (End Shift)' : 'Ready to Clock In (Start Shift)'}
+                    {selectedScanAction === 'in'
+                      ? '🟢 Check In Mode Active'
+                      : selectedScanAction === 'out'
+                      ? '🔴 Check Out Mode Active'
+                      : '📷 Universal Store QR Scanner'}
                   </strong>
-                  <p>Hold your QR badge steady in front of the back camera lens to auto-record attendance.</p>
+                  <p>
+                    {selectedScanAction === 'in'
+                      ? 'Point at the store QR code to instantly start your shift.'
+                      : selectedScanAction === 'out'
+                      ? 'Point at the store QR code to instantly complete your shift.'
+                      : 'Scanning the store QR code will popup a modal to ask if you want to Clock In or Clock Out.'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1118,8 +1233,8 @@ export default function StaffPortal({
             <button
               type="button"
               className={`pro-bottom-scan-fab ${activeTab === 'scan' ? 'active-scan' : ''}`}
-              onClick={() => setActiveTab(activeTab === 'scan' ? 'clock' : 'scan')}
-              aria-label="Scan QR Code Badge with Back Camera"
+              onClick={() => handleOpenActionModal()}
+              aria-label="Scan QR Code - Check In or Check Out"
             >
               <div className="fab-scan-glow"></div>
               <div className="fab-scan-pulse-ring"></div>
@@ -1155,6 +1270,146 @@ export default function StaffPortal({
           </button>
         </div>
       </nav>
+
+      {/* ============================================================== */}
+      {/* 10. POPUP MODAL: ASK CHECK IN OR CHECK OUT */}
+      {/* ============================================================== */}
+      {showActionModal && (
+        <div className="staff-modal-backdrop" onClick={() => !processing && setShowActionModal(false)}>
+          <div
+            className="staff-action-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-action-title"
+          >
+            <div className="staff-modal-header">
+              <div className="staff-modal-title-box">
+                <span className="staff-modal-badge">
+                  {scannedQrData ? '⚡ QR CODE SCANNED' : '📷 STORE QR ATTENDANCE'}
+                </span>
+                <h3 id="modal-action-title" className="staff-modal-title">
+                  {scannedQrData ? 'Choose Attendance Action' : 'Check In or Check Out?'}
+                </h3>
+                <p className="staff-modal-subtitle">
+                  {scannedQrData
+                    ? 'QR Code detected! Select whether you are clocking in or clocking out:'
+                    : 'The store uses one universal QR code. Choose what you would like to do:'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="staff-modal-close"
+                onClick={() => !processing && setShowActionModal(false)}
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="staff-modal-body">
+              {/* Option 1: Clock In Card */}
+              <div
+                className={`modal-action-card card-in ${!activeCheckin ? 'recommended' : ''}`}
+                onClick={() => {
+                  if (processing) return
+                  if (scannedQrData) {
+                    handleExecuteAttendance('in')
+                  } else {
+                    setSelectedScanAction('in')
+                    setShowActionModal(false)
+                    setActiveTab('scan')
+                  }
+                }}
+              >
+                <div className="action-card-icon-col">
+                  <div className="action-icon-circle in-circle">
+                    <span style={{ fontSize: '26px' }}>🟢</span>
+                  </div>
+                </div>
+                <div className="action-card-content">
+                  <div className="action-card-header">
+                    <h4 className="action-card-title">Clock In (Check In)</h4>
+                    {!activeCheckin ? (
+                      <span className="action-status-pill pill-ready">Ready to Start</span>
+                    ) : (
+                      <span className="action-status-pill pill-warn">Already In</span>
+                    )}
+                  </div>
+                  <p className="action-card-desc">
+                    Start your shift arrival time. Punctuality is automatically verified.
+                  </p>
+                  <div className="action-card-meta">
+                    <span>⏰ Shift: <strong>{staffUser?.shift_start || '07:30'} - {staffUser?.shift_end || '16:00'}</strong></span>
+                  </div>
+                </div>
+                <div className="action-card-arrow">
+                  <span className="action-proceed-btn in-btn">
+                    {scannedQrData ? 'Confirm In ✓' : 'Scan to In →'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Option 2: Clock Out Card */}
+              <div
+                className={`modal-action-card card-out ${activeCheckin ? 'recommended' : ''}`}
+                onClick={() => {
+                  if (processing) return
+                  if (scannedQrData) {
+                    handleExecuteAttendance('out')
+                  } else {
+                    setSelectedScanAction('out')
+                    setShowActionModal(false)
+                    setActiveTab('scan')
+                  }
+                }}
+              >
+                <div className="action-card-icon-col">
+                  <div className="action-icon-circle out-circle">
+                    <span style={{ fontSize: '26px' }}>🔴</span>
+                  </div>
+                </div>
+                <div className="action-card-content">
+                  <div className="action-card-header">
+                    <h4 className="action-card-title">Clock Out (Check Out)</h4>
+                    {activeCheckin ? (
+                      <span className="action-status-pill pill-active">Shift Active</span>
+                    ) : (
+                      <span className="action-status-pill pill-muted">No Shift</span>
+                    )}
+                  </div>
+                  <p className="action-card-desc">
+                    Finish your work shift and record your total working hours.
+                  </p>
+                  <div className="action-card-meta">
+                    {activeCheckin ? (
+                      <span>🟢 Active Session: <strong>{elapsedShiftTime}</strong></span>
+                    ) : (
+                      <span>Current status: Not on shift</span>
+                    )}
+                  </div>
+                </div>
+                <div className="action-card-arrow">
+                  <span className="action-proceed-btn out-btn">
+                    {scannedQrData ? 'Confirm Out ✓' : 'Scan to Out →'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="staff-modal-footer">
+              <button
+                type="button"
+                className="btn-modal-cancel"
+                onClick={() => setShowActionModal(false)}
+                disabled={processing}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

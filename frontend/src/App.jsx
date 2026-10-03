@@ -30,7 +30,8 @@ import {
   IconKey,
   IconLogOut,
   IconEye,
-  IconEyeOff
+  IconEyeOff,
+  IconRefresh
 } from './Icons'
 import UserDashboard from './components/UserDashboard'
 import LoginForm from './components/LoginForm'
@@ -58,6 +59,8 @@ import {
   getSettingsFromFirebase,
   saveSettingsInFirebase,
   getPerformanceFromFirebase,
+  subscribeToLiveCheckins,
+  isTodayRecord
 } from './services/firebaseService'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
@@ -306,6 +309,63 @@ export default function App() {
     initApp()
     return () => { mounted = false }
   }, [fetchStatus, fetchOverviewData, fetchStaffData, fetchControlData, fetchSettings])
+
+  // Real-time synchronization: listen for all checkin updates from any device (staff phone or terminal)
+  const [refreshing, setRefreshing] = useState(false)
+  const handleManualRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await Promise.allSettled([
+        fetchOverviewData(),
+        fetchControlData(),
+        fetchStaffData(),
+      ])
+      showToast('Live data refreshed!', 'success')
+    } catch {
+      // quiet
+    } finally {
+      setTimeout(() => setRefreshing(false), 500)
+    }
+  }, [fetchOverviewData, fetchControlData, fetchStaffData, showToast])
+
+  useEffect(() => {
+    const unsubscribe = subscribeToLiveCheckins(async (liveCheckins) => {
+      if (!liveCheckins) return
+      setCheckins(liveCheckins)
+
+      // Calculate today's short logs in real time
+      const todayList = liveCheckins.filter(c => isTodayRecord(c.created_at || c.check_in_at))
+      const activeNow = todayList.filter(c => c.status === 'checked_in').length
+      const checkedOut = todayList.filter(c => c.status === 'checked_out').length
+      setTodayData({
+        summary: {
+          active_now: activeNow,
+          checked_out_today: checkedOut,
+          total_today: todayList.length
+        },
+        data: todayList
+      })
+
+      // Sync top banner KPI stats in real time
+      try {
+        const statsData = await getStatsFromFirebase()
+        if (statsData) setStats(statsData)
+      } catch {
+        // quiet
+      }
+    })
+
+    // Periodic 8-second auto-poll fallback
+    const pollInterval = setInterval(() => {
+      fetchControlData()
+      fetchOverviewData()
+    }, 8000)
+
+    return () => {
+      unsubscribe()
+      clearInterval(pollInterval)
+    }
+  }, [fetchControlData, fetchOverviewData])
 
   // Check out person action
   const handleCheckOut = async (id, name) => {
@@ -1288,32 +1348,22 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '20px' }}>
                 {/* QR Code Generator Box */}
                 <div className="content-panel" style={{ textAlign: 'center', padding: '24px' }}>
-                  <div className="panel-heading-title" style={{ justifyContent: 'center', marginBottom: '12px' }}>
-                    QR CHECK-IN & CHECK-OUT
+                  <div className="panel-heading-title" style={{ justifyContent: 'center', marginBottom: '8px' }}>
+                    STORE QR CHECK-IN & CHECK-OUT
                   </div>
-                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px' }}>
-                    Scan QR code at table or counter to self check-in.
+                  <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px' }}>
+                    Universal QR code for all attendance. Staff & Guests scan this code to Check In or Check Out.
                   </p>
 
-                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', marginBottom: '16px' }}>
-                    <button
-                      className={`pill-filter-btn ${qrMode === 'guest' ? 'active' : ''}`}
-                      onClick={() => setQrMode('guest')}
-                    >
-                      Guest QR
-                    </button>
-                    <button
-                      className={`pill-filter-btn ${qrMode === 'staff' ? 'active' : ''}`}
-                      onClick={() => setQrMode('staff')}
-                    >
-                      Staff QR
-                    </button>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', color: '#0f172a', marginBottom: '16px' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#0284c7' }}></span>
+                    <span>All-In-One Terminal QR Code</span>
                   </div>
 
-                  <div style={{ background: '#ffffff', padding: '12px', border: '1px solid #e2e8f0', display: 'inline-block', borderRadius: '4px' }}>
+                  <div style={{ background: '#ffffff', padding: '12px', border: '1px solid #e2e8f0', display: 'inline-block', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
                     <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrConfig?.target_url || 'http://127.0.0.1:8000/checkin')}`}
-                      alt="Chafé QR"
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrConfig?.target_url || `${window.location.origin}/#user`)}`}
+                      alt="Chafé Store QR"
                       style={{ width: '180px', height: '180px', display: 'block' }}
                     />
                   </div>
@@ -1333,18 +1383,37 @@ export default function App() {
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                     >
                       <IconCamera size={15} color="#ea580c" />
-                      <span>User Dashboard (Scan)</span>
+                      <span>Open Self Terminal (Scan)</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Short Today-Only Activity Table */}
                 <div className="content-panel">
-                  <div className="panel-header-bar">
-                    <div className="panel-heading-title">TODAY'S SHORT LOGS (TODAY ONLY)</div>
-                    <span style={{ fontSize: '12px', color: '#64748b' }}>
-                      Inside: <strong>{todayData.summary?.active_now ?? 0}</strong> | Departed: <strong>{todayData.summary?.checked_out_today ?? 0}</strong>
-                    </span>
+                  <div className="panel-header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div className="panel-heading-title">TODAY'S SHORT LOGS (TODAY ONLY)</div>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', background: '#ecfdf5', color: '#059669', padding: '2px 8px', borderRadius: '12px', fontWeight: '700' }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+                        LIVE SYNC
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>
+                        Inside: <strong>{todayData.summary?.active_now ?? 0}</strong> | Departed: <strong>{todayData.summary?.checked_out_today ?? 0}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={handleManualRefresh}
+                        disabled={refreshing}
+                        title="Reload latest data from Firebase"
+                        style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      >
+                        <IconRefresh size={12} className={refreshing ? 'spin-anim' : ''} />
+                        <span>{refreshing ? 'Reloading...' : 'Reload Data'}</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="table-responsive">

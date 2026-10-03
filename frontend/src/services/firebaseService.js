@@ -9,7 +9,8 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy
+  orderBy,
+  onSnapshot
 } from 'firebase/firestore'
 import { db } from '../firebase'
 
@@ -295,6 +296,51 @@ export async function deleteStaffInFirebase(id) {
 }
 
 /**
+ * Reliable timezone-safe check if a timestamp or date is today
+ */
+export function isTodayRecord(dateStr) {
+  if (!dateStr) return false
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return false
+  const now = new Date()
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  )
+}
+
+/**
+ * Subscribe to real-time live check-ins from Firebase Firestore
+ */
+export function subscribeToLiveCheckins(callback) {
+  try {
+    const q = query(collection(db, 'checkins'), orderBy('created_at', 'desc'))
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const list = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(c => !DEMO_CHECKIN_IDS.includes(c.id))
+      setLocal('checkins', list)
+      if (typeof callback === 'function') {
+        callback(list)
+      }
+    }, (err) => {
+      console.warn('Live checkins snapshot error:', err)
+      if (typeof callback === 'function') {
+        callback(getLocal('checkins', []))
+      }
+    })
+    return unsubscribe
+  } catch (err) {
+    console.warn('Could not subscribe to live checkins:', err)
+    if (typeof callback === 'function') {
+      callback(getLocal('checkins', []))
+    }
+    return () => {}
+  }
+}
+
+/**
  * Get Check-ins List (No demo data)
  */
 export async function getCheckinsFromFirebase() {
@@ -324,6 +370,24 @@ export async function createCheckinInFirebase(data) {
   let late_minutes = 0
 
   if (data.type === 'employee' && data.staff_id) {
+    // Close any previous open checkin sessions for this staff member to prevent duplicate active states
+    try {
+      const q = query(
+        collection(db, 'checkins'),
+        where('staff_id', '==', data.staff_id),
+        where('status', '==', 'checked_in')
+      )
+      const activeSnap = await getDocs(q)
+      for (const d of activeSnap.docs) {
+        await updateDoc(doc(db, 'checkins', d.id), {
+          status: 'checked_out',
+          check_out_at: now.toISOString()
+        })
+      }
+    } catch {
+      // quiet
+    }
+
     const staffList = await getStaffFromFirebase()
     const stf = staffList.find(s => s.id === data.staff_id)
     if (stf && stf.shift_start) {
@@ -357,28 +421,59 @@ export async function createCheckinInFirebase(data) {
   }
 
   const current = getLocal('checkins', [])
-  setLocal('checkins', [record, ...current])
+  // Clean up any other active records for this employee in local storage too
+  const cleaned = current.map(c => {
+    if (data.type === 'employee' && data.staff_id && c.staff_id === data.staff_id && c.status === 'checked_in') {
+      return { ...c, status: 'checked_out', check_out_at: now.toISOString() }
+    }
+    return c
+  })
+  setLocal('checkins', [record, ...cleaned])
   return record
 }
 
 /**
  * Check-out action
  */
-export async function checkoutInFirebase(id) {
+export async function checkoutInFirebase(id, staffId = null) {
   const checkOutAt = new Date().toISOString()
 
   try {
-    const docRef = doc(db, 'checkins', id)
-    await updateDoc(docRef, {
-      status: 'checked_out',
-      check_out_at: checkOutAt
-    })
-  } catch {
-    // fallback
+    if (id) {
+      const docRef = doc(db, 'checkins', id)
+      await updateDoc(docRef, {
+        status: 'checked_out',
+        check_out_at: checkOutAt
+      })
+    }
+
+    if (staffId) {
+      const q = query(
+        collection(db, 'checkins'),
+        where('staff_id', '==', staffId),
+        where('status', '==', 'checked_in')
+      )
+      const snap = await getDocs(q)
+      for (const d of snap.docs) {
+        if (d.id !== id) {
+          await updateDoc(doc(db, 'checkins', d.id), {
+            status: 'checked_out',
+            check_out_at: checkOutAt
+          })
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Checkout error in firebase:', err)
   }
 
   const current = getLocal('checkins', [])
-  const updated = current.map(c => (c.id === id ? { ...c, status: 'checked_out', check_out_at: checkOutAt } : c))
+  const updated = current.map(c => {
+    if (c.id === id || (staffId && c.staff_id === staffId && c.status === 'checked_in')) {
+      return { ...c, status: 'checked_out', check_out_at: checkOutAt }
+    }
+    return c
+  })
   setLocal('checkins', updated)
 }
 
@@ -402,8 +497,7 @@ export async function deleteCheckinInFirebase(id) {
  */
 export async function getTodayControlFromFirebase() {
   const checkins = await getCheckinsFromFirebase()
-  const todayStr = new Date().toISOString().split('T')[0]
-  const todayList = checkins.filter(c => String(c.created_at || c.check_in_at).startsWith(todayStr))
+  const todayList = checkins.filter(c => isTodayRecord(c.created_at || c.check_in_at))
   const activeNow = todayList.filter(c => c.status === 'checked_in').length
   const checkedOut = todayList.filter(c => c.status === 'checked_out').length
   return {
@@ -526,29 +620,27 @@ export async function getStatsFromFirebase() {
   const checkins = await getCheckinsFromFirebase()
   const dayoffs = await getDayoffsFromFirebase()
 
-  const todayStr = new Date().toISOString().split('T')[0]
-
   // Staff checked in today
   const staffCheckedInToday = checkins.filter(c =>
     c.type === 'employee' &&
     c.status === 'checked_in' &&
-    String(c.check_in_at || c.created_at).startsWith(todayStr)
+    isTodayRecord(c.check_in_at || c.created_at)
   ).length
 
   // Staff checked out today
   const staffCheckedOutToday = checkins.filter(c =>
     c.type === 'employee' &&
     c.status === 'checked_out' &&
-    String(c.check_out_at || c.created_at).startsWith(todayStr)
+    isTodayRecord(c.check_out_at || c.created_at)
   ).length
 
   // Staff on day off today
-  const staffDayoffToday = dayoffs.filter(d => String(d.date).startsWith(todayStr)).length
+  const staffDayoffToday = dayoffs.filter(d => isTodayRecord(d.date)).length
 
   // Total active guests + staff
   const activeNow = checkins.filter(c => c.status === 'checked_in').length
-  const checkedOutToday = checkins.filter(c => c.status === 'checked_out' && String(c.check_out_at || c.created_at).startsWith(todayStr)).length
-  const totalToday = checkins.filter(c => String(c.created_at).startsWith(todayStr)).length
+  const checkedOutToday = checkins.filter(c => c.status === 'checked_out' && isTodayRecord(c.check_out_at || c.created_at)).length
+  const totalToday = checkins.filter(c => isTodayRecord(c.created_at || c.check_in_at)).length
 
   return {
     total_staff: staff.length,

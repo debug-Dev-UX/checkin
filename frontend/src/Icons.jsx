@@ -460,7 +460,3 @@ export function IconList({ size = 16, color = 'currentColor', className = '' }) 
     </svg>
   )
 }
-
-
-
-
