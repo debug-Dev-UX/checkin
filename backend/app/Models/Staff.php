@@ -11,6 +11,8 @@ class Staff extends Model
     protected $fillable = [
         'name',
         'email',
+        'username',
+        'password',
         'role',
         'shift_start',
         'shift_end',
@@ -19,8 +21,17 @@ class Staff extends Model
         'avatar_color',
     ];
 
+    protected $hidden = [
+        'password',
+    ];
+
     public function checkins()
     {
         return $this->hasMany(Checkin::class, 'staff_id');
+    }
+
+    public function dayoffs()
+    {
+        return $this->hasMany(StaffDayoff::class, 'staff_id');
     }
 }

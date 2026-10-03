@@ -24,20 +24,36 @@ import {
   IconTrash,
   IconClock,
   IconPrinter,
-  IconCamera
+  IconCamera,
+  IconCalendar,
+  IconLock,
+  IconKey,
+  IconLogOut,
+  IconEye,
+  IconEyeOff
 } from './Icons'
 import UserDashboard from './components/UserDashboard'
+import LoginForm from './components/LoginForm'
+import DayoffCalendar from './components/DayoffCalendar'
+import StaffPortal from './components/StaffPortal'
+import LoadingPage from './components/LoadingPage'
+import {
+  Skeleton,
+  SkeletonBannerCards,
+  SkeletonTable,
+  SkeletonWidget
+} from './components/Skeleton'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
 export default function App() {
-  // Navigation State with URL Hash Support (#user, #staff, #overview, etc.)
+  // Navigation State with URL Hash Support (#user, #staff, #overview, #dayoffs, etc.)
   const getInitialTab = () => {
     const params = new URLSearchParams(window.location.search)
     const tabParam = params.get('tab') || params.get('mode')
     const hash = window.location.hash.replace('#', '').toLowerCase()
     const target = tabParam || hash
-    if (['overview', 'performance', 'staff', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(target)) {
+    if (['overview', 'performance', 'staff', 'dayoffs', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(target)) {
       return target
     }
     return 'overview'
@@ -56,7 +72,7 @@ export default function App() {
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase()
-      if (['overview', 'performance', 'staff', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(hash)) {
+      if (['overview', 'performance', 'staff', 'dayoffs', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(hash)) {
         setNavTabState(hash)
       }
     }
@@ -64,8 +80,43 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
-  // Real-time Overview Stats (0 Data default)
+  // Current Authenticated User (Admin or Staff)
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem('chafe_auth_user')
+      return stored ? JSON.parse(stored) : null
+    } catch {
+      return null
+    }
+  })
+
+  const handleLoginSuccess = (loginData) => {
+    setCurrentUser(loginData)
+    try {
+      localStorage.setItem('chafe_auth_user', JSON.stringify(loginData))
+      if (loginData.token) localStorage.setItem('chafe_auth_token', loginData.token)
+    } catch {
+      // quiet
+    }
+  }
+
+  const handleLogout = () => {
+    setCurrentUser(null)
+    try {
+      localStorage.removeItem('chafe_auth_user')
+      localStorage.removeItem('chafe_auth_token')
+    } catch {
+      // quiet
+    }
+    showToast('Signed out successfully.')
+  }
+
+  // Real-time Overview Stats (Staff Attendance KPIs)
   const [stats, setStats] = useState({
+    total_staff: 0,
+    staff_checked_in_today: 0,
+    staff_checked_out_today: 0,
+    dayoff_today: 0,
     total_all: 0,
     active_now: 0,
     checked_out_today: 0,
@@ -132,6 +183,8 @@ export default function App() {
   const [staffForm, setStaffForm] = useState({
     name: '',
     email: '',
+    username: '',
+    password: '',
     role: 'Barista',
     shift_start: '07:30',
     shift_end: '16:00',
@@ -249,12 +302,27 @@ export default function App() {
     }
   }, [])
 
+  const [initialLoading, setInitialLoading] = useState(true)
+
   useEffect(() => {
-    fetchStatus()
-    fetchOverviewData()
-    fetchStaffData()
-    fetchControlData()
-    fetchSettings()
+    let mounted = true
+    const initApp = async () => {
+      try {
+        await Promise.allSettled([
+          fetchStatus(),
+          fetchOverviewData(),
+          fetchStaffData(),
+          fetchControlData(),
+          fetchSettings(),
+        ])
+      } finally {
+        setTimeout(() => {
+          if (mounted) setInitialLoading(false)
+        }, 550)
+      }
+    }
+    initApp()
+    return () => { mounted = false }
   }, [fetchStatus, fetchOverviewData, fetchStaffData, fetchControlData, fetchSettings])
 
   // Check out person action
@@ -341,11 +409,13 @@ export default function App() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.message || 'Failed to create staff member')
 
-      showToast(`Staff member ${staffForm.name} added!`)
+      showToast(`Staff member ${staffForm.name} created! (Username: @${json.data?.username || staffForm.username})`)
       setIsCreateStaffModalOpen(false)
       setStaffForm({
         name: '',
         email: '',
+        username: '',
+        password: '',
         role: 'Barista',
         shift_start: '07:30',
         shift_end: '16:00',
@@ -359,8 +429,8 @@ export default function App() {
     }
   }
 
-  // Update Staff Role / Shift
-  const handleUpdateStaffRole = async (staffId, newRole, newShiftStart, newShiftEnd) => {
+  // Update Staff Role, Shift, or Credentials
+  const handleUpdateStaff = async (staffId, updatedFields) => {
     try {
       const res = await fetch(`${API_BASE}/staff/${staffId}`, {
         method: 'PUT',
@@ -368,14 +438,11 @@ export default function App() {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({
-          role: newRole,
-          shift_start: newShiftStart,
-          shift_end: newShiftEnd,
-        }),
+        body: JSON.stringify(updatedFields),
       })
-      if (!res.ok) throw new Error('Failed to update staff role')
-      showToast('Staff role and shift updated!')
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.message || 'Failed to update staff')
+      showToast('Staff profile updated!')
       setEditingStaff(null)
       fetchStaffData()
     } catch (err) {
@@ -441,8 +508,51 @@ export default function App() {
   const currentActive = stats.active_now ?? 0
   const occupancyPct = seatingCap > 0 ? Math.min(100, Math.round((currentActive / seatingCap) * 100)) : 0
   const staffOnShiftCount = staffList.filter(s => s.is_on_shift).length
-  // Dedicated USER / STAFF DASHBOARD for camera check-in (No admin dashboard controls)
-  if (navTab === 'user' || navTab === 'staff-scan' || navTab === 'staff-portal') {
+  const staffCoveragePct = staffList.length > 0 ? Math.min(100, Math.round((staffOnShiftCount / staffList.length) * 100)) : 0
+  // Initial full-page loading screen
+  if (initialLoading) {
+    return <LoadingPage message="Connecting to Chafé Server..." />
+  }
+
+  // Authentication gate: If not logged in, render LoginForm
+  if (!currentUser) {
+    return (
+      <>
+        <LoginForm apiBase={API_BASE} onLoginSuccess={handleLoginSuccess} />
+        {toast && (
+          <div className="toast-container">
+            <div className={`toast ${toast.type}`}>
+              {toast.message}
+            </div>
+          </div>
+        )}
+      </>
+    )
+  }
+
+  // If logged in as Staff member, render dedicated Staff Portal
+  if (currentUser.role === 'staff') {
+    return (
+      <>
+        <StaffPortal
+          apiBase={API_BASE}
+          staffUser={currentUser.staff}
+          onLogout={handleLogout}
+          showToast={showToast}
+        />
+        {toast && (
+          <div className="toast-container">
+            <div className={`toast ${toast.type}`}>
+              {toast.message}
+            </div>
+          </div>
+        )}
+      </>
+    )
+  }
+
+  // Dedicated USER / CAMERA CHECK-IN TERMINAL (Accessible by Admin)
+  if (navTab === 'user' || navTab === 'staff-scan') {
     return (
       <UserDashboard
         apiBase={API_BASE}
@@ -478,7 +588,7 @@ export default function App() {
             </div>
             <div className="user-info-text">
               <span className="user-welcome-label">Welcome,</span>
-              <span className="user-display-name">Developer Shr</span>
+              <span className="user-display-name">Administrator</span>
             </div>
           </div>
 
@@ -524,6 +634,15 @@ export default function App() {
               <span>Staff Roster</span>
             </button>
             <button
+              className={`sidebar-nav-item ${navTab === 'dayoffs' ? 'active' : ''}`}
+              onClick={() => setNavTab('dayoffs')}
+            >
+              <span className="nav-item-icon">
+                <IconCalendar size={16} />
+              </span>
+              <span>Day Off Calendar</span>
+            </button>
+            <button
               className="sidebar-nav-item"
               onClick={() => setNavTab('user')}
             >
@@ -558,10 +677,10 @@ export default function App() {
           <div className="sidebar-footer">
             <button
               className="btn-logout"
-              title="Logout"
-              onClick={() => showToast('Session active - Chafé Manager')}
+              title="Sign Out"
+              onClick={handleLogout}
             >
-              <IconPower size={18} />
+              <IconLogOut size={18} />
             </button>
             <span style={{ fontSize: '11px', color: '#94a3b8' }}>v2.4.0</span>
           </div>
@@ -625,9 +744,18 @@ export default function App() {
               <div className="user-thumbnail-avatar">
                 <IconUserCircle size={18} color="#475569" />
               </div>
-              <span className="user-thumbnail-name">Developer Shr</span>
-              <IconChevronDown size={11} color="#64748b" />
+              <span className="user-thumbnail-name">Administrator</span>
             </div>
+
+            <button
+              className="btn-secondary"
+              onClick={handleLogout}
+              style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 10px' }}
+              title="Sign Out"
+            >
+              <IconLogOut size={14} color="#ef4444" />
+              <span>Logout</span>
+            </button>
           </div>
         </header>
 
@@ -640,7 +768,8 @@ export default function App() {
             <h1 className="page-main-heading">
               {navTab === 'overview' && 'Dashboard'}
               {navTab === 'performance' && 'Staff Performance & Punctuality'}
-              {navTab === 'staff' && 'Staff Directory & Role Assignment'}
+              {navTab === 'staff' && 'Staff Directory & Credentials'}
+              {navTab === 'dayoffs' && 'Staff Day Off & Schedule Calendar'}
               {navTab === 'control' && 'Control Room & QR Terminal'}
               {navTab === 'settings' && 'System Settings'}
               {navTab === 'staff-scan' && 'Staff Camera Check-In Terminal'}
@@ -659,54 +788,58 @@ export default function App() {
           )}
 
           {/* ============================================================== */}
-          {/* 4 COLOR BANNER KPI CARDS (SVG Icons & 0 Data Default) */}
+          {/* 4 COLOR BANNER KPI CARDS (With Shimmer Skeleton on Loading) */}
           {/* ============================================================== */}
           {navTab !== 'staff-scan' && (
-            <section className="kpi-cards-row" aria-label="Summary KPIs">
-            {/* Card 1: Vivid Magenta (Rack Server Icon / CURRENTLY SEATED) */}
-            <div className="kpi-banner-card magenta">
-              <div className="kpi-banner-icon">
-                <IconServerStack size={42} color="#ffffff" />
-              </div>
-              <div className="kpi-banner-content">
-                <span className="kpi-banner-label">CURRENTLY SEATED</span>
-                <span className="kpi-banner-value">{stats.active_now ?? 0}</span>
-              </div>
-            </div>
+            loading ? (
+              <SkeletonBannerCards />
+            ) : (
+              <section className="kpi-cards-row" aria-label="Staff Attendance KPIs">
+                {/* Card 1: Vivid Magenta (TOTAL STAFF) */}
+                <div className="kpi-banner-card magenta">
+                  <div className="kpi-banner-icon">
+                    <IconUsers size={40} color="#ffffff" />
+                  </div>
+                  <div className="kpi-banner-content">
+                    <span className="kpi-banner-label">TOTAL STAFF</span>
+                    <span className="kpi-banner-value">{stats.total_staff || staffList.length}</span>
+                  </div>
+                </div>
 
-            {/* Card 2: Vivid Cyan (Peace Hand Icon / TODAY'S VISITS) */}
-            <div className="kpi-banner-card cyan">
-              <div className="kpi-banner-icon">
-                <IconPeaceHand size={42} color="#ffffff" />
-              </div>
-              <div className="kpi-banner-content">
-                <span className="kpi-banner-label">TODAY'S VISITS</span>
-                <span className="kpi-banner-value">{stats.total_today ?? 0}</span>
-              </div>
-            </div>
+                {/* Card 2: Vivid Cyan (CHECK IN TODAY) */}
+                <div className="kpi-banner-card cyan">
+                  <div className="kpi-banner-icon">
+                    <IconPeaceHand size={42} color="#ffffff" />
+                  </div>
+                  <div className="kpi-banner-content">
+                    <span className="kpi-banner-label">CHECK IN TODAY</span>
+                    <span className="kpi-banner-value">{stats.staff_checked_in_today ?? staffList.filter(s => s.is_on_shift).length}</span>
+                  </div>
+                </div>
 
-            {/* Card 3: Vivid Green (Cocktail Glass Icon / CHECKED OUT) */}
-            <div className="kpi-banner-card green">
-              <div className="kpi-banner-icon">
-                <IconCocktail size={42} color="#ffffff" />
-              </div>
-              <div className="kpi-banner-content">
-                <span className="kpi-banner-label">CHECKED OUT</span>
-                <span className="kpi-banner-value">{stats.checked_out_today ?? 0}</span>
-              </div>
-            </div>
+                {/* Card 3: Vivid Green (CHECK OUT TODAY) */}
+                <div className="kpi-banner-card green">
+                  <div className="kpi-banner-icon">
+                    <IconCocktail size={42} color="#ffffff" />
+                  </div>
+                  <div className="kpi-banner-content">
+                    <span className="kpi-banner-label">CHECK OUT TODAY</span>
+                    <span className="kpi-banner-value">{stats.staff_checked_out_today ?? 0}</span>
+                  </div>
+                </div>
 
-            {/* Card 4: Vivid Amber/Orange (Heartbeat ECG Icon / PUNCTUALITY RATE) */}
-            <div className="kpi-banner-card amber">
-              <div className="kpi-banner-icon">
-                <IconHeartbeat size={42} color="#ffffff" />
-              </div>
-              <div className="kpi-banner-content">
-                <span className="kpi-banner-label">PUNCTUALITY RATE</span>
-                <span className="kpi-banner-value">{performanceData.overall_punctuality ?? 0}%</span>
-              </div>
-            </div>
-          </section>
+                {/* Card 4: Vivid Amber/Orange (DAYOFF TODAY) */}
+                <div className="kpi-banner-card amber">
+                  <div className="kpi-banner-icon">
+                    <IconCalendar size={40} color="#ffffff" />
+                  </div>
+                  <div className="kpi-banner-content">
+                    <span className="kpi-banner-label">DAYOFF TODAY</span>
+                    <span className="kpi-banner-value">{stats.dayoff_today ?? staffList.filter(s => s.has_dayoff_today).length}</span>
+                  </div>
+                </div>
+              </section>
+            )
           )}
 
           {/* ============================================================== */}
@@ -785,10 +918,16 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredRows.length === 0 ? (
+                      {loading ? (
+                        <tr>
+                          <td colSpan="5" style={{ padding: 0 }}>
+                            <SkeletonTable rows={5} columns={5} />
+                          </td>
+                        </tr>
+                      ) : filteredRows.length === 0 ? (
                         <tr>
                           <td colSpan="5" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
-                            {loading ? 'Loading records...' : 'No activity records found for today.'}
+                            No activity records found for today.
                           </td>
                         </tr>
                       ) : (
@@ -1085,6 +1224,7 @@ export default function App() {
                     <thead>
                       <tr>
                         <th>Staff Name</th>
+                        <th>Login ID (Username)</th>
                         <th>Assigned Role</th>
                         <th>Shift Schedule Time</th>
                         <th>Hourly Pay</th>
@@ -1093,9 +1233,15 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {staffList.length === 0 ? (
+                      {loading ? (
                         <tr>
-                          <td colSpan="6" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
+                          <td colSpan="7" style={{ padding: 0 }}>
+                            <SkeletonTable rows={6} columns={7} />
+                          </td>
+                        </tr>
+                      ) : staffList.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
                             No staff members registered yet. Click "+ Create Staff" to add team members.
                           </td>
                         </tr>
@@ -1105,6 +1251,15 @@ export default function App() {
                             <td>
                               <div className="task-name-text">{s.name}</div>
                               <div style={{ fontSize: '11px', color: '#94a3b8' }}>{s.email}</div>
+                            </td>
+
+                            <td>
+                              <span
+                                className="badge-tag-pill"
+                                style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0284c7', fontWeight: 700 }}
+                              >
+                                @{s.username || 'staff'}
+                              </span>
                             </td>
 
                             <td>
@@ -1123,18 +1278,34 @@ export default function App() {
                             </td>
 
                             <td>
-                              <span className={`badge-status-pill ${s.is_on_shift ? 'green' : 'blue'}`}>
-                                {s.is_on_shift ? 'On Shift' : 'Off Duty'}
-                              </span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
+                                <span className={`badge-status-pill ${s.is_on_shift ? 'green' : 'blue'}`}>
+                                  {s.is_on_shift ? 'On Shift' : 'Off Duty'}
+                                </span>
+                                {s.has_dayoff_today && (
+                                  <span className="badge-status-pill amber" style={{ fontSize: '10px' }}>
+                                    🌴 Day Off Today
+                                  </span>
+                                )}
+                              </div>
                             </td>
 
                             <td style={{ textAlign: 'right' }}>
                               <button
                                 className="btn-secondary"
-                                style={{ fontSize: '11px', padding: '4px 8px', marginRight: '6px' }}
-                                onClick={() => setEditingStaff(s)}
+                                style={{ fontSize: '11px', padding: '4px 8px', marginRight: '6px', color: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                onClick={() => setNavTab('dayoffs')}
+                                title="Assign Day Off in Calendar"
                               >
-                                Edit Role/Time
+                                <IconCalendar size={12} />
+                                <span>Day Off</span>
+                              </button>
+                              <button
+                                className="btn-secondary"
+                                style={{ fontSize: '11px', padding: '4px 8px', marginRight: '6px' }}
+                                onClick={() => setEditingStaff({ ...s, new_password: '' })}
+                              >
+                                Edit / Login
                               </button>
                               <button
                                 className="btn-dots-menu"
@@ -1156,6 +1327,17 @@ export default function App() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* TAB 3.5: DAY OFF & SCHEDULE CALENDAR */}
+          {/* ============================================================== */}
+          {navTab === 'dayoffs' && (
+            <DayoffCalendar
+              apiBase={API_BASE}
+              staffList={staffList}
+              showToast={showToast}
+            />
           )}
 
           {/* ============================================================== */}
@@ -1451,6 +1633,29 @@ export default function App() {
                   />
                 </div>
 
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Username (Staff Login) *</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. maya"
+                      value={staffForm.username}
+                      onChange={(e) => setStaffForm({ ...staffForm, username: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Password *</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Default: 123456"
+                      value={staffForm.password}
+                      onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })}
+                    />
+                  </div>
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">Assign Role</label>
                   <select
@@ -1503,21 +1708,61 @@ export default function App() {
       )}
 
       {/* ============================================================== */}
-      {/* MODAL: EDIT STAFF ROLE & SHIFT */}
+      {/* MODAL: EDIT STAFF ROLE, CREDENTIALS & SHIFT */}
       {/* ============================================================== */}
       {editingStaff && (
         <div className="modal-overlay" role="dialog" aria-modal="true">
           <div className="modal-content">
             <div className="modal-header">
-              <h2 className="modal-title">Edit Role & Shift • {editingStaff.name}</h2>
+              <h2 className="modal-title">Edit Staff Profile & Credentials • {editingStaff.name}</h2>
               <button className="btn-close" onClick={() => setEditingStaff(null)}>✕</button>
             </div>
 
             <form onSubmit={(e) => {
               e.preventDefault()
-              handleUpdateStaffRole(editingStaff.id, editingStaff.role, editingStaff.shift_start, editingStaff.shift_end)
+              handleUpdateStaff(editingStaff.id, {
+                name: editingStaff.name,
+                role: editingStaff.role,
+                shift_start: editingStaff.shift_start,
+                shift_end: editingStaff.shift_end,
+                username: editingStaff.username,
+                password: editingStaff.new_password || undefined,
+              })
             }}>
               <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Full Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editingStaff.name || ''}
+                    onChange={(e) => setEditingStaff({ ...editingStaff, name: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Username (Staff Login ID)</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editingStaff.username || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, username: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Reset Password (Optional)</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Leave blank to keep unchanged"
+                      value={editingStaff.new_password || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, new_password: e.target.value })}
+                    />
+                  </div>
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">Assign Role</label>
                   <select

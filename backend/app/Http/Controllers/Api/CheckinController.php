@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Checkin;
+use App\Models\Staff;
+use App\Models\StaffDayoff;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -54,6 +56,20 @@ class CheckinController extends Controller
             ->count();
         $totalToday = Checkin::whereDate('created_at', $today)->count();
 
+        // Staff specific attendance KPIs
+        $totalStaff = Staff::count();
+        $staffCheckedInToday = Checkin::where(function ($q) {
+            $q->where('type', 'employee')->orWhereNotNull('staff_id');
+        })->where('status', 'checked_in')->count();
+
+        $staffCheckedOutToday = Checkin::where(function ($q) {
+            $q->where('type', 'employee')->orWhereNotNull('staff_id');
+        })->where('status', 'checked_out')
+        ->whereDate('check_out_at', $today)
+        ->count();
+
+        $dayoffToday = StaffDayoff::whereDate('date', $today)->count();
+
         // Breakdown by visitor / person type
         $typeBreakdown = Checkin::select('type', DB::raw('count(*) as count'))
             ->groupBy('type')
@@ -68,6 +84,10 @@ class CheckinController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => [
+                'total_staff' => $totalStaff,
+                'staff_checked_in_today' => $staffCheckedInToday,
+                'staff_checked_out_today' => $staffCheckedOutToday,
+                'dayoff_today' => $dayoffToday,
                 'total_all' => $totalAll,
                 'active_now' => $activeNow,
                 'checked_out_today' => $checkedOutToday,

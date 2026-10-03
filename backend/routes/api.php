@@ -1,10 +1,16 @@
 <?php
 
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CheckinController;
 use App\Http\Controllers\Api\ControlController;
+use App\Http\Controllers\Api\DayoffController;
 use App\Http\Controllers\Api\StaffController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+
+// Authentication (Admin: admin/123456 & Staff)
+Route::post('/auth/login', [AuthController::class, 'login']);
+Route::get('/auth/me', [AuthController::class, 'me']);
 
 // Status & Dashboard Overview
 Route::get('/status', [CheckinController::class, 'status']);
@@ -24,6 +30,12 @@ Route::post('/staff', [StaffController::class, 'store']);
 Route::put('/staff/{id}', [StaffController::class, 'update']);
 Route::delete('/staff/{id}', [StaffController::class, 'destroy']);
 Route::post('/staff/seed', [StaffController::class, 'seedStaff']);
+
+// Staff Day Off & Calendar Management
+Route::get('/dayoffs', [DayoffController::class, 'index']);
+Route::post('/dayoffs', [DayoffController::class, 'store']);
+Route::delete('/dayoffs/{id}', [DayoffController::class, 'destroy']);
+Route::get('/staff/{id}/dayoffs', [DayoffController::class, 'staffDayoffs']);
 
 // Performance Analytics
 Route::get('/performance', [StaffController::class, 'performance']);
