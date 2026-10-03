@@ -1480,7 +1480,7 @@ export default function App() {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. Camille Laurent"
+                    placeholder="Full Name"
                     value={checkinForm.name}
                     onChange={(e) => setCheckinForm({ ...checkinForm, name: e.target.value })}
                     required
@@ -1492,7 +1492,7 @@ export default function App() {
                   <input
                     type="email"
                     className="form-input"
-                    placeholder="camille@example.com"
+                    placeholder="email@example.com"
                     value={checkinForm.email}
                     onChange={(e) => setCheckinForm({ ...checkinForm, email: e.target.value })}
                     required
@@ -1518,7 +1518,7 @@ export default function App() {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. Table 4, Patio Booth"
+                    placeholder="e.g. Table 1, Counter"
                     value={checkinForm.location}
                     onChange={(e) => setCheckinForm({ ...checkinForm, location: e.target.value })}
                   />
@@ -1554,7 +1554,7 @@ export default function App() {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. Maya Lin"
+                    placeholder="Staff Full Name"
                     value={staffForm.name}
                     onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })}
                     required
@@ -1566,7 +1566,7 @@ export default function App() {
                   <input
                     type="email"
                     className="form-input"
-                    placeholder="maya.lin@chafe.co"
+                    placeholder="staff@example.com"
                     value={staffForm.email}
                     onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
                     required
@@ -1579,7 +1579,7 @@ export default function App() {
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. maya"
+                      placeholder="username"
                       value={staffForm.username}
                       onChange={(e) => setStaffForm({ ...staffForm, username: e.target.value })}
                     />

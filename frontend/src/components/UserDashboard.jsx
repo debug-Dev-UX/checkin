@@ -472,14 +472,14 @@ export default function UserDashboard({
                 onClick={() => {
                   const staff = staffList.find(s => s.id.toString() === selectedStaffId) || staffList[0]
                   if (staff) {
-                    handleExecuteClock(staff, 'Demo Test Scan')
+                    handleExecuteClock(staff, 'Terminal Quick Scan')
                   } else {
                     alert('Please create staff members first in the Admin Dashboard.')
                   }
                 }}
                 disabled={staffList.length === 0}
               >
-                ⚡ Test Scan
+                ⚡ Quick Scan
               </button>
             </div>
           </div>

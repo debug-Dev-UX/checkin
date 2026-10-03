@@ -14,122 +14,19 @@ import {
 import { db } from '../firebase'
 
 // Local storage backup keys for offline resilience
-const STORAGE_PREFIX = 'chafe_fb_'
+const STORAGE_PREFIX = 'chafe_live_'
 
-const DEFAULT_STAFF = [
-  {
-    id: 'stf_maya',
-    name: 'Maya Lin',
-    email: 'maya.lin@chafe.co',
-    username: 'maya',
-    password: '123456',
-    role: 'Senior Latte Artist',
-    shift_start: '07:30',
-    shift_end: '16:00',
-    hourly_rate: 21.0,
-    status: 'active',
-    avatar_color: 'emerald',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'stf_liam',
-    name: 'Liam Chen',
-    email: 'liam.chen@chafe.co',
-    username: 'liam',
-    password: '123456',
-    role: 'Head Barista',
-    shift_start: '06:30',
-    shift_end: '15:00',
-    hourly_rate: 24.0,
-    status: 'active',
-    avatar_color: 'amber',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'stf_chloe',
-    name: 'Chloe Vance',
-    email: 'chloe.vance@chafe.co',
-    username: 'chloe',
-    password: '123456',
-    role: 'Front Counter & Cashier',
-    shift_start: '08:00',
-    shift_end: '16:30',
-    hourly_rate: 19.5,
-    status: 'active',
-    avatar_color: 'cyan',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'stf_julien',
-    name: 'Julien Rousseau',
-    email: 'julien.rousseau@chafe.co',
-    username: 'julien',
-    password: '123456',
-    role: 'Artisan Pastry Chef',
-    shift_start: '05:00',
-    shift_end: '13:30',
-    hourly_rate: 26.0,
-    status: 'active',
-    avatar_color: 'rose',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'stf_sophie',
-    name: 'Sophie Martin',
-    email: 'sophie.martin@chafe.co',
-    username: 'sophie',
-    password: '123456',
-    role: 'Shift Supervisor',
-    shift_start: '07:00',
-    shift_end: '15:30',
-    hourly_rate: 25.0,
-    status: 'active',
-    avatar_color: 'purple',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'stf_leo',
-    name: 'Leo Tanaka',
-    email: 'leo.tanaka@chafe.co',
-    username: 'leo',
-    password: '123456',
-    role: 'Barista',
-    shift_start: '09:00',
-    shift_end: '17:30',
-    hourly_rate: 20.0,
-    status: 'active',
-    avatar_color: 'blue',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'stf_noah',
-    name: 'Noah Kim',
-    email: 'noah.kim@chafe.co',
-    username: 'noah',
-    password: '123456',
-    role: 'Barista',
-    shift_start: '12:00',
-    shift_end: '20:30',
-    hourly_rate: 20.0,
-    status: 'active',
-    avatar_color: 'emerald',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'stf_emma',
-    name: 'Emma Watson',
-    email: 'emma.watson@chafe.co',
-    username: 'emma',
-    password: '123456',
-    role: 'Barista',
-    shift_start: '14:00',
-    shift_end: '22:00',
-    hourly_rate: 20.0,
-    status: 'active',
-    avatar_color: 'amber',
-    created_at: new Date().toISOString()
-  }
+const DEMO_STAFF_IDS = [
+  'stf_maya',
+  'stf_liam',
+  'stf_chloe',
+  'stf_julien',
+  'stf_sophie',
+  'stf_leo',
+  'stf_noah',
+  'stf_emma'
 ]
+const DEMO_CHECKIN_IDS = ['chk_1', 'chk_2', 'chk_3']
 
 const DEFAULT_SETTINGS = {
   cafe_name: 'Chafé',
@@ -140,7 +37,7 @@ const DEFAULT_SETTINGS = {
   qr_target_url: 'https://group-one-usea.firebaseapp.com/#user'
 }
 
-function getLocal(key, fallback) {
+function getLocal(key, fallback = []) {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + key)
     return raw ? JSON.parse(raw) : fallback
@@ -160,47 +57,67 @@ function setLocal(key, val) {
 let isInitialized = false
 
 /**
- * Initialize Database Collections if empty
+ * Initialize Database Collections & Remove any legacy demo data
  */
 export async function initFirebaseDatabase() {
   if (isInitialized) return
   isInitialized = true
 
+  // Clear legacy demo keys from local browser storage
   try {
-    const staffSnap = await getDocs(collection(db, 'staff'))
-    if (staffSnap.empty) {
-      // Seed default staff
-      for (const stf of DEFAULT_STAFF) {
-        await setDoc(doc(db, 'staff', stf.id), stf)
+    const legacyKeys = [
+      'chafe_fb_staff',
+      'chafe_fb_checkins',
+      'chafe_fb_dayoffs',
+      'chafe_fb_settings',
+      'chafe_staff_list',
+      'chafe_checkins',
+      'chafe_dayoffs'
+    ]
+    legacyKeys.forEach(k => localStorage.removeItem(k))
+  } catch {
+    // quiet
+  }
+
+  try {
+    // 1. Purge legacy demo staff in Firestore
+    for (const dId of DEMO_STAFF_IDS) {
+      try {
+        await deleteDoc(doc(db, 'staff', dId))
+      } catch {
+        // quiet
       }
-      setLocal('staff', DEFAULT_STAFF)
     }
 
+    // 2. Purge legacy demo checkins in Firestore
+    for (const cId of DEMO_CHECKIN_IDS) {
+      try {
+        await deleteDoc(doc(db, 'checkins', cId))
+      } catch {
+        // quiet
+      }
+    }
+
+    // 3. Purge legacy demo dayoffs in Firestore
+    try {
+      const qDay = query(collection(db, 'dayoffs'), where('staff_id', '==', 'stf_chloe'))
+      const snap = await getDocs(qDay)
+      snap.forEach(d => {
+        deleteDoc(d.ref).catch(() => {})
+      })
+    } catch {
+      // quiet
+    }
+
+    // 4. Ensure settings document exists
     const settingsRef = doc(db, 'settings', 'general')
     const settingsSnap = await getDoc(settingsRef)
     if (!settingsSnap.exists()) {
       await setDoc(settingsRef, DEFAULT_SETTINGS)
       setLocal('settings', DEFAULT_SETTINGS)
     }
-
-    // Seed one dayoff for Chloe Vance today
-    const todayStr = new Date().toISOString().split('T')[0]
-    const dayoffSnap = await getDocs(collection(db, 'dayoffs'))
-    if (dayoffSnap.empty) {
-      await addDoc(collection(db, 'dayoffs'), {
-        staff_id: 'stf_chloe',
-        date: todayStr,
-        type: 'day_off',
-        reason: 'Scheduled rest day',
-        status: 'approved',
-        created_at: new Date().toISOString()
-      })
-    }
   } catch (err) {
-    console.warn('Firebase online sync notice (using local fallback cache if Firestore permissions restricted):', err.message)
-    if (!getLocal('staff', null)) {
-      setLocal('staff', DEFAULT_STAFF)
-    }
+    console.warn('Firebase initialized in clean production mode:', err.message)
     if (!getLocal('settings', null)) {
       setLocal('settings', DEFAULT_SETTINGS)
     }
@@ -234,13 +151,15 @@ export async function loginWithFirebase(username, password) {
   let staffList = []
   try {
     const snap = await getDocs(collection(db, 'staff'))
-    staffList = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    staffList = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(s => !DEMO_STAFF_IDS.includes(s.id))
   } catch {
-    staffList = getLocal('staff', DEFAULT_STAFF)
+    staffList = getLocal('staff', [])
   }
 
   if (!staffList || staffList.length === 0) {
-    staffList = DEFAULT_STAFF
+    staffList = getLocal('staff', [])
   }
 
   const staff = staffList.find(s =>
@@ -283,20 +202,22 @@ export async function loginWithFirebase(username, password) {
 }
 
 /**
- * Get Staff Members with Attendance Metadata
+ * Get Staff Members with Attendance Metadata (No demo data)
  */
 export async function getStaffFromFirebase() {
   let list = []
   try {
     const snap = await getDocs(collection(db, 'staff'))
     if (!snap.empty) {
-      list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      list = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(s => !DEMO_STAFF_IDS.includes(s.id))
       setLocal('staff', list)
     } else {
-      list = getLocal('staff', DEFAULT_STAFF)
+      list = getLocal('staff', [])
     }
   } catch {
-    list = getLocal('staff', DEFAULT_STAFF)
+    list = getLocal('staff', [])
   }
 
   const todayStr = new Date().toISOString().split('T')[0]
@@ -332,7 +253,7 @@ export async function createStaffInFirebase(data) {
     newStaff.id = 'stf_' + Date.now()
   }
 
-  const current = getLocal('staff', DEFAULT_STAFF)
+  const current = getLocal('staff', [])
   setLocal('staff', [newStaff, ...current])
   return newStaff
 }
@@ -348,7 +269,7 @@ export async function updateStaffInFirebase(id, data) {
     // local fallback
   }
 
-  const current = getLocal('staff', DEFAULT_STAFF)
+  const current = getLocal('staff', [])
   const updated = current.map(s => (s.id === id ? { ...s, ...data } : s))
   setLocal('staff', updated)
 }
@@ -363,20 +284,22 @@ export async function deleteStaffInFirebase(id) {
     // local fallback
   }
 
-  const current = getLocal('staff', DEFAULT_STAFF)
+  const current = getLocal('staff', [])
   const filtered = current.filter(s => s.id !== id)
   setLocal('staff', filtered)
 }
 
 /**
- * Get Check-ins List
+ * Get Check-ins List (No demo data)
  */
 export async function getCheckinsFromFirebase() {
   try {
     const q = query(collection(db, 'checkins'), orderBy('created_at', 'desc'))
     const snap = await getDocs(q)
     if (!snap.empty) {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const list = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(c => !DEMO_CHECKIN_IDS.includes(c.id))
       setLocal('checkins', list)
       return list
     }
@@ -384,50 +307,7 @@ export async function getCheckinsFromFirebase() {
     // fallback
   }
 
-  return getLocal('checkins', [
-    {
-      id: 'chk_1',
-      name: 'Maya Lin',
-      email: 'maya.lin@chafe.co',
-      type: 'employee',
-      department: 'Senior Latte Artist',
-      badge_no: 'STF-001',
-      location: 'Main Espresso Bar',
-      status: 'checked_in',
-      punctuality_status: 'on_time',
-      late_minutes: 0,
-      check_in_at: new Date().toISOString(),
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'chk_2',
-      name: 'Liam Chen',
-      email: 'liam.chen@chafe.co',
-      type: 'employee',
-      department: 'Head Barista',
-      badge_no: 'STF-002',
-      location: 'Pour-Over Bar',
-      status: 'checked_in',
-      punctuality_status: 'on_time',
-      late_minutes: 0,
-      check_in_at: new Date().toISOString(),
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'chk_3',
-      name: 'Camille Laurent',
-      email: 'camille@example.com',
-      type: 'guest',
-      department: 'Main Dining',
-      badge_no: 'TBL-04',
-      location: 'Table 4',
-      status: 'checked_in',
-      punctuality_status: 'on_time',
-      late_minutes: 0,
-      check_in_at: new Date().toISOString(),
-      created_at: new Date().toISOString()
-    }
-  ])
+  return getLocal('checkins', [])
 }
 
 /**
@@ -540,14 +420,16 @@ export async function getStaffDayoffsFromFirebase(staffId) {
 }
 
 /**
- * Get Scheduled Day Offs
+ * Get Scheduled Day Offs (No demo data)
  */
 export async function getDayoffsFromFirebase(monthStr = null) {
   let list = []
   try {
     const snap = await getDocs(collection(db, 'dayoffs'))
     if (!snap.empty) {
-      list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      list = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(d => d.staff_id !== 'stf_chloe')
       setLocal('dayoffs', list)
     } else {
       list = getLocal('dayoffs', [])
@@ -557,7 +439,7 @@ export async function getDayoffsFromFirebase(monthStr = null) {
   }
 
   // Attach staff details
-  const staffList = getLocal('staff', DEFAULT_STAFF)
+  const staffList = getLocal('staff', [])
   const populated = list.map(item => {
     const stf = staffList.find(s => String(s.id) === String(item.staff_id))
     return {
@@ -576,9 +458,6 @@ export async function getDayoffsFromFirebase(monthStr = null) {
  * Create Day Off (Single or Range)
  */
 export async function createDayoffInFirebase(data) {
-  const staffList = getLocal('staff', DEFAULT_STAFF)
-  const stf = staffList.find(s => String(s.id) === String(data.staff_id))
-
   const recordsToInsert = []
 
   if (data.date_start && data.date_end) {
@@ -635,7 +514,7 @@ export async function deleteDayoffInFirebase(id) {
 }
 
 /**
- * Get Overall Dashboard Stats (4 Top KPI Cards calculation)
+ * Get Overall Dashboard Stats (Accurate live counts, 0 when empty)
  */
 export async function getStatsFromFirebase() {
   const staff = await getStaffFromFirebase()
