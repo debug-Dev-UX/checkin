@@ -5,7 +5,6 @@ import {
   IconPeaceHand,
   IconCocktail,
   IconHeartbeat,
-  IconHome,
   IconOverview,
   IconTrophy,
   IconUsers,
@@ -24,7 +23,6 @@ import {
   IconTrash,
   IconClock,
   IconPrinter,
-  IconCamera,
   IconCalendar,
   IconLock,
   IconKey,
@@ -594,17 +592,6 @@ export default function App() {
 
           {/* Sidebar Nav Items */}
           <div className="sidebar-nav">
-            <div className="nav-section-title">DASHBOARD</div>
-            <button
-              className={`sidebar-nav-item ${navTab === 'overview' ? 'active' : ''}`}
-              onClick={() => setNavTab('overview')}
-            >
-              <span className="nav-item-icon">
-                <IconHome size={16} />
-              </span>
-              <span>Home</span>
-            </button>
-
             <div className="nav-section-title">WORKBENCH</div>
             <button
               className={`sidebar-nav-item ${navTab === 'overview' ? 'active' : ''}`}
@@ -641,15 +628,6 @@ export default function App() {
                 <IconCalendar size={16} />
               </span>
               <span>Day Off Calendar</span>
-            </button>
-            <button
-              className="sidebar-nav-item"
-              onClick={() => setNavTab('user')}
-            >
-              <span className="nav-item-icon">
-                <IconCamera size={16} />
-              </span>
-              <span>User Dashboard (Scan)</span>
             </button>
             <button
               className={`sidebar-nav-item ${navTab === 'control' ? 'active' : ''}`}
@@ -719,16 +697,6 @@ export default function App() {
 
           {/* Topbar Right Controls */}
           <div className="top-navbar-right">
-            <button
-              className="btn-secondary"
-              style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '4px' }}
-              onClick={() => setNavTab('user')}
-              title="Open Staff Camera Check-In Portal"
-            >
-              <IconCamera size={14} color="#ea580c" />
-              <span>User Dashboard (Scan)</span>
-            </button>
-
             <button className="admin-dropdown-btn">
               <IconGear size={14} color="#64748b" />
               <span>System Administrator</span>
@@ -775,7 +743,7 @@ export default function App() {
               {navTab === 'staff-scan' && 'Staff Camera Check-In Terminal'}
             </h1>
             <div className="page-breadcrumb">
-              Home {navTab !== 'overview' && ` / ${navTab === 'staff-scan' ? 'Camera Scanner' : navTab.charAt(0).toUpperCase() + navTab.slice(1)}`}
+              Overview {navTab !== 'overview' && ` / ${navTab === 'staff-scan' ? 'Camera Scanner' : navTab.charAt(0).toUpperCase() + navTab.slice(1)}`}
             </div>
           </div>
 
@@ -1201,14 +1169,6 @@ export default function App() {
                   <div className="panel-heading-title">CHAFÉ STAFF ROSTER & ROLE ASSIGNMENT</div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button
-                      className="btn-secondary"
-                      style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                      onClick={() => setNavTab('user')}
-                    >
-                      <IconCamera size={14} color="#ea580c" />
-                      <span>User Dashboard (Scan)</span>
-                    </button>
-                    <button
                       className="btn-primary"
                       style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                       onClick={() => setIsCreateStaffModalOpen(true)}
@@ -1368,7 +1328,7 @@ export default function App() {
                     />
                   </div>
 
-                  <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ marginTop: '16px' }}>
                     <button
                       className="btn-primary"
                       onClick={() => window.print()}
@@ -1376,14 +1336,6 @@ export default function App() {
                     >
                       <IconPrinter size={15} color="#ffffff" />
                       <span>Print QR Poster</span>
-                    </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={() => setNavTab('user')}
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                    >
-                      <IconCamera size={15} color="#ea580c" />
-                      <span>Open Self Terminal (Scan)</span>
                     </button>
                   </div>
                 </div>
