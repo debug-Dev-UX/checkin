@@ -55,7 +55,6 @@ export default function StaffPortal({
   const [processing, setProcessing] = useState(false)
   const [actionResult, setActionResult] = useState(null)
   const [activeTab, setActiveTab] = useState('clock') // 'clock' | 'schedule' | 'history' | 'badge'
-  const [shiftNote, setShiftNote] = useState('')
   const [dayoffFilter, setDayoffFilter] = useState('all') // 'all' | 'upcoming' | 'past'
 
   // Camera QR scanner optional toggle
@@ -160,11 +159,9 @@ export default function StaffPortal({
           department: staffUser.role || 'Service Team',
           badge_no: `STAFF-${staffUser.id || 'MEM'}`,
           location: 'Staff Mobile Portal',
-          note: shiftNote.trim()
-            ? shiftNote.trim()
-            : todayDayoff
+          note: todayDayoff
             ? `Clocked in on Day Off (${todayDayoff.type})`
-            : 'Clocked in via Staff Portal',
+            : 'Clocked in via Staff Badge Scan',
         }
 
         const newRecord = await createCheckinInFirebase(payload)
@@ -176,7 +173,6 @@ export default function StaffPortal({
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
         })
-        setShiftNote('')
         if (showToast) showToast(`Clocked in! Welcome, ${staffUser.name}`, 'success')
       } else {
         // CLOCK OUT
@@ -576,47 +572,27 @@ export default function StaffPortal({
                 </div>
               )}
 
-              {/* Shift Notes (Optional) */}
-              {!activeCheckin && (
-                <div className="pro-form-group-note">
-                  <label className="pro-note-label">Shift Note (Optional)</label>
-                  <input
-                    type="text"
-                    className="pro-note-input"
-                    placeholder="e.g. Covering morning shift, swap with Liam"
-                    value={shiftNote}
-                    onChange={(e) => setShiftNote(e.target.value)}
-                    disabled={processing}
-                  />
+              {/* Badge Scanning Instruction Card */}
+              <div className="pro-terminal-scan-guide">
+                <div className="pro-scan-guide-card">
+                  <div className="pro-scan-guide-icon">🪪</div>
+                  <div className="pro-scan-guide-body">
+                    <h4 className="pro-scan-guide-title">
+                      {activeCheckin ? 'Ready to Clock Out?' : 'Attendance via QR Badge Pass'}
+                    </h4>
+                    <p className="pro-scan-guide-desc">
+                      Present your personal Digital ID QR Pass at the entrance terminal scanner, or use the camera scanner below.
+                    </p>
+                  </div>
                 </div>
-              )}
 
-              {/* Giant Luxury 1-Tap Clock Action Button */}
-              <div className="pro-clock-btn-container">
                 <button
                   type="button"
-                  className={`pro-giant-clock-button ${activeCheckin ? 'btn-clock-out' : 'btn-clock-in'}`}
-                  onClick={handleClockAction}
-                  disabled={processing}
+                  className="pro-btn-quick-badge"
+                  onClick={() => setActiveTab('badge')}
                 >
-                  <div className="giant-btn-glow"></div>
-                  <div className="giant-btn-core">
-                    <span className="giant-core-icon">
-                      {activeCheckin ? '🛑' : '☕'}
-                    </span>
-                    <span className="giant-core-title">
-                      {processing
-                        ? 'SYNCING CLOUD...'
-                        : activeCheckin
-                        ? 'TAP TO CLOCK OUT'
-                        : 'TAP TO CLOCK IN'}
-                    </span>
-                    <span className="giant-core-desc">
-                      {activeCheckin
-                        ? 'Complete shift & log final hours to timesheet'
-                        : `Start duty as ${staffUser?.role || 'Staff'}`}
-                    </span>
-                  </div>
+                  <span>View My Digital ID QR Pass</span>
+                  <span style={{ fontSize: '15px' }}>→</span>
                 </button>
               </div>
 
