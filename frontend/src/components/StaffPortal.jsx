@@ -23,6 +23,7 @@ import {
 } from '../Icons'
 import { Skeleton } from './Skeleton'
 import ProfileView from './ProfileView'
+import ScanSuccessModal from './ScanSuccessModal'
 import {
   getCheckinsFromFirebase,
   getStaffDayoffsFromFirebase,
@@ -72,6 +73,7 @@ export default function StaffPortal({
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [actionResult, setActionResult] = useState(null)
+  const [scanSuccessModal, setScanSuccessModal] = useState(null)
   const [activeTab, setActiveTab] = useState('clock') // 'clock' | 'schedule' | 'scan' | 'history' | 'badge'
   const [dayoffFilter, setDayoffFilter] = useState('all') // 'all' | 'upcoming' | 'past'
 
@@ -264,6 +266,19 @@ export default function StaffPortal({
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
         })
+        setScanSuccessModal({
+          action: 'in',
+          name: staffProfile?.name || staffUser.name || 'Staff Member',
+          role: staffProfile?.role || staffUser.role || 'Barista',
+          photo_url: staffPhotoUrl || null,
+          branch_name: activeBranch?.name || staffUser.branch_name || 'Chafé Store',
+          distance: verifiedLocation?.distance ?? null,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          isLate: newRecord?.punctuality_status === 'late',
+          lateMins: newRecord?.late_minutes || 0,
+        })
         if (showToast) showToast(`Clocked in! Welcome, ${staffUser.name}`, 'success')
       } else {
         // CLOCK OUT
@@ -277,6 +292,19 @@ export default function StaffPortal({
           action: 'Shift Completed Successfully! (Clocked Out)',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: 'Shift Logged to Timesheet ✓',
+        })
+        setScanSuccessModal({
+          action: 'out',
+          name: staffProfile?.name || staffUser.name || 'Staff Member',
+          role: staffProfile?.role || staffUser.role || 'Barista',
+          photo_url: staffPhotoUrl || null,
+          branch_name: activeBranch?.name || staffUser.branch_name || 'Chafé Store',
+          distance: verifiedLocation?.distance ?? null,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+          status: 'Shift Completed ✓',
+          isLate: false,
+          lateMins: 0,
         })
         if (showToast) showToast(`Shift completed! Great job today, ${staffUser.name}!`, 'success')
       }
@@ -1664,6 +1692,11 @@ export default function StaffPortal({
           </div>
         </div>
       )}
+      {/* Scan Success Popup Confirmation Modal */}
+      <ScanSuccessModal
+        data={scanSuccessModal}
+        onClose={() => setScanSuccessModal(null)}
+      />
     </div>
   )
 }

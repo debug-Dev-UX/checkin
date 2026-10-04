@@ -14,6 +14,7 @@ import {
   createCheckinInFirebase,
   checkoutInFirebase
 } from '../services/firebaseService'
+import ScanSuccessModal from './ScanSuccessModal'
 
 /**
  * Web Audio API chime on successful scan
@@ -64,6 +65,7 @@ export default function StaffCameraScanner({
 
   // Feedback result
   const [scanResult, setScanResult] = useState(null)
+  const [scanSuccessModal, setScanSuccessModal] = useState(null)
   const [lastScannedCode, setLastScannedCode] = useState(null)
   const [recentLogs, setRecentLogs] = useState([])
 
@@ -178,6 +180,18 @@ export default function StaffCameraScanner({
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : 'Late Arrival',
           lateMins: newRecord?.late_minutes || 0,
         })
+        setScanSuccessModal({
+          action: 'in',
+          name: staffMember.name,
+          role: staffMember.role,
+          photo_url: staffMember.photo_url || null,
+          branch_name: staffMember.branch_name || 'Chafé Store',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          isLate: newRecord?.punctuality_status === 'late',
+          lateMins: newRecord?.late_minutes || 0,
+        })
       } else {
         // Clock Out: find active check-in
         const checkinsData = await getCheckinsFromFirebase()
@@ -199,6 +213,18 @@ export default function StaffCameraScanner({
           role: staffMember.role,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: 'Shift Completed',
+        })
+        setScanSuccessModal({
+          action: 'out',
+          name: staffMember.name,
+          role: staffMember.role,
+          photo_url: staffMember.photo_url || null,
+          branch_name: staffMember.branch_name || 'Chafé Store',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+          status: 'Shift Completed ✓',
+          isLate: false,
+          lateMins: 0,
         })
       }
 
@@ -579,6 +605,11 @@ export default function StaffCameraScanner({
           </div>
         </div>
       </div>
+      {/* Scan Success Popup Confirmation Modal */}
+      <ScanSuccessModal
+        data={scanSuccessModal}
+        onClose={() => setScanSuccessModal(null)}
+      />
     </div>
   )
 }

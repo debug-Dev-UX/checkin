@@ -21,6 +21,7 @@ import {
   IconLogOut
 } from '../Icons'
 import ProfileView from './ProfileView'
+import ScanSuccessModal from './ScanSuccessModal'
 import {
   getTodayControlFromFirebase,
   getCheckinsFromFirebase,
@@ -94,6 +95,7 @@ export default function UserDashboard({
 
   // Result & logs
   const [scanResult, setScanResult] = useState(null)
+  const [scanSuccessModal, setScanSuccessModal] = useState(null)
   const [lastScannedCode, setLastScannedCode] = useState(null)
   const [todayStaffLogs, setTodayStaffLogs] = useState([])
 
@@ -296,6 +298,19 @@ export default function UserDashboard({
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
         })
+        setScanSuccessModal({
+          action: 'in',
+          name: staffMember.name,
+          role: staffMember.role,
+          photo_url: staffMember.photo_url || null,
+          branch_name: activeBranch?.name || staffMember.branch_name || 'Chafé Store',
+          distance: verifiedLocation?.distance ?? null,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          isLate: newRecord?.punctuality_status === 'late',
+          lateMins: newRecord?.late_minutes || 0,
+        })
       } else {
         // Clock Out
         const checkinsData = await getCheckinsFromFirebase()
@@ -317,6 +332,19 @@ export default function UserDashboard({
           role: staffMember.role,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: 'Shift Completed ✓',
+        })
+        setScanSuccessModal({
+          action: 'out',
+          name: staffMember.name,
+          role: staffMember.role,
+          photo_url: staffMember.photo_url || null,
+          branch_name: activeBranch?.name || staffMember.branch_name || 'Chafé Store',
+          distance: verifiedLocation?.distance ?? null,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+          status: 'Shift Completed ✓',
+          isLate: false,
+          lateMins: 0,
         })
       }
 
@@ -1258,6 +1286,11 @@ export default function UserDashboard({
           </div>
         </div>
       )}
+      {/* Scan Success Popup Confirmation Modal */}
+      <ScanSuccessModal
+        data={scanSuccessModal}
+        onClose={() => setScanSuccessModal(null)}
+      />
     </div>
   )
 }

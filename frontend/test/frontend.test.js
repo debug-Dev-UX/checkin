@@ -66,3 +66,10 @@ test('branch coordinate sanitization handles raw string inputs and decimals', ()
   assert.strictEqual(cleaned.lng, 103.8623305)
   assert.strictEqual(cleaned.radiusMeters, 50)
 })
+
+test('ScanSuccessModal component file exists and exports default function', () => {
+  const filePath = path.resolve('src/components/ScanSuccessModal.jsx')
+  assert.ok(fs.existsSync(filePath), 'ScanSuccessModal.jsx must exist')
+  const content = fs.readFileSync(filePath, 'utf-8')
+  assert.match(content, /export default function ScanSuccessModal/, 'Must export default function ScanSuccessModal')
+})
