@@ -825,6 +825,7 @@ export default function UserDashboard({
         {activeTab === 'profile' && (
           <ProfileView
             user={currentStaff}
+            branches={branches}
             onUpdateUser={async (updated) => {
               if (currentStaff) {
                 setProfileOverrides(prev => ({ ...prev, ...updated }))

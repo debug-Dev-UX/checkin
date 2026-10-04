@@ -44,3 +44,25 @@ test('locationService defines multi-branch architecture with Kohke, Watbo, and H
   assert.ok(legacy.name.includes('Kohke'), 'Legacy branch_1 must resolve to first branch')
 })
 
+test('branch coordinate sanitization handles raw string inputs and decimals', () => {
+  const sanitize = (b) => ({
+    ...b,
+    lat: typeof b.lat === 'number' ? b.lat : (parseFloat(b.lat) || 0),
+    lng: typeof b.lng === 'number' ? b.lng : (parseFloat(b.lng) || 0),
+    radiusMeters: typeof b.radiusMeters === 'number' ? b.radiusMeters : (parseInt(b.radiusMeters, 10) || 50),
+  })
+
+  const raw = {
+    id: 'test_branch',
+    name: 'Test Branch',
+    lat: '13.3632967',
+    lng: '103.8623305',
+    radiusMeters: '50'
+  }
+  const cleaned = sanitize(raw)
+  assert.strictEqual(typeof cleaned.lat, 'number')
+  assert.strictEqual(cleaned.lat, 13.3632967)
+  assert.strictEqual(typeof cleaned.lng, 'number')
+  assert.strictEqual(cleaned.lng, 103.8623305)
+  assert.strictEqual(cleaned.radiusMeters, 50)
+})

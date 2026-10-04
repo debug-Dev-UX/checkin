@@ -480,22 +480,30 @@ export default function App() {
   useEffect(() => {
     fetchBranches()
     const unsubscribe = subscribeToBranches((list) => {
-      if (list && list.length > 0) {
+      // Do not overwrite local branches while user is actively editing in Settings tab
+      if (list && list.length > 0 && navTab !== 'settings') {
         setBranches(list)
       }
     })
     return () => {
       if (unsubscribe) unsubscribe()
     }
-  }, [fetchBranches])
+  }, [fetchBranches, navTab])
 
   // Save Branch Settings
   const handleSaveBranches = async (updatedBranches) => {
     setIsBranchesSaving(true)
     try {
-      await saveBranchesToFirebase(updatedBranches)
-      setBranches(updatedBranches)
-      saveBranches(updatedBranches)
+      const targetList = updatedBranches || branches
+      const sanitized = targetList.map(b => ({
+        ...b,
+        lat: typeof b.lat === 'number' ? b.lat : (parseFloat(b.lat) || 0),
+        lng: typeof b.lng === 'number' ? b.lng : (parseFloat(b.lng) || 0),
+        radiusMeters: typeof b.radiusMeters === 'number' ? b.radiusMeters : (parseInt(b.radiusMeters, 10) || 50),
+      }))
+      await saveBranchesToFirebase(sanitized)
+      setBranches(sanitized)
+      saveBranches(sanitized)
       showToast('Branch GPS & allowed scan distance saved successfully!', 'success')
     } catch (err) {
       showToast(err.message || 'Failed to save branches', 'error')
@@ -546,12 +554,13 @@ export default function App() {
   // Update Staff Role, Shift, Branch or Credentials
   const handleUpdateStaff = async (staffId, updatedFields) => {
     try {
+      setStaffList(prev => prev.map(s => String(s.id) === String(staffId) ? { ...s, ...updatedFields } : s))
       await updateStaffInFirebase(staffId, updatedFields)
-      showToast('Staff profile updated!')
+      showToast('Staff profile updated successfully!', 'success')
       setEditingStaff(null)
-      fetchStaffData()
+      await fetchStaffData()
     } catch (err) {
-      showToast(err.message, 'error')
+      showToast(err.message || 'Failed to update staff', 'error')
     }
   }
 
@@ -2163,17 +2172,18 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 0.8fr', gap: '10px', marginBottom: '10px' }}>
                           <div className="form-group" style={{ margin: 0 }}>
                             <label className="form-label" style={{ fontSize: '11px' }}>Branch Name (ឈ្មោះសាខា)</label>
                             <input
                               type="text"
                               className="form-input"
-                              value={b.name}
+                              value={b.name || ''}
                               onChange={(e) => {
                                 const val = e.target.value
                                 setBranches(prev => prev.map(item => item.id === b.id ? { ...item, name: val } : item))
                               }}
+                              placeholder="e.g. Chafé • Kohke"
                             />
                           </div>
                           <div className="form-group" style={{ margin: 0 }}>
@@ -2186,6 +2196,20 @@ export default function App() {
                                 const val = e.target.value
                                 setBranches(prev => prev.map(item => item.id === b.id ? { ...item, address: val } : item))
                               }}
+                              placeholder="e.g. Siem Reap, Cambodia"
+                            />
+                          </div>
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label className="form-label" style={{ fontSize: '11px' }}>Branch Code (កូដ)</label>
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={b.code || ''}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                setBranches(prev => prev.map(item => item.id === b.id ? { ...item, code: val } : item))
+                              }}
+                              placeholder="e.g. TK"
                             />
                           </div>
                         </div>
@@ -2194,27 +2218,29 @@ export default function App() {
                           <div className="form-group" style={{ margin: 0 }}>
                             <label className="form-label" style={{ fontSize: '11px' }}>Latitude (រយៈទទឹង)</label>
                             <input
-                              type="number"
-                              step="any"
+                              type="text"
+                              inputMode="decimal"
                               className="form-input"
-                              value={b.lat}
+                              value={b.lat ?? ''}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0
+                                const val = e.target.value
                                 setBranches(prev => prev.map(item => item.id === b.id ? { ...item, lat: val } : item))
                               }}
+                              placeholder="13.3632967"
                             />
                           </div>
                           <div className="form-group" style={{ margin: 0 }}>
                             <label className="form-label" style={{ fontSize: '11px' }}>Longitude (រយៈបណ្តោយ)</label>
                             <input
-                              type="number"
-                              step="any"
+                              type="text"
+                              inputMode="decimal"
                               className="form-input"
-                              value={b.lng}
+                              value={b.lng ?? ''}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0
+                                const val = e.target.value
                                 setBranches(prev => prev.map(item => item.id === b.id ? { ...item, lng: val } : item))
                               }}
+                              placeholder="103.8623305"
                             />
                           </div>
                           <div className="form-group" style={{ margin: 0 }}>
@@ -2225,11 +2251,12 @@ export default function App() {
                               type="number"
                               className="form-input"
                               style={{ borderColor: '#f59e0b', fontWeight: 700 }}
-                              value={b.radiusMeters || 200}
+                              value={b.radiusMeters ?? ''}
                               onChange={(e) => {
-                                const val = parseInt(e.target.value, 10) || 100
+                                const val = e.target.value
                                 setBranches(prev => prev.map(item => item.id === b.id ? { ...item, radiusMeters: val } : item))
                               }}
+                              placeholder="50"
                             />
                           </div>
                         </div>
@@ -2507,20 +2534,25 @@ export default function App() {
               <button className="btn-close" onClick={() => setEditingStaff(null)}>✕</button>
             </div>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault()
               const chosenBranch = branches.find(b => b.id === editingStaff.branch_id) || branches[0]
-              handleUpdateStaff(editingStaff.id, {
-                name: editingStaff.name,
-                role: editingStaff.role,
+              const payload = {
+                name: (editingStaff.name || '').trim(),
+                role: editingStaff.role || 'Barista',
                 branch_id: editingStaff.branch_id || chosenBranch?.id || 'branch_2',
                 branch_name: editingStaff.branch_id === 'all' ? 'All Branches (Floating)' : (editingStaff.branch_name || chosenBranch?.name || 'Chafé • Kohke'),
-                shift_start: editingStaff.shift_start,
-                shift_end: editingStaff.shift_end,
-                username: editingStaff.username,
-                password: editingStaff.new_password || undefined,
-                photo_url: editingStaff.photo_url || undefined,
-              })
+                shift_start: editingStaff.shift_start || '07:30',
+                shift_end: editingStaff.shift_end || '16:00',
+                username: (editingStaff.username || '').trim(),
+              }
+              if (editingStaff.new_password && editingStaff.new_password.trim()) {
+                payload.password = editingStaff.new_password.trim()
+              }
+              if (editingStaff.photo_url) {
+                payload.photo_url = editingStaff.photo_url
+              }
+              await handleUpdateStaff(editingStaff.id, payload)
             }}>
               <div className="modal-body">
                 <div className="form-group">
@@ -2618,7 +2650,7 @@ export default function App() {
                   <label className="form-label">Assign Role</label>
                   <select
                     className="form-select"
-                    value={editingStaff.role}
+                    value={editingStaff.role || 'Barista'}
                     onChange={(e) => setEditingStaff({ ...editingStaff, role: e.target.value })}
                   >
                     <option value="Head Barista">Head Barista</option>
@@ -2636,7 +2668,7 @@ export default function App() {
                     <input
                       type="text"
                       className="form-input"
-                      value={editingStaff.shift_start}
+                      value={editingStaff.shift_start || '07:30'}
                       onChange={(e) => setEditingStaff({ ...editingStaff, shift_start: e.target.value })}
                     />
                   </div>
@@ -2645,7 +2677,7 @@ export default function App() {
                     <input
                       type="text"
                       className="form-input"
-                      value={editingStaff.shift_end}
+                      value={editingStaff.shift_end || '16:00'}
                       onChange={(e) => setEditingStaff({ ...editingStaff, shift_end: e.target.value })}
                     />
                   </div>

@@ -11,14 +11,25 @@ import {
   IconChevronRight,
   IconBell,
 } from '../Icons'
+import { getBranches } from '../services/locationService'
 
 export default function ProfileView({
   user,
+  branches = [],
   onUpdateUser,
   onBack,
   onLogout,
   showToast,
 }) {
+  const branchesList = (branches && branches.length > 0) ? branches : getBranches()
+  const [selectedBranchId, setSelectedBranchId] = useState(user?.branch_id || branchesList[0]?.id || 'branch_2')
+
+  useEffect(() => {
+    if (user?.branch_id) {
+      setSelectedBranchId(user.branch_id)
+    }
+  }, [user?.branch_id])
+
   // Parse name into first & last name without demo defaults
   const fullName = user?.name || ''
   const nameParts = fullName.trim() ? fullName.trim().split(' ') : []
@@ -98,6 +109,7 @@ export default function ProfileView({
   // Save profile changes
   const handleSaveProfile = () => {
     const combinedName = `${firstName.trim()} ${lastName.trim()}`.trim() || user?.name || 'Staff Member'
+    const chosenBranch = branchesList.find(b => b.id === selectedBranchId) || branchesList[0]
     const updatedUser = {
       ...(user || {}),
       name: combinedName,
@@ -105,6 +117,9 @@ export default function ProfileView({
       phone: phone.trim() ? `${countryCode} ${phone.trim()}` : '',
       gender,
       photo_url: avatarUrl,
+      branch_id: chosenBranch?.id || user?.branch_id || 'branch_2',
+      branch_name: chosenBranch?.name || user?.branch_name || 'Chafé • Kohke',
+      branch_address: chosenBranch?.address || user?.branch_address || 'Siem Reap, Cambodia',
     }
 
     if (onUpdateUser) {
@@ -500,6 +515,24 @@ export default function ProfileView({
                 </select>
               </div>
 
+              {/* 6. Store Branch */}
+              <div className="edit-input-group select-group">
+                <label className="edit-input-label">
+                  {appLang === 'kh' ? 'សាខាហាង' : 'Store Branch'}
+                </label>
+                <select
+                  className="edit-input-field select-field"
+                  value={selectedBranchId}
+                  onChange={(e) => setSelectedBranchId(e.target.value)}
+                >
+                  {branchesList.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.radiusMeters || 50}m scan radius)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Save Button */}
               <div className="edit-form-save-row">
                 <button
@@ -591,25 +624,59 @@ export default function ProfileView({
               {/* LOCATION MODAL */}
               {activeModal === 'location' && (
                 <div style={{ fontSize: '13px', color: '#334155' }}>
-                  <p style={{ marginBottom: '10px' }}>
+                  <p style={{ marginBottom: '12px', fontWeight: 600 }}>
                     {appLang === 'kh'
-                      ? 'សាខាដែលបានភ្ជាប់សម្រាប់ការស្កេនវត្តមាន៖'
-                      : 'Active store branch linked to your attendance scanning:'}
+                      ? 'ជ្រើសរើសសាខាហាងសម្រាប់ការស្កេនវត្តមាន៖'
+                      : 'Select active store branch for attendance scanning:'}
                   </p>
-                  <div
-                    style={{
-                      padding: '14px',
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '12px',
-                    }}
-                  >
-                    <div style={{ fontWeight: 800, color: '#0f172a' }}>
-                      {staffUser?.branch_name || 'Chafé • Kohke'}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                      {staffUser?.branch_address || 'Siem Reap, Cambodia'}
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {branchesList.map(b => {
+                      const isSelected = (user?.branch_id === b.id) || (!user?.branch_id && b.id === selectedBranchId)
+                      return (
+                        <div
+                          key={b.id}
+                          onClick={() => {
+                            const updated = {
+                              ...(user || {}),
+                              branch_id: b.id,
+                              branch_name: b.name,
+                              branch_address: b.address || 'Siem Reap, Cambodia',
+                            }
+                            setSelectedBranchId(b.id)
+                            if (onUpdateUser) onUpdateUser(updated)
+                            try {
+                              localStorage.setItem('chafe_custom_staff_profile', JSON.stringify(updated))
+                            } catch { /* quiet */ }
+                            showToast?.(
+                              appLang === 'kh' ? `បានប្តូរទៅកាន់ ${b.name}` : `Active branch set to ${b.name}`,
+                              'success'
+                            )
+                            setActiveModal(null)
+                          }}
+                          style={{
+                            padding: '12px 14px',
+                            background: isSelected ? '#ecfdf5' : '#f8fafc',
+                            border: `1.5px solid ${isSelected ? '#10b981' : '#e2e8f0'}`,
+                            borderRadius: '10px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 700, color: isSelected ? '#065f46' : '#0f172a', fontSize: '13px' }}>
+                              {b.name}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                              {b.address || 'Siem Reap'} • {b.radiusMeters || 50}m allowed radius
+                            </div>
+                          </div>
+                          {isSelected && <span style={{ color: '#10b981', fontWeight: 800, fontSize: '16px' }}>✓</span>}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}

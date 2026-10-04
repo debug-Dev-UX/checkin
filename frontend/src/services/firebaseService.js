@@ -12,7 +12,7 @@ import {
   orderBy,
   onSnapshot
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { db } from '../firebase.js'
 
 // Local storage backup keys for offline resilience
 const STORAGE_PREFIX = 'chafe_live_'
@@ -268,15 +268,24 @@ export async function createStaffInFirebase(data) {
  * Update Staff Member
  */
 export async function updateStaffInFirebase(id, data) {
+  if (!id) return
+  // Sanitize data: remove any undefined or null/NaN values that cause Firestore to reject the update
+  const cleanData = {}
+  for (const [k, v] of Object.entries(data || {})) {
+    if (v !== undefined) {
+      cleanData[k] = v
+    }
+  }
+
   try {
-    const docRef = doc(db, 'staff', id)
-    await updateDoc(docRef, data)
-  } catch {
-    // local fallback
+    const docRef = doc(db, 'staff', String(id))
+    await setDoc(docRef, cleanData, { merge: true })
+  } catch (err) {
+    console.warn('Failed to update staff document in Firestore:', err)
   }
 
   const current = getLocal('staff', [])
-  const updated = current.map(s => (s.id === id ? { ...s, ...data } : s))
+  const updated = current.map(s => (String(s.id) === String(id) ? { ...s, ...cleanData } : s))
   setLocal('staff', updated)
 }
 

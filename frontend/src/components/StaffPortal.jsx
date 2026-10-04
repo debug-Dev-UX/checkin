@@ -1151,6 +1151,7 @@ export default function StaffPortal({
         {activeTab === 'profile' && (
           <ProfileView
             user={staffProfile}
+            branches={branches}
             onUpdateUser={async (updated) => {
               setStaffProfile(prev => ({ ...prev, ...updated }))
               if (staffUser) {
