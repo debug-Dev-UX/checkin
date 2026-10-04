@@ -3,26 +3,36 @@
  * Supports multiple café branches with custom GPS coordinates and admin-chosen scan radius.
  */
 
-// Default 2 Branches (សាខា)
+// Default Store Branches (សាខា)
 export const DEFAULT_BRANCHES = [
   {
-    id: 'branch_1',
-    code: 'BKK1',
-    name: 'Chafé • BKK1 (សាខាទី ១)',
-    address: 'Street 302, Boeung Keng Kang 1, Phnom Penh',
-    lat: 11.5564,
-    lng: 104.9282,
-    radiusMeters: 200, // Admin-configurable allowed scan distance (meters)
+    id: 'branch_2',
+    code: 'KK',
+    name: 'Chafé • Kohke',
+    address: 'Siem Reap, Cambodia',
+    lat: 13.3632967,
+    lng: 103.8623305,
+    radiusMeters: 50,
     isActive: true,
   },
   {
-    id: 'branch_2',
-    code: 'TK',
-    name: 'Chafé • Toul Kork (សាខាទី ២)',
-    address: 'Street 315, Toul Kork, Phnom Penh',
-    lat: 11.5732,
-    lng: 104.8988,
-    radiusMeters: 200, // Admin-configurable allowed scan distance (meters)
+    id: 'branch_1791018243906',
+    code: 'WB',
+    name: 'Chafé • Watbo',
+    address: 'Siem Reap, Cambodia',
+    lat: 13.3545705,
+    lng: 103.8589937,
+    radiusMeters: 50,
+    isActive: true,
+  },
+  {
+    id: 'branch_1791018323584',
+    code: 'HT',
+    name: 'Hotel',
+    address: 'Siem Reap, Cambodia',
+    lat: 13.351881,
+    lng: 103.853068,
+    radiusMeters: 50,
     isActive: true,
   },
 ]
@@ -46,6 +56,15 @@ export function getBranches() {
   } catch {
     // quiet catch
   }
+  try {
+    const live = localStorage.getItem('chafe_live_branches')
+    if (live) {
+      const parsed = JSON.parse(live)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed
+      }
+    }
+  } catch {}
   return DEFAULT_BRANCHES
 }
 
@@ -55,6 +74,7 @@ export function getBranches() {
 export function saveBranches(branches) {
   try {
     localStorage.setItem(BRANCHES_STORAGE_KEY, JSON.stringify(branches))
+    localStorage.setItem('chafe_live_branches', JSON.stringify(branches))
   } catch {
     // quiet catch
   }
@@ -62,11 +82,20 @@ export function saveBranches(branches) {
 }
 
 /**
- * Get branch by ID
+ * Get branch by ID or fallback
  */
 export function getBranchById(id) {
   const branches = getBranches()
-  return branches.find(b => b.id === id) || branches[0] || DEFAULT_BRANCHES[0]
+  if (!id) return branches[0] || DEFAULT_BRANCHES[0]
+  return (
+    branches.find(b => b.id === id) ||
+    // Legacy mapping: branch_1 maps to first branch (Kohke)
+    (id === 'branch_1' ? branches[0] : null) ||
+    branches.find(b => b.code?.toLowerCase() === id.toLowerCase()) ||
+    branches.find(b => b.name?.toLowerCase().includes(id.toLowerCase())) ||
+    branches[0] ||
+    DEFAULT_BRANCHES[0]
+  )
 }
 
 /**
@@ -89,7 +118,7 @@ export function setStoreLocation(location) {
         name: location.name || b.name,
         lat: parseFloat(location.lat),
         lng: parseFloat(location.lng),
-        radiusMeters: parseInt(location.radiusMeters || b.radiusMeters || 200, 10),
+        radiusMeters: parseInt(location.radiusMeters || b.radiusMeters || 50, 10),
       }
     }
     return b
@@ -141,9 +170,19 @@ export function verifyRealtimeLocationForStaff(staffUser = null, customBranches 
     // Determine target branch
     let targetBranch = null
     const assignedBranchId = staffUser?.branch_id
+    const assignedBranchName = staffUser?.branch_name
 
     if (assignedBranchId && assignedBranchId !== 'all') {
-      targetBranch = activeBranches.find(b => b.id === assignedBranchId)
+      targetBranch =
+        activeBranches.find(b => b.id === assignedBranchId) ||
+        (assignedBranchName && assignedBranchName !== 'All Branches (Floating)'
+          ? activeBranches.find(b => b.name?.toLowerCase() === assignedBranchName.toLowerCase() || b.name?.includes(assignedBranchName) || assignedBranchName?.includes(b.name))
+          : null) ||
+        (assignedBranchId === 'branch_1' ? activeBranches[0] : null)
+    } else if (assignedBranchName && assignedBranchName !== 'All Branches (Floating)') {
+      targetBranch = activeBranches.find(
+        b => b.name?.toLowerCase() === assignedBranchName.toLowerCase() || b.name?.includes(assignedBranchName) || assignedBranchName?.includes(b.name)
+      )
     }
 
     navigator.geolocation.getCurrentPosition(
@@ -155,7 +194,7 @@ export function verifyRealtimeLocationForStaff(staffUser = null, customBranches 
         // 1. If assigned to a specific branch: strictly validate against that branch
         if (targetBranch) {
           const distance = calculateDistanceMeters(userLat, userLng, targetBranch.lat, targetBranch.lng)
-          const allowedRadius = targetBranch.radiusMeters || 200
+          const allowedRadius = targetBranch.radiusMeters || 50
 
           if (distance <= allowedRadius) {
             resolve({
@@ -166,23 +205,36 @@ export function verifyRealtimeLocationForStaff(staffUser = null, customBranches 
               allowedRadius,
               coords: { lat: userLat, lng: userLng },
             })
+            return
           } else {
+            // Also check if they happen to be at another active branch
+            const otherBranch = activeBranches.find(b => {
+              if (b.id === targetBranch.id) return false
+              const dist = calculateDistanceMeters(userLat, userLng, b.lat, b.lng)
+              return dist <= (b.radiusMeters || 50)
+            })
+
+            let extraMsg = ''
+            if (otherBranch) {
+              extraMsg = ` (Note: You are currently within ${otherBranch.name}'s radius. If you are stationed at ${otherBranch.name} today, please ask management to update your assigned branch.)`
+            }
+
             reject({
               code: 'FAR_FROM_STORE',
               branch: targetBranch,
               distance,
               allowedRadius,
               coords: { lat: userLat, lng: userLng },
-              message: `You are too far from ${targetBranch.name}! You are ${distance}m away. The admin has set the allowed scan radius to ${allowedRadius}m. Please move closer to the store to scan.`,
+              message: `You are too far from ${targetBranch.name}! You are ${distance}m away. The allowed scan radius is ${allowedRadius}m.${extraMsg}`,
             })
+            return
           }
-          return
         }
 
         // 2. If staff is assigned to 'all' or no specific branch: check against all active branches
         const results = activeBranches.map(b => {
           const dist = calculateDistanceMeters(userLat, userLng, b.lat, b.lng)
-          const rad = b.radiusMeters || 200
+          const rad = b.radiusMeters || 50
           return {
             branch: b,
             distance: dist,

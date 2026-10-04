@@ -605,10 +605,10 @@ export default function ProfileView({
                     }}
                   >
                     <div style={{ fontWeight: 800, color: '#0f172a' }}>
-                      Chafé Specialty Coffee • Store #01
+                      {staffUser?.branch_name || 'Chafé • Kohke'}
                     </div>
                     <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                      Terminal A, Downtown Plaza, Floor 1
+                      {staffUser?.branch_address || 'Siem Reap, Cambodia'}
                     </div>
                   </div>
                 </div>

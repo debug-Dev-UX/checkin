@@ -5930,16 +5930,24 @@ body {
   border: 1px solid #bfdbfe;
 }
 
+.branch-badge.kohke,
 .branch-badge.bkk1 {
   background: #f0fdf4;
   color: #15803d;
   border-color: #bbf7d0;
 }
 
+.branch-badge.watbo,
 .branch-badge.tk {
   background: #faf5ff;
   color: #7e22ce;
   border-color: #e9d5ff;
+}
+
+.branch-badge.hotel {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
 }
 
 .branch-radius-chip {

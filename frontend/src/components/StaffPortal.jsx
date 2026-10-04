@@ -30,7 +30,8 @@ import {
   checkoutInFirebase,
   subscribeToLiveCheckins,
   updateStaffInFirebase,
-  isTodayRecord
+  isTodayRecord,
+  subscribeToBranches
 } from '../services/firebaseService'
 import {
   verifyRealtimeLocationForStaff,
@@ -90,6 +91,19 @@ export default function StaffPortal({
   const [locationAlert, setLocationAlert] = useState(null) // null | { message, distance, code, allowedRadius }
   const [verifiedLocation, setVerifiedLocation] = useState(null)
   const [pendingLocationAction, setPendingLocationAction] = useState(null)
+  // Multi-branch state
+  const [branches, setBranches] = useState(() => getBranches())
+  useEffect(() => {
+    const unsub = subscribeToBranches((list) => {
+      if (Array.isArray(list) && list.length > 0) {
+        setBranches(list)
+      }
+    })
+    return () => {
+      if (unsub) unsub()
+    }
+  }, [])
+
   const [staffProfile, setStaffProfile] = useState(() => {
     try {
       const saved = localStorage.getItem('chafe_custom_staff_profile')
@@ -218,6 +232,7 @@ export default function StaffPortal({
     try {
       if (actionType === 'in') {
         // CLOCK IN
+        const activeBranch = verifiedLocation?.branch || branches.find(b => b.id === staffUser.branch_id) || branches[0]
         const payload = {
           staff_id: staffUser.id,
           name: staffProfile?.name || staffUser.name,
@@ -226,7 +241,9 @@ export default function StaffPortal({
           type: 'employee',
           department: staffProfile?.role || staffUser.role || 'Service Team',
           badge_no: `STAFF-${staffUser.id || 'MEM'}`,
-          location: 'Staff Mobile Portal',
+          branch_id: activeBranch?.id || staffUser.branch_id || 'branch_2',
+          branch_name: activeBranch?.name || staffUser.branch_name || 'Chafé • Kohke',
+          location: activeBranch?.name || staffUser.branch_name || 'Staff Mobile Portal',
           latitude: verifiedLocation?.coords?.lat || null,
           longitude: verifiedLocation?.coords?.lng || null,
           distance_to_store_meters: verifiedLocation?.distance || null,
@@ -288,7 +305,7 @@ export default function StaffPortal({
       setProcessing(true)
       if (showToast) showToast('Verifying real-time GPS location...', 'info')
       const targetStaff = staffProfile?.name ? staffProfile : staffUser
-      const loc = await verifyRealtimeLocationForStaff(targetStaff)
+      const loc = await verifyRealtimeLocationForStaff(targetStaff, branches)
       setVerifiedLocation(loc)
       setSelectedScanAction(action)
       setActiveTab('scan')
@@ -613,7 +630,7 @@ export default function StaffPortal({
                   <div>
                     <div className="shift-detail-label">Host / Station</div>
                     <div className="shift-detail-val">
-                      {staffUser?.role || 'Barista'} • {staffUser?.branch_name || 'BKK1 Branch (សាខាទី ១)'}
+                      {staffUser?.role || 'Barista'} • {staffUser?.branch_name || branches.find(b => b.id === staffUser?.branch_id)?.name || branches[0]?.name || 'Store'}
                     </div>
                   </div>
                   <div>

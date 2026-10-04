@@ -154,12 +154,15 @@ export default function StaffCameraScanner({
       if (scanMode === 'in') {
         // Clock In
         const payload = {
+          staff_id: staffMember.id,
           name: staffMember.name,
           email: staffMember.email,
           type: 'employee',
           department: staffMember.role || 'Service',
           badge_no: `STAFF-${staffMember.id || 'ROSTER'}`,
-          location: 'Counter Camera Station',
+          branch_id: staffMember.branch_id || 'branch_2',
+          branch_name: staffMember.branch_name || 'Chafé • Kohke',
+          location: staffMember.branch_name || 'Counter Camera Station',
           note: `Clocked in via ${sourceCode}`,
         }
 

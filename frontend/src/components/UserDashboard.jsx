@@ -26,7 +26,8 @@ import {
   getCheckinsFromFirebase,
   createCheckinInFirebase,
   checkoutInFirebase,
-  updateStaffInFirebase
+  updateStaffInFirebase,
+  subscribeToBranches
 } from '../services/firebaseService'
 import {
   verifyRealtimeLocationForStaff,
@@ -100,6 +101,19 @@ export default function UserDashboard({
   const [locationAlert, setLocationAlert] = useState(null)
   const [verifiedLocation, setVerifiedLocation] = useState(null)
   const [pendingLocationAction, setPendingLocationAction] = useState(null)
+
+  // Multi-branch state
+  const [branches, setBranches] = useState(() => getBranches())
+  useEffect(() => {
+    const unsub = subscribeToBranches((list) => {
+      if (Array.isArray(list) && list.length > 0) {
+        setBranches(list)
+      }
+    })
+    return () => {
+      if (unsub) unsub()
+    }
+  }, [])
 
   // Live digital clock update
   useEffect(() => {
@@ -252,6 +266,7 @@ export default function UserDashboard({
 
     try {
       if (actionType === 'in') {
+        const activeBranch = verifiedLocation?.branch || branches.find(b => b.id === staffMember.branch_id) || branches[0]
         const payload = {
           staff_id: staffMember.id,
           name: staffMember.name,
@@ -260,7 +275,9 @@ export default function UserDashboard({
           type: 'employee',
           department: staffMember.role || staffMember.department || 'Service',
           badge_no: `STAFF-${staffMember.id || 'ROSTER'}`,
-          location: 'Main Counter Terminal',
+          branch_id: activeBranch?.id || staffMember.branch_id || 'branch_2',
+          branch_name: activeBranch?.name || staffMember.branch_name || 'Chafé • Kohke',
+          location: activeBranch?.name || staffMember.branch_name || 'Main Counter Terminal',
           latitude: verifiedLocation?.coords?.lat || null,
           longitude: verifiedLocation?.coords?.lng || null,
           distance_to_store_meters: verifiedLocation?.distance || null,
@@ -328,7 +345,7 @@ export default function UserDashboard({
     try {
       setIsProcessing(true)
       if (showToast) showToast('Verifying real-time GPS location...', 'info')
-      const loc = await verifyRealtimeLocationForStaff(currentStaff)
+      const loc = await verifyRealtimeLocationForStaff(currentStaff, branches)
       setVerifiedLocation(loc)
       setPendingAction(action)
       setActiveTab('scan')
@@ -522,7 +539,7 @@ export default function UserDashboard({
                   <div>
                     <div className="shift-detail-label">Host / Station</div>
                     <div className="shift-detail-val">
-                      {currentStaff?.role || 'Barista'} • {currentStaff?.branch_name || 'BKK1 Branch (សាខាទី ១)'}
+                      {currentStaff?.role || 'Barista'} • {currentStaff?.branch_name || branches.find(b => b.id === currentStaff?.branch_id)?.name || branches[0]?.name || 'Store'}
                     </div>
                   </div>
                   <div>

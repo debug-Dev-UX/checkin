@@ -60,7 +60,8 @@ import {
   subscribeToLiveCheckins,
   isTodayRecord,
   getBranchesFromFirebase,
-  saveBranchesToFirebase
+  saveBranchesToFirebase,
+  subscribeToBranches
 } from './services/firebaseService'
 import {
   getStoreLocation,
@@ -233,17 +234,20 @@ export default function App() {
   const [checkinSubmitting, setCheckinSubmitting] = useState(false)
 
   // Staff Form
-  const [staffForm, setStaffForm] = useState({
-    name: '',
-    email: '',
-    username: '',
-    password: '',
-    role: 'Barista',
-    branch_id: 'branch_1',
-    branch_name: 'Chafé • BKK1 (សាខាទី ១)',
-    shift_start: '07:30',
-    shift_end: '16:00',
-    hourly_rate: 20.00,
+  const [staffForm, setStaffForm] = useState(() => {
+    const initialBranches = getBranches()
+    return {
+      name: '',
+      email: '',
+      username: '',
+      password: '',
+      role: 'Barista',
+      branch_id: initialBranches[0]?.id || 'branch_2',
+      branch_name: initialBranches[0]?.name || 'Chafé • Kohke',
+      shift_start: '07:30',
+      shift_end: '16:00',
+      hourly_rate: 20.00,
+    }
   })
   const [staffSubmitting, setStaffSubmitting] = useState(false)
 
@@ -429,7 +433,14 @@ export default function App() {
 
     setCheckinSubmitting(true)
     try {
-      await createCheckinInFirebase(checkinForm)
+      const chosenBranchId = checkinForm.branch_id || (selectedBranchFilter !== 'all' ? selectedBranchFilter : (branches[0]?.id || 'branch_2'))
+      const chosenBranch = branches.find(b => b.id === chosenBranchId) || branches[0]
+      const payload = {
+        ...checkinForm,
+        branch_id: chosenBranch?.id || 'branch_2',
+        branch_name: chosenBranch?.name || 'Chafé • Kohke',
+      }
+      await createCheckinInFirebase(payload)
       showToast(`${checkinForm.name} checked in!`)
       setIsCheckinModalOpen(false)
       setCheckinForm({
@@ -439,6 +450,8 @@ export default function App() {
         department: 'Main Dining',
         badge_no: 'TBL-01',
         location: 'Table 1',
+        branch_id: branches[0]?.id || 'branch_2',
+        branch_name: branches[0]?.name || 'Chafé • Kohke',
         note: '',
       })
       fetchOverviewData()
@@ -466,6 +479,14 @@ export default function App() {
 
   useEffect(() => {
     fetchBranches()
+    const unsubscribe = subscribeToBranches((list) => {
+      if (list && list.length > 0) {
+        setBranches(list)
+      }
+    })
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
   }, [fetchBranches])
 
   // Save Branch Settings
@@ -496,10 +517,10 @@ export default function App() {
       const targetBranch = branches.find(b => b.id === staffForm.branch_id) || branches[0]
       const payload = {
         ...staffForm,
-        branch_id: staffForm.branch_id || targetBranch?.id || 'branch_1',
-        branch_name: staffForm.branch_id === 'all' ? 'All Branches (Floating)' : (targetBranch?.name || 'Chafé • BKK1 (សាខាទី ១)'),
+        branch_id: staffForm.branch_id || targetBranch?.id || (branches[0] ? branches[0].id : 'branch_2'),
+        branch_name: staffForm.branch_id === 'all' ? 'All Branches (Floating)' : (targetBranch?.name || branches[0]?.name || 'Chafé • Kohke'),
       }
-      const newStaff = await createStaffInFirebase(payload)
+      await createStaffInFirebase(payload)
       showToast(`Staff member ${staffForm.name} created for ${payload.branch_name}!`)
       setIsCreateStaffModalOpen(false)
       setStaffForm({
@@ -508,8 +529,8 @@ export default function App() {
         username: '',
         password: '',
         role: 'Barista',
-        branch_id: 'branch_1',
-        branch_name: 'Chafé • BKK1 (សាខាទី ១)',
+        branch_id: branches[0]?.id || 'branch_2',
+        branch_name: branches[0]?.name || 'Chafé • Kohke',
         shift_start: '07:30',
         shift_end: '16:00',
         hourly_rate: 20.00,
@@ -554,8 +575,11 @@ export default function App() {
     return checkins.filter(item => {
       if (selectedBranchFilter !== 'all') {
         const matchedStaff = staffList.find(s => s.id === item.staff_id || s.name === item.name)
-        const itemBranch = item.branch_id || matchedStaff?.branch_id || 'branch_1'
-        if (itemBranch !== selectedBranchFilter && itemBranch !== 'all') return false
+        const itemBranch = item.branch_id || matchedStaff?.branch_id || (branches[0] ? branches[0].id : null)
+        const selectedBranchObj = branches.find(b => b.id === selectedBranchFilter)
+        const itemBranchName = item.branch_name || matchedStaff?.branch_name
+        const matchByName = selectedBranchObj && itemBranchName && (itemBranchName === selectedBranchObj.name || itemBranchName.includes(selectedBranchObj.name))
+        if (itemBranch !== selectedBranchFilter && itemBranch !== 'all' && !matchByName) return false
       }
 
       if (activeTableFilter === 'inside' && item.status !== 'checked_in') return false
@@ -577,13 +601,20 @@ export default function App() {
 
       return true
     })
-  }, [checkins, activeTableFilter, advancedFilter, tableSearch, selectedBranchFilter, staffList])
+  }, [checkins, activeTableFilter, advancedFilter, tableSearch, selectedBranchFilter, staffList, branches])
 
   // Filtered Staff List by Branch
   const filteredStaffList = useMemo(() => {
     if (selectedBranchFilter === 'all') return staffList
-    return staffList.filter(s => s.branch_id === selectedBranchFilter || (!s.branch_id && selectedBranchFilter === 'branch_1') || s.branch_id === 'all')
-  }, [staffList, selectedBranchFilter])
+    const selectedBranchObj = branches.find(b => b.id === selectedBranchFilter)
+    return staffList.filter(s => {
+      if (s.branch_id === 'all') return true
+      if (s.branch_id === selectedBranchFilter) return true
+      if (!s.branch_id && branches[0] && selectedBranchFilter === branches[0].id) return true
+      if (selectedBranchObj && s.branch_name && (s.branch_name === selectedBranchObj.name || s.branch_name.includes(selectedBranchObj.name))) return true
+      return false
+    })
+  }, [staffList, selectedBranchFilter, branches])
 
   const formatTime = (timeStr) => {
     if (!timeStr) return '-'
@@ -1746,10 +1777,10 @@ export default function App() {
 
                             <td>
                               <span
-                                className={`branch-badge ${s.branch_id === 'branch_2' ? 'tk' : 'bkk1'}`}
+                                className="branch-badge"
                                 style={{ fontSize: '11px' }}
                               >
-                                📍 {branches.find(b => b.id === s.branch_id)?.name || s.branch_name || 'BKK1 (សាខាទី ១)'}
+                                📍 {branches.find(b => b.id === s.branch_id)?.name || s.branch_name || branches[0]?.name || 'Store'}
                               </span>
                             </td>
 
@@ -2039,29 +2070,40 @@ export default function App() {
                         Configure store GPS coordinates and allowed scan radius per branch. Staff far from their branch cannot scan.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ fontSize: '11px', padding: '6px 12px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                      onClick={() => {
-                        const newId = `branch_${Date.now()}`
-                        const newBranch = {
-                          id: newId,
-                          code: `B${branches.length + 1}`,
-                          name: `Chafé • Branch #${branches.length + 1} (សាខាទី ${branches.length + 1})`,
-                          address: 'Phnom Penh, Cambodia',
-                          lat: 11.5564,
-                          lng: 104.9282,
-                          radiusMeters: 200,
-                          isActive: true,
-                        }
-                        setBranches(prev => [...prev, newBranch])
-                        showToast(`Added Branch #${branches.length + 1}`, 'info')
-                      }}
-                    >
-                      <IconPlus size={12} color="#0f172a" />
-                      <span>+ Add Branch (បន្ថែមសាខា)</span>
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ fontSize: '11px', padding: '6px 14px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                        disabled={isBranchesSaving}
+                        onClick={() => handleSaveBranches(branches)}
+                      >
+                        <span>💾 {isBranchesSaving ? 'Saving...' : 'Save Branches (រក្សាទុកសាខា)'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: '11px', padding: '6px 12px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                        onClick={() => {
+                          const newId = `branch_${Date.now()}`
+                          const newBranch = {
+                            id: newId,
+                            code: `B${branches.length + 1}`,
+                            name: `Chafé • Branch #${branches.length + 1}`,
+                            address: 'Siem Reap, Cambodia',
+                            lat: 13.3545705,
+                            lng: 103.8589937,
+                            radiusMeters: 50,
+                            isActive: true,
+                          }
+                          setBranches(prev => [...prev, newBranch])
+                          showToast(`Added Branch #${branches.length + 1}. Remember to click Save Branches!`, 'info')
+                        }}
+                      >
+                        <IconPlus size={12} color="#0f172a" />
+                        <span>+ Add Branch (បន្ថែមសាខា)</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -2072,7 +2114,7 @@ export default function App() {
                       >
                         <div className="branch-card-header">
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span className={`branch-badge ${idx === 1 ? 'tk' : 'bkk1'}`}>
+                            <span className="branch-badge">
                               សាខាទី {idx + 1}
                             </span>
                             <strong style={{ fontSize: '14px', color: '#0f172a' }}>{b.name}</strong>
@@ -2259,6 +2301,26 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
+                  <label className="form-label">Branch (សាខា)</label>
+                  <select
+                    className="form-select"
+                    value={checkinForm.branch_id || (selectedBranchFilter !== 'all' ? selectedBranchFilter : (branches[0]?.id || 'branch_2'))}
+                    onChange={(e) => {
+                      const sel = branches.find(b => b.id === e.target.value)
+                      setCheckinForm({
+                        ...checkinForm,
+                        branch_id: e.target.value,
+                        branch_name: sel ? sel.name : (branches[0]?.name || 'Chafé • Kohke')
+                      })
+                    }}
+                  >
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
                   <label className="form-label">Table / Location</label>
                   <input
                     type="text"
@@ -2345,13 +2407,13 @@ export default function App() {
                   <label className="form-label">Assigned Branch (សាខាដែលបានចាត់តាំង) *</label>
                   <select
                     className="form-select"
-                    value={staffForm.branch_id || 'branch_1'}
+                    value={staffForm.branch_id || branches[0]?.id || 'branch_2'}
                     onChange={(e) => {
                       const sel = branches.find(b => b.id === e.target.value)
                       setStaffForm({
                         ...staffForm,
                         branch_id: e.target.value,
-                        branch_name: sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : 'Chafé • BKK1 (សាខាទី ១)')
+                        branch_name: sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : (branches[0]?.name || 'Chafé • Kohke'))
                       })
                     }}
                   >
@@ -2447,11 +2509,12 @@ export default function App() {
 
             <form onSubmit={(e) => {
               e.preventDefault()
+              const chosenBranch = branches.find(b => b.id === editingStaff.branch_id) || branches[0]
               handleUpdateStaff(editingStaff.id, {
                 name: editingStaff.name,
                 role: editingStaff.role,
-                branch_id: editingStaff.branch_id || 'branch_1',
-                branch_name: editingStaff.branch_name || 'Chafé • BKK1 (សាខាទី ១)',
+                branch_id: editingStaff.branch_id || chosenBranch?.id || 'branch_2',
+                branch_name: editingStaff.branch_id === 'all' ? 'All Branches (Floating)' : (editingStaff.branch_name || chosenBranch?.name || 'Chafé • Kohke'),
                 shift_start: editingStaff.shift_start,
                 shift_end: editingStaff.shift_end,
                 username: editingStaff.username,
@@ -2510,13 +2573,13 @@ export default function App() {
                   <label className="form-label">Assigned Branch (សាខាដែលបានចាត់តាំង)</label>
                   <select
                     className="form-select"
-                    value={editingStaff.branch_id || 'branch_1'}
+                    value={editingStaff.branch_id || branches[0]?.id || 'branch_2'}
                     onChange={(e) => {
                       const sel = branches.find(b => b.id === e.target.value)
                       setEditingStaff({
                         ...editingStaff,
                         branch_id: e.target.value,
-                        branch_name: sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : 'Chafé • BKK1 (សាខាទី ១)')
+                        branch_name: sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : (branches[0]?.name || 'Chafé • Kohke'))
                       })
                     }}
                   >

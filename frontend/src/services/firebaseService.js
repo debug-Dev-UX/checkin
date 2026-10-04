@@ -724,34 +724,87 @@ export async function getBranchesFromFirebase() {
     if (snap.exists()) {
       const data = snap.data()
       if (Array.isArray(data.list) && data.list.length > 0) {
+        setLocal('branches', data.list)
+        try {
+          localStorage.setItem('chafe_branches_config', JSON.stringify(data.list))
+        } catch {}
         return data.list
       }
     }
   } catch {
     // quiet catch
   }
-  return getLocal('branches', [
-    {
-      id: 'branch_1',
-      code: 'BKK1',
-      name: 'Chafé • BKK1 (សាខាទី ១)',
-      address: 'Street 302, Boeung Keng Kang 1, Phnom Penh',
-      lat: 11.5564,
-      lng: 104.9282,
-      radiusMeters: 200,
-      isActive: true,
-    },
+  const local = getLocal('branches', null)
+  if (local && Array.isArray(local) && local.length > 0) {
+    return local
+  }
+  try {
+    const raw = localStorage.getItem('chafe_branches_config')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch {}
+  return [
     {
       id: 'branch_2',
       code: 'TK',
-      name: 'Chafé • Toul Kork (សាខាទី ២)',
-      address: 'Street 315, Toul Kork, Phnom Penh',
-      lat: 11.5732,
-      lng: 104.8988,
-      radiusMeters: 200,
+      name: 'Chafé • Kohke',
+      address: 'Siem Reap, Cambodia',
+      lat: 13.3632967,
+      lng: 103.8623305,
+      radiusMeters: 50,
       isActive: true,
     },
-  ])
+    {
+      id: 'branch_1791018243906',
+      code: 'B2',
+      name: 'Chafé • Watbo',
+      address: 'Siem Reap, Cambodia',
+      lat: 13.3545705,
+      lng: 103.8589937,
+      radiusMeters: 50,
+      isActive: true,
+    },
+    {
+      id: 'branch_1791018323584',
+      code: 'B3',
+      name: 'Hotel',
+      address: 'Siem Reap, Cambodia',
+      lat: 13.351881,
+      lng: 103.853068,
+      radiusMeters: 50,
+      isActive: true,
+    },
+  ]
+}
+
+/**
+ * Real-time listener for multi-branch configurations
+ */
+export function subscribeToBranches(callback) {
+  try {
+    return onSnapshot(doc(db, 'settings', 'branches'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data()
+        if (Array.isArray(data.list) && data.list.length > 0) {
+          setLocal('branches', data.list)
+          try {
+            localStorage.setItem('chafe_branches_config', JSON.stringify(data.list))
+            localStorage.setItem('chafe_live_branches', JSON.stringify(data.list))
+          } catch {}
+          callback(data.list)
+          return
+        }
+      }
+      callback(getLocal('branches', []))
+    }, () => {
+      callback(getLocal('branches', []))
+    })
+  } catch {
+    callback(getLocal('branches', []))
+    return () => {}
+  }
 }
 
 export async function saveBranchesToFirebase(branchesList) {
@@ -763,6 +816,7 @@ export async function saveBranchesToFirebase(branchesList) {
   setLocal('branches', branchesList)
   try {
     localStorage.setItem('chafe_branches_config', JSON.stringify(branchesList))
+    localStorage.setItem('chafe_live_branches', JSON.stringify(branchesList))
   } catch {}
   return branchesList
 }
