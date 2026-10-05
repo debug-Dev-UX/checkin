@@ -73,3 +73,25 @@ test('ScanSuccessModal component file exists and exports default function', () =
   const content = fs.readFileSync(filePath, 'utf-8')
   assert.match(content, /export default function ScanSuccessModal/, 'Must export default function ScanSuccessModal')
 })
+
+test('LoadingPage component file exists and exports executive loading layout', () => {
+  const filePath = path.resolve('src/components/LoadingPage.jsx')
+  assert.ok(fs.existsSync(filePath), 'LoadingPage.jsx must exist')
+  const content = fs.readFileSync(filePath, 'utf-8')
+  assert.match(content, /export default function LoadingPage/, 'Must export default function LoadingPage')
+  assert.match(content, /emblem-ring-outer/, 'Must contain outer radiant ring')
+  assert.match(content, /emblem-ring-middle/, 'Must contain middle counter-rotating ring')
+  assert.match(content, /loading-progress-fill/, 'Must contain animated progress fill')
+})
+
+test('Tasks & Notifications table includes sort controls and Security Database Request column', () => {
+  const appPath = path.resolve('src/App.jsx')
+  assert.ok(fs.existsSync(appPath), 'App.jsx must exist')
+  const content = fs.readFileSync(appPath, 'utf-8')
+  assert.match(content, /tableSort/, 'Must maintain tableSort state')
+  assert.match(content, /Sort: 🛡️ Security Verified/, 'Must include Security Verified sort option')
+  assert.match(content, /Security Request/, 'Must have Security Request column header')
+  assert.match(content, /security-tag-badge/, 'Must render security tag badges')
+})
+
+

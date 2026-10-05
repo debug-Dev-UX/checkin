@@ -193,6 +193,8 @@ export default function App() {
   const [tableSearch, setTableSearch] = useState('')
   const [activeTableFilter, setActiveTableFilter] = useState('today') // 'today' | 'inside' | 'checked_out'
   const [isTableFilterMenuOpen, setIsTableFilterMenuOpen] = useState(false)
+  const [tableSort, setTableSort] = useState('security') // 'security' | 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'status'
+  const [isTableSortMenuOpen, setIsTableSortMenuOpen] = useState(false)
   const [advancedFilter, setAdvancedFilter] = useState('all') // 'all' | 'late' | 'on_time' | 'staff' | 'guest'
 
   // Header Menus & Modals
@@ -579,9 +581,9 @@ export default function App() {
     }
   }
 
-  // Filtered Table Items
+  // Filtered & Sorted Table Items
   const filteredRows = useMemo(() => {
-    return checkins.filter(item => {
+    const list = checkins.filter(item => {
       if (selectedBranchFilter !== 'all') {
         const matchedStaff = staffList.find(s => s.id === item.staff_id || s.name === item.name)
         const itemBranch = item.branch_id || matchedStaff?.branch_id || (branches[0] ? branches[0].id : null)
@@ -605,12 +607,47 @@ export default function App() {
         const matchTable = item.badge_no?.toLowerCase().includes(q)
         const matchDept = item.department?.toLowerCase().includes(q)
         const matchLoc = item.location?.toLowerCase().includes(q)
-        return matchName || matchTable || matchDept || matchLoc
+        const matchSec = item.location_verified ? 'gps verified secure' : 'cloud db'
+        return matchName || matchTable || matchDept || matchLoc || matchSec.includes(q)
       }
 
       return true
     })
-  }, [checkins, activeTableFilter, advancedFilter, tableSearch, selectedBranchFilter, staffList, branches])
+
+    return list.slice().sort((a, b) => {
+      if (tableSort === 'security') {
+        const aSec = (a.location_verified || (a.note && a.note.includes('GPS Verified'))) ? 1 : 0
+        const bSec = (b.location_verified || (b.note && b.note.includes('GPS Verified'))) ? 1 : 0
+        if (bSec !== aSec) return bSec - aSec
+        const aTime = new Date(a.check_in_at || a.created_at || 0).getTime()
+        const bTime = new Date(b.check_in_at || b.created_at || 0).getTime()
+        return bTime - aTime
+      }
+      if (tableSort === 'newest') {
+        const aTime = new Date(a.check_in_at || a.created_at || 0).getTime()
+        const bTime = new Date(b.check_in_at || b.created_at || 0).getTime()
+        return bTime - aTime
+      }
+      if (tableSort === 'oldest') {
+        const aTime = new Date(a.check_in_at || a.created_at || 0).getTime()
+        const bTime = new Date(b.check_in_at || b.created_at || 0).getTime()
+        return aTime - bTime
+      }
+      if (tableSort === 'name_asc') {
+        return (a.name || '').localeCompare(b.name || '')
+      }
+      if (tableSort === 'name_desc') {
+        return (b.name || '').localeCompare(a.name || '')
+      }
+      if (tableSort === 'status') {
+        const aActive = a.status === 'checked_in' ? 1 : 0
+        const bActive = b.status === 'checked_in' ? 1 : 0
+        if (bActive !== aActive) return bActive - aActive
+        return 0
+      }
+      return 0
+    })
+  }, [checkins, activeTableFilter, advancedFilter, tableSearch, selectedBranchFilter, staffList, branches, tableSort])
 
   // Filtered Staff List by Branch
   const filteredStaffList = useMemo(() => {
@@ -789,6 +826,7 @@ export default function App() {
       }
       if (!e.target.closest('.pill-filter-container')) {
         setIsTableFilterMenuOpen(false)
+        setIsTableSortMenuOpen(false)
       }
     }
     const handleKeyDown = (e) => {
@@ -799,6 +837,7 @@ export default function App() {
         setIsAdminMenuOpen(false)
         setIsMessagesOpen(false)
         setIsTableFilterMenuOpen(false)
+        setIsTableSortMenuOpen(false)
         setIsPerfModalOpen(false)
         setIsGoalsModalOpen(false)
         setIsProfileModalOpen(false)
@@ -1262,7 +1301,10 @@ export default function App() {
                     <div className="pill-filter-container">
                       <button
                         className={`pill-filter-btn ${advancedFilter !== 'all' ? 'active' : ''}`}
-                        onClick={() => setIsTableFilterMenuOpen(!isTableFilterMenuOpen)}
+                        onClick={() => {
+                          setIsTableFilterMenuOpen(!isTableFilterMenuOpen)
+                          setIsTableSortMenuOpen(false)
+                        }}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                       >
                         <span>
@@ -1315,6 +1357,77 @@ export default function App() {
                         </div>
                       )}
                     </div>
+
+                    {/* Sort Dropdown for Security & Database Requests */}
+                    <div className="pill-filter-container">
+                      <button
+                        className={`pill-filter-btn ${tableSort !== 'newest' ? 'active' : ''}`}
+                        onClick={() => {
+                          setIsTableSortMenuOpen(!isTableSortMenuOpen)
+                          setIsTableFilterMenuOpen(false)
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        title="Sort records by security database request, timestamp, or name"
+                      >
+                        <IconArrowPointer size={11} style={{ transform: 'rotate(90deg)' }} />
+                        <span>
+                          {tableSort === 'security' && 'Sort: 🛡️ Security Verified'}
+                          {tableSort === 'newest' && 'Sort: 🕒 Newest'}
+                          {tableSort === 'oldest' && 'Sort: ⏳ Oldest'}
+                          {tableSort === 'name_asc' && 'Sort: 🔤 Name (A-Z)'}
+                          {tableSort === 'name_desc' && 'Sort: 🔤 Name (Z-A)'}
+                          {tableSort === 'status' && 'Sort: ⚡ Active First'}
+                        </span>
+                        <IconChevronDown size={10} />
+                      </button>
+
+                      {isTableSortMenuOpen && (
+                        <div className="filter-dropdown-menu">
+                          <button
+                            className={`filter-dropdown-item ${tableSort === 'security' ? 'active' : ''}`}
+                            onClick={() => { setTableSort('security'); setIsTableSortMenuOpen(false) }}
+                          >
+                            <span style={{ color: '#0284c7', fontWeight: 700 }}>🛡️ Security Verified First</span>
+                            {tableSort === 'security' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                          <button
+                            className={`filter-dropdown-item ${tableSort === 'newest' ? 'active' : ''}`}
+                            onClick={() => { setTableSort('newest'); setIsTableSortMenuOpen(false) }}
+                          >
+                            <span>🕒 Newest First (Latest Request)</span>
+                            {tableSort === 'newest' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                          <button
+                            className={`filter-dropdown-item ${tableSort === 'oldest' ? 'active' : ''}`}
+                            onClick={() => { setTableSort('oldest'); setIsTableSortMenuOpen(false) }}
+                          >
+                            <span>⏳ Oldest First</span>
+                            {tableSort === 'oldest' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                          <button
+                            className={`filter-dropdown-item ${tableSort === 'name_asc' ? 'active' : ''}`}
+                            onClick={() => { setTableSort('name_asc'); setIsTableSortMenuOpen(false) }}
+                          >
+                            <span>🔤 Name (A → Z)</span>
+                            {tableSort === 'name_asc' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                          <button
+                            className={`filter-dropdown-item ${tableSort === 'name_desc' ? 'active' : ''}`}
+                            onClick={() => { setTableSort('name_desc'); setIsTableSortMenuOpen(false) }}
+                          >
+                            <span>🔤 Name (Z → A)</span>
+                            {tableSort === 'name_desc' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                          <button
+                            className={`filter-dropdown-item ${tableSort === 'status' ? 'active' : ''}`}
+                            onClick={() => { setTableSort('status'); setIsTableSortMenuOpen(false) }}
+                          >
+                            <span>⚡ Status (Active Checked-In First)</span>
+                            {tableSort === 'status' && <IconCheck size={12} color="#ea580c" />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <button
@@ -1342,23 +1455,68 @@ export default function App() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Guest / Staff Name</th>
+                        <th 
+                          onClick={() => setTableSort(s => s === 'name_asc' ? 'name_desc' : 'name_asc')}
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          title="Click to sort by Name"
+                        >
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span>Guest / Staff Name</span>
+                            <span style={{ fontSize: '10px', color: tableSort.startsWith('name') ? '#ea580c' : '#94a3b8' }}>
+                              {tableSort === 'name_asc' ? '▲' : tableSort === 'name_desc' ? '▼' : '⇅'}
+                            </span>
+                          </div>
+                        </th>
                         <th>Assigned Table</th>
-                        <th>Due Date / Logged</th>
-                        <th>Filter / Role</th>
+                        <th 
+                          onClick={() => setTableSort(s => s === 'newest' ? 'oldest' : 'newest')}
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          title="Click to sort by Logged Time"
+                        >
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span>Due Date / Logged</span>
+                            <span style={{ fontSize: '10px', color: (tableSort === 'newest' || tableSort === 'oldest') ? '#ea580c' : '#94a3b8' }}>
+                              {tableSort === 'newest' ? '▼' : tableSort === 'oldest' ? '▲' : '⇅'}
+                            </span>
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => setTableSort(s => s === 'status' ? 'newest' : 'status')}
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          title="Click to sort by Active Status"
+                        >
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span>Filter / Role</span>
+                            <span style={{ fontSize: '10px', color: tableSort === 'status' ? '#ea580c' : '#94a3b8' }}>
+                              {tableSort === 'status' ? '▼' : '⇅'}
+                            </span>
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => setTableSort(s => s === 'security' ? 'newest' : 'security')}
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          title="Click to sort by Security Database Request (Verified First)"
+                        >
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span>Security Request</span>
+                            <span style={{ fontSize: '10px', color: tableSort === 'security' ? '#0284c7' : '#94a3b8' }}>
+                              {tableSort === 'security' ? '🛡️' : '⇅'}
+                            </span>
+                          </div>
+                        </th>
                         <th style={{ textAlign: 'right' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan="5" style={{ padding: 0 }}>
-                            <SkeletonTable rows={5} columns={5} />
+                          <td colSpan="6" style={{ padding: 0 }}>
+                            <SkeletonTable rows={5} columns={6} />
                           </td>
                         </tr>
                       ) : filteredRows.length === 0 ? (
                         <tr>
-                          <td colSpan="5" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
                             No activity records found for today.
                           </td>
                         </tr>
@@ -1422,6 +1580,20 @@ export default function App() {
                                 <span className={`badge-tag-pill ${isInside ? '' : 'completed'}`}>
                                   {isInside ? 'Seated (Active)' : 'Checked Out'}
                                 </span>
+                              </td>
+
+                              <td>
+                                {item.location_verified || (item.note && item.note.includes('GPS Verified')) ? (
+                                  <span className="security-tag-badge verified" title={`GPS Geofenced & Database Verified (${item.distance_to_store_meters ? Math.round(item.distance_to_store_meters) + 'm' : 'Secured'})`}>
+                                    <span className="sec-dot verified"></span>
+                                    <span>GPS Verified</span>
+                                  </span>
+                                ) : (
+                                  <span className="security-tag-badge standard" title="Cloud Database Synchronized Record">
+                                    <span className="sec-dot standard"></span>
+                                    <span>Cloud DB</span>
+                                  </span>
+                                )}
                               </td>
 
                               <td>
