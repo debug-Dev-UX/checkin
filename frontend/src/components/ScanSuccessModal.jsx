@@ -131,7 +131,7 @@ export default function ScanSuccessModal({ data, onClose, autoCloseSeconds = 6 }
               <span>TIME / ម៉ោង</span>
             </div>
             <div className="scan-meta-box-val highlight-time">
-              {data.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {data.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
             </div>
           </div>
 

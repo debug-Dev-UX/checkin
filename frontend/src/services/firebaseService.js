@@ -324,11 +324,17 @@ export function isTodayRecord(dateStr) {
  */
 export function subscribeToLiveCheckins(callback) {
   try {
-    const q = query(collection(db, 'checkins'), orderBy('created_at', 'desc'))
-    const unsubscribe = onSnapshot(q, (snap) => {
+    // Listen directly to the checkins collection without requiring composite index
+    const colRef = collection(db, 'checkins')
+    const unsubscribe = onSnapshot(colRef, (snap) => {
       const list = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(c => !DEMO_CHECKIN_IDS.includes(c.id))
+        .sort((a, b) => {
+          const tA = new Date(a.created_at || a.check_in_at || 0).getTime()
+          const tB = new Date(b.created_at || b.check_in_at || 0).getTime()
+          return tB - tA
+        })
       setLocal('checkins', list)
       if (typeof callback === 'function') {
         callback(list)
@@ -346,6 +352,74 @@ export function subscribeToLiveCheckins(callback) {
       callback(getLocal('checkins', []))
     }
     return () => {}
+  }
+}
+
+/**
+ * Real-time listener for Staff roster updates
+ */
+export function subscribeToStaff(callback) {
+  try {
+    const colRef = collection(db, 'staff')
+    const unsubscribe = onSnapshot(colRef, (snap) => {
+      const list = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(s => !DEMO_STAFF_IDS.includes(s.id))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      setLocal('staff', list)
+      if (typeof callback === 'function') {
+        callback(list)
+      }
+    }, (err) => {
+      console.warn('Live staff snapshot error:', err)
+      if (typeof callback === 'function') {
+        callback(getLocal('staff', []))
+      }
+    })
+    return unsubscribe
+  } catch (err) {
+    console.warn('Could not subscribe to live staff:', err)
+    if (typeof callback === 'function') {
+      callback(getLocal('staff', []))
+    }
+    return () => {}
+  }
+}
+
+/**
+ * Automatically synchronize staff check-ins location when admin changes branch
+ */
+export async function syncStaffCheckinsBranchInFirebase(staffId, branchId, branchName, location) {
+  if (!staffId) return
+  try {
+    const q = query(collection(db, 'checkins'), where('staff_id', '==', staffId))
+    const snap = await getDocs(q)
+    const updates = []
+    snap.forEach(d => {
+      updates.push(updateDoc(doc(db, 'checkins', d.id), {
+        branch_id: branchId,
+        branch_name: branchName,
+        location: location || branchName
+      }))
+    })
+    await Promise.allSettled(updates)
+
+    // Also update local cache
+    const current = getLocal('checkins', [])
+    const updated = current.map(c => {
+      if (c.staff_id === staffId) {
+        return {
+          ...c,
+          branch_id: branchId,
+          branch_name: branchName,
+          location: location || branchName
+        }
+      }
+      return c
+    })
+    setLocal('checkins', updated)
+  } catch (err) {
+    console.warn('Could not sync staff checkins branch:', err)
   }
 }
 

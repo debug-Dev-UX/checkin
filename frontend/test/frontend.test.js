@@ -94,4 +94,85 @@ test('Tasks & Notifications table includes sort controls and Security Database R
   assert.match(content, /security-tag-badge/, 'Must render security tag badges')
 })
 
+test('Tasks & Notifications table includes quick pager & filter short controls (<- 0 1 2 3 ... 10 ->)', () => {
+  const appPath = path.resolve('src/App.jsx')
+  const content = fs.readFileSync(appPath, 'utf-8')
+  assert.match(content, /tablePage/, 'Must maintain tablePage state')
+  assert.match(content, /\[0,\s*1,\s*2,\s*3,\s*4,\s*5,\s*6,\s*7,\s*8,\s*9,\s*10\]/, 'Must render quick navigation buttons 0 through 10')
+  assert.match(content, /quick-nav-arrow-btn/, 'Must have arrow buttons for previous and next')
+  assert.match(content, /paginatedRows/, 'Must render paginated rows')
+})
+
+test('Time display uses 12-hour format with AM/PM across formatTime and clocks', () => {
+  const appPath = path.resolve('src/App.jsx')
+  const content = fs.readFileSync(appPath, 'utf-8')
+  assert.match(content, /hour12:\s*true/, 'formatTime in App.jsx must use 12-hour format')
+  assert.match(content, /toLocaleTimeString\('en-US',\s*\{\s*hour:\s*'numeric',\s*minute:\s*'2-digit',\s*hour12:\s*true\s*\}\)/, 'Must format using 12-hour with en-US locale')
+})
+
+test('Hourly Pay column is removed from staff table in App.jsx', () => {
+  const appPath = path.resolve('src/App.jsx')
+  const content = fs.readFileSync(appPath, 'utf-8')
+  assert.doesNotMatch(content, /<th>Hourly Pay<\/th>/, 'Staff table must not contain Hourly Pay column header')
+  assert.doesNotMatch(content, /s\.hourly_rate.*\/hr/, 'Staff table must not render Hourly Pay values')
+})
+
+test('Admin branch change automatically sets location and staff cannot change branch/location themselves', () => {
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
+  assert.match(appContent, /location:\s*branchName/, 'Admin changing branch must auto-assign location to branch name')
+  assert.match(appContent, /syncStaffCheckinsBranchInFirebase/, 'Must sync staff checkin records with new branch and location')
+
+  const profilePath = path.resolve('src/components/ProfileView.jsx')
+  const profileContent = fs.readFileSync(profilePath, 'utf-8')
+  assert.doesNotMatch(profileContent, /<select[^>]*value=\{selectedBranchId\}/, 'Staff Profile must not allow staff to select another branch')
+  assert.match(profileContent, /locked-branch-box/, 'Staff Profile must display locked branch box')
+})
+
+test('Real-time synchronization without refresh is implemented for both checkins and staff', () => {
+  const fbPath = path.resolve('src/services/firebaseService.js')
+  const fbContent = fs.readFileSync(fbPath, 'utf-8')
+  assert.match(fbContent, /export function subscribeToLiveCheckins/, 'Must export subscribeToLiveCheckins')
+  assert.match(fbContent, /export function subscribeToStaff/, 'Must export subscribeToStaff')
+  assert.match(fbContent, /export async function syncStaffCheckinsBranchInFirebase/, 'Must export syncStaffCheckinsBranchInFirebase')
+
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
+  assert.match(appContent, /subscribeToStaff/, 'App.jsx must subscribe to live staff roster updates')
+  assert.match(appContent, /subscribeToLiveCheckins/, 'App.jsx must subscribe to live checkins updates')
+})
+
+test('Camera AbortError bug fix: Silently catches AbortError and DOMException abort during camera initialization', () => {
+  const staffPortalPath = path.resolve('src/components/StaffPortal.jsx')
+  const staffPortalContent = fs.readFileSync(staffPortalPath, 'utf-8')
+  assert.match(staffPortalContent, /err\?\.name === 'AbortError'/, 'StaffPortal must check for AbortError')
+  assert.match(staffPortalContent, /isAbortError/, 'StaffPortal must identify isAbortError')
+  assert.match(staffPortalContent, /if \(isAbortError\)\s*\{\s*\/\/[^\n]*\s*return\s*\}/, 'StaffPortal must return silently on AbortError without showing toast')
+
+  const userDashboardPath = path.resolve('src/components/UserDashboard.jsx')
+  const userDashboardContent = fs.readFileSync(userDashboardPath, 'utf-8')
+  assert.match(userDashboardContent, /isAbortError/, 'UserDashboard must identify isAbortError')
+
+  const staffScannerPath = path.resolve('src/components/StaffCameraScanner.jsx')
+  const staffScannerContent = fs.readFileSync(staffScannerPath, 'utf-8')
+  assert.match(staffScannerContent, /isAbortError/, 'StaffCameraScanner must identify isAbortError')
+})
+
+test('Action Modal State bug fix: Clock In button is disabled, styled as disabled, and shows Already on Shift when on shift', () => {
+  const staffPortalPath = path.resolve('src/components/StaffPortal.jsx')
+  const staffPortalContent = fs.readFileSync(staffPortalPath, 'utf-8')
+  assert.match(staffPortalContent, /const isOnShift = Boolean/, 'StaffPortal must declare isOnShift shift status boolean')
+  assert.match(staffPortalContent, /!isOnShift \? 'recommended' : 'disabled'/, 'Action Modal Clock In card must use disabled class when on shift')
+  assert.match(staffPortalContent, /Already on Shift/, 'Action Modal Clock In card must display Already on Shift when on shift')
+  assert.match(staffPortalContent, /Already Clocked In/, 'Action Modal Clock In button must display Already Clocked In when on shift')
+  assert.match(staffPortalContent, /disabled=\{isOnShift \|\| processing\}/, 'Action Modal Clock In button must be disabled when on shift')
+
+  const cssPath = path.resolve('src/App.css')
+  const cssContent = fs.readFileSync(cssPath, 'utf-8')
+  assert.match(cssContent, /\.modal-action-card\.disabled/, 'App.css must have disabled styling for modal-action-card')
+  assert.match(cssContent, /cursor:\s*not-allowed/, 'App.css must set cursor: not-allowed on disabled modal-action-card')
+})
+
+
+
 

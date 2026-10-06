@@ -32,7 +32,8 @@ import {
   subscribeToLiveCheckins,
   updateStaffInFirebase,
   isTodayRecord,
-  subscribeToBranches
+  subscribeToBranches,
+  subscribeToStaff
 } from '../services/firebaseService'
 import {
   verifyRealtimeLocationForStaff,
@@ -109,16 +110,56 @@ export default function StaffPortal({
   const [staffProfile, setStaffProfile] = useState(() => {
     try {
       const saved = localStorage.getItem('chafe_custom_staff_profile')
-      if (saved) return { ...staffUser, ...JSON.parse(saved) }
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        // Ensure admin-assigned branch and location cannot be overridden by local storage
+        delete parsed.branch_id
+        delete parsed.branch_name
+        delete parsed.location
+        return { ...staffUser, ...parsed }
+      }
     } catch { /* quiet */ }
     return staffUser || {}
   })
 
   useEffect(() => {
     if (staffUser) {
-      setStaffProfile(prev => ({ ...prev, ...staffUser }))
+      setStaffProfile(prev => ({
+        ...prev,
+        ...staffUser,
+        branch_id: staffUser.branch_id,
+        branch_name: staffUser.branch_name,
+        location: staffUser.location || staffUser.branch_name,
+      }))
     }
   }, [staffUser])
+
+  // Real-time synchronization: when Admin updates staff branch or location in Firestore, sync instantly without refresh
+  useEffect(() => {
+    if (!staffUser?.id) return
+    const unsub = subscribeToStaff((allStaff) => {
+      const updated = allStaff.find(s => String(s.id) === String(staffUser.id) || s.email === staffUser.email)
+      if (updated) {
+        setStaffProfile(prev => {
+          const prevBranch = prev?.branch_name
+          if (prevBranch && updated.branch_name && prevBranch !== updated.branch_name) {
+            showToast?.(`Admin updated your assigned branch to ${updated.branch_name}!`, 'info')
+          }
+          return {
+            ...prev,
+            ...updated,
+            branch_id: updated.branch_id,
+            branch_name: updated.branch_name,
+            location: updated.location || updated.branch_name,
+            branch_address: updated.branch_address,
+          }
+        })
+      }
+    })
+    return () => {
+      if (unsub) unsub()
+    }
+  }, [staffUser?.id, staffUser?.email, showToast])
 
   const staffPhotoUrl = staffProfile?.photo_url || staffUser?.photo_url || localStorage.getItem('chafe_profile_avatar') || ''
 
@@ -166,7 +207,11 @@ export default function StaffPortal({
       // 1. Fetch checkins to find active shift and history
       const allCheckins = await getCheckinsFromFirebase()
       const userRecords = (allCheckins || []).filter(
-        c => c.staff_id === staffUser.id || c.email === staffUser.email || c.name === staffUser.name
+        c => (
+          (staffUser?.id && (c.staff_id === staffUser.id || String(c.staff_id) === String(staffUser.id))) ||
+          (staffUser?.email && c.email?.toLowerCase() === staffUser.email?.toLowerCase()) ||
+          (staffUser?.name && c.name?.toLowerCase() === staffUser.name?.toLowerCase())
+        )
       )
       const currentActive = userRecords.find(c => c.status === 'checked_in')
       setActiveCheckin(currentActive || null)
@@ -191,7 +236,11 @@ export default function StaffPortal({
     if (!staffUser || !staffUser.id) return
     const unsubscribe = subscribeToLiveCheckins((allCheckins) => {
       const userRecords = (allCheckins || []).filter(
-        c => c.staff_id === staffUser.id || c.email === staffUser.email || c.name === staffUser.name
+        c => (
+          (staffUser?.id && (c.staff_id === staffUser.id || String(c.staff_id) === String(staffUser.id))) ||
+          (staffUser?.email && c.email?.toLowerCase() === staffUser.email?.toLowerCase()) ||
+          (staffUser?.name && c.name?.toLowerCase() === staffUser.name?.toLowerCase())
+        )
       )
       const currentActive = userRecords.find(c => c.status === 'checked_in')
       setActiveCheckin(currentActive || null)
@@ -199,6 +248,14 @@ export default function StaffPortal({
     })
     return () => unsubscribe()
   }, [staffUser])
+
+  // Current shift status: true if employee has an active checked_in record
+  const isOnShift = Boolean(
+    activeCheckin ||
+    staffUser?.is_on_shift ||
+    staffProfile?.is_on_shift ||
+    (recentLogs && recentLogs.some(c => c.status === 'checked_in'))
+  )
 
   // Today ISO date string
   const todayStr = new Date().toISOString().split('T')[0]
@@ -228,6 +285,10 @@ export default function StaffPortal({
   // Execute explicit Clock In or Clock Out
   const handleExecuteAttendance = async (actionType) => {
     if (processing) return
+    if (actionType === 'in' && isOnShift) {
+      if (showToast) showToast('You are already clocked into an active shift.', 'info')
+      return
+    }
     setProcessing(true)
     setActionResult(null)
 
@@ -263,7 +324,7 @@ export default function StaffPortal({
         setActionResult({
           type: 'success',
           action: 'Shift Started Successfully! (Clocked In)',
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
         })
         setScanSuccessModal({
@@ -273,7 +334,7 @@ export default function StaffPortal({
           photo_url: staffPhotoUrl || null,
           branch_name: activeBranch?.name || staffUser.branch_name || 'Chafé Store',
           distance: verifiedLocation?.distance ?? null,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
           isLate: newRecord?.punctuality_status === 'late',
@@ -290,7 +351,7 @@ export default function StaffPortal({
         setActionResult({
           type: 'success',
           action: 'Shift Completed Successfully! (Clocked Out)',
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           status: 'Shift Logged to Timesheet ✓',
         })
         setScanSuccessModal({
@@ -300,7 +361,7 @@ export default function StaffPortal({
           photo_url: staffPhotoUrl || null,
           branch_name: activeBranch?.name || staffUser.branch_name || 'Chafé Store',
           distance: verifiedLocation?.distance ?? null,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
           status: 'Shift Completed ✓',
           isLate: false,
@@ -408,6 +469,17 @@ export default function StaffPortal({
         setCameraActive(true)
       }
     } catch (err) {
+      const isAbortError =
+        err?.name === 'AbortError' ||
+        err?.code === 20 ||
+        (typeof err?.message === 'string' && (
+          err.message.toLowerCase().includes('abort') ||
+          err.message.toLowerCase().includes('aborted')
+        ))
+      if (isAbortError) {
+        // Silently ignore AbortError/DOMException abort during camera initialization
+        return
+      }
       if (showToast) showToast('Could not access back camera: ' + err.message, 'error')
       setCameraActive(false)
       setShowCamera(false)
@@ -544,9 +616,9 @@ export default function StaffPortal({
     return hubItems.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()))
   }, [hubItems, searchQuery])
 
-  // Formatted date and time string matching reference screenshot style (e.g. 10.00 am | 27 Nov 2026)
+  // Formatted date and time string matching reference screenshot style (e.g. 10:00 AM | 27 Nov 2026)
   const formattedShiftDateTime = useMemo(() => {
-    const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase().replace(' ', ' ')
+    const timeStr = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
     const dateStr = currentTime.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })
     return `${timeStr} | ${dateStr}`
   }, [currentTime])
@@ -691,23 +763,30 @@ export default function StaffPortal({
                 {/* Check - In Card */}
                 <button
                   type="button"
-                  className={`mobile-action-card ${!activeCheckin ? 'active-state' : ''}`}
-                  onClick={() => handleInitiateScan('in')}
-                  disabled={processing}
+                  className={`mobile-action-card ${!isOnShift ? 'active-state' : ''}`}
+                  onClick={() => {
+                    if (isOnShift) {
+                      if (showToast) showToast('You are already clocked into an active shift.', 'info')
+                      return
+                    }
+                    handleInitiateScan('in')
+                  }}
+                  disabled={processing || isOnShift}
+                  style={isOnShift ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
                 >
                   <div className="mobile-action-icon">
-                    <IconDoorIn size={36} color="#f59e0b" />
+                    <IconDoorIn size={36} color={isOnShift ? '#94a3b8' : '#f59e0b'} />
                   </div>
-                  <div className="mobile-action-label">Check - In</div>
+                  <div className="mobile-action-label" style={isOnShift ? { color: '#64748b' } : {}}>Check - In</div>
                   <div className="mobile-action-sublabel">
-                    {!activeCheckin ? 'Ready to Start' : 'Already on Shift'}
+                    {!isOnShift ? 'Ready to Start' : 'Already on Shift'}
                   </div>
                 </button>
 
                 {/* Check - Out Card */}
                 <button
                   type="button"
-                  className={`mobile-action-card ${activeCheckin ? 'active-state' : ''}`}
+                  className={`mobile-action-card ${isOnShift ? 'active-state' : ''}`}
                   onClick={() => handleInitiateScan('out')}
                   disabled={processing}
                 >
@@ -716,7 +795,7 @@ export default function StaffPortal({
                   </div>
                   <div className="mobile-action-label">Check - Out</div>
                   <div className="mobile-action-sublabel">
-                    {activeCheckin ? 'Complete Shift' : 'No Active Shift'}
+                    {isOnShift ? 'Complete Shift' : 'No Active Shift'}
                   </div>
                 </button>
               </div>
@@ -1544,9 +1623,16 @@ export default function StaffPortal({
             <div className="staff-modal-body">
               {/* Option 1: Clock In Card */}
               <div
-                className={`modal-action-card card-in ${!activeCheckin ? 'recommended' : ''}`}
+                className={`modal-action-card card-in ${!isOnShift ? 'recommended' : 'disabled'}`}
+                style={isOnShift ? {
+                  opacity: 0.55,
+                  backgroundColor: '#f1f5f9',
+                  borderColor: '#cbd5e1',
+                  cursor: 'not-allowed',
+                  filter: 'grayscale(0.6)',
+                } : {}}
                 onClick={() => {
-                  if (processing) return
+                  if (processing || isOnShift) return
                   if (scannedQrData) {
                     handleExecuteAttendance('in')
                   } else {
@@ -1555,38 +1641,54 @@ export default function StaffPortal({
                     setActiveTab('scan')
                   }
                 }}
+                role="button"
+                aria-disabled={isOnShift}
               >
                 <div className="action-card-icon-col">
-                  <div className="action-icon-circle in-circle">
-                    <span style={{ fontSize: '26px' }}>🟢</span>
+                  <div className="action-icon-circle in-circle" style={isOnShift ? { background: '#e2e8f0', borderColor: '#cbd5e1' } : {}}>
+                    <span style={{ fontSize: '26px' }}>{isOnShift ? '⚪' : '🟢'}</span>
                   </div>
                 </div>
                 <div className="action-card-content">
                   <div className="action-card-header">
-                    <h4 className="action-card-title">Clock In (Check In)</h4>
-                    {!activeCheckin ? (
+                    <h4 className="action-card-title" style={isOnShift ? { color: '#64748b' } : {}}>Clock In (Check In)</h4>
+                    {!isOnShift ? (
                       <span className="action-status-pill pill-ready">Ready to Start</span>
                     ) : (
-                      <span className="action-status-pill pill-warn">Already In</span>
+                      <span className="action-status-pill pill-muted" style={{ background: '#e2e8f0', color: '#64748b' }}>
+                        Already on Shift
+                      </span>
                     )}
                   </div>
                   <p className="action-card-desc">
-                    Start your shift arrival time. Punctuality is automatically verified.
+                    {isOnShift
+                      ? 'You are already clocked into an active shift. Clock out when your work is finished.'
+                      : 'Start your shift arrival time. Punctuality is automatically verified.'}
                   </p>
                   <div className="action-card-meta">
                     <span>⏰ Shift: <strong>{staffUser?.shift_start || '07:30'} - {staffUser?.shift_end || '16:00'}</strong></span>
                   </div>
                 </div>
                 <div className="action-card-arrow">
-                  <span className="action-proceed-btn in-btn">
-                    {scannedQrData ? 'Confirm In ✓' : 'Scan to In →'}
-                  </span>
+                  <button
+                    type="button"
+                    disabled={isOnShift || processing}
+                    className="action-proceed-btn in-btn"
+                    style={isOnShift ? {
+                      background: '#94a3b8',
+                      boxShadow: 'none',
+                      cursor: 'not-allowed',
+                      pointerEvents: 'none',
+                    } : {}}
+                  >
+                    {isOnShift ? 'Already Clocked In' : (scannedQrData ? 'Confirm In ✓' : 'Scan to In →')}
+                  </button>
                 </div>
               </div>
 
               {/* Option 2: Clock Out Card */}
               <div
-                className={`modal-action-card card-out ${activeCheckin ? 'recommended' : ''}`}
+                className={`modal-action-card card-out ${isOnShift ? 'recommended' : ''}`}
                 onClick={() => {
                   if (processing) return
                   if (scannedQrData) {
@@ -1606,7 +1708,7 @@ export default function StaffPortal({
                 <div className="action-card-content">
                   <div className="action-card-header">
                     <h4 className="action-card-title">Clock Out (Check Out)</h4>
-                    {activeCheckin ? (
+                    {isOnShift ? (
                       <span className="action-status-pill pill-active">Shift Active</span>
                     ) : (
                       <span className="action-status-pill pill-muted">No Shift</span>
@@ -1616,7 +1718,7 @@ export default function StaffPortal({
                     Finish your work shift and record your total working hours.
                   </p>
                   <div className="action-card-meta">
-                    {activeCheckin ? (
+                    {isOnShift ? (
                       <span>🟢 Active Session: <strong>{elapsedShiftTime}</strong></span>
                     ) : (
                       <span>Current status: Not on shift</span>

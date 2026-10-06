@@ -61,7 +61,9 @@ import {
   isTodayRecord,
   getBranchesFromFirebase,
   saveBranchesToFirebase,
-  subscribeToBranches
+  subscribeToBranches,
+  subscribeToStaff,
+  syncStaffCheckinsBranchInFirebase
 } from './services/firebaseService'
 import {
   getStoreLocation,
@@ -196,6 +198,7 @@ export default function App() {
   const [tableSort, setTableSort] = useState('security') // 'security' | 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'status'
   const [isTableSortMenuOpen, setIsTableSortMenuOpen] = useState(false)
   const [advancedFilter, setAdvancedFilter] = useState('all') // 'all' | 'late' | 'on_time' | 'staff' | 'guest'
+  const [tablePage, setTablePage] = useState(1) // Tasks & Notifications pager: 0 = All records, 1..10 = Pages
 
   // Header Menus & Modals
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false)
@@ -409,6 +412,17 @@ export default function App() {
     }
   }, [fetchControlData, fetchOverviewData])
 
+  // Real-time synchronization for staff roster: updates immediately when admin changes branch/location
+  useEffect(() => {
+    const unsubStaff = subscribeToStaff(async (liveStaff) => {
+      if (!liveStaff || liveStaff.length === 0) return
+      setStaffList(liveStaff)
+    })
+    return () => {
+      if (unsubStaff) unsubStaff()
+    }
+  }, [])
+
   // Check out person action
   const handleCheckOut = async (id, name) => {
     setActionLoadingId(id)
@@ -525,10 +539,13 @@ export default function App() {
     setStaffSubmitting(true)
     try {
       const targetBranch = branches.find(b => b.id === staffForm.branch_id) || branches[0]
+      const branchName = staffForm.branch_id === 'all' ? 'All Branches (Floating)' : (targetBranch?.name || branches[0]?.name || 'Chafé • Kohke')
       const payload = {
         ...staffForm,
         branch_id: staffForm.branch_id || targetBranch?.id || (branches[0] ? branches[0].id : 'branch_2'),
-        branch_name: staffForm.branch_id === 'all' ? 'All Branches (Floating)' : (targetBranch?.name || branches[0]?.name || 'Chafé • Kohke'),
+        branch_name: branchName,
+        location: branchName, // Auto change location to match branch
+        branch_address: targetBranch?.address || 'Siem Reap, Cambodia',
       }
       await createStaffInFirebase(payload)
       showToast(`Staff member ${staffForm.name} created for ${payload.branch_name}!`)
@@ -554,13 +571,34 @@ export default function App() {
   }
 
   // Update Staff Role, Shift, Branch or Credentials
+  // When admin changes Branch at staff, auto change location and sync checkin records in real time
   const handleUpdateStaff = async (staffId, updatedFields) => {
     try {
+      if (updatedFields.branch_id || updatedFields.branch_name) {
+        const chosenBranch = branches.find(b => b.id === updatedFields.branch_id) || branches[0]
+        const branchName = updatedFields.branch_id === 'all' ? 'All Branches (Floating)' : (chosenBranch?.name || updatedFields.branch_name || 'Chafé • Kohke')
+        updatedFields.branch_name = branchName
+        updatedFields.location = branchName // Auto change location to match branch
+        updatedFields.branch_address = chosenBranch?.address || 'Siem Reap, Cambodia'
+      }
+
       setStaffList(prev => prev.map(s => String(s.id) === String(staffId) ? { ...s, ...updatedFields } : s))
       await updateStaffInFirebase(staffId, updatedFields)
-      showToast('Staff profile updated successfully!', 'success')
+
+      // Auto change location for this staff member's checkin records in real time
+      if (updatedFields.branch_id) {
+        await syncStaffCheckinsBranchInFirebase(
+          staffId,
+          updatedFields.branch_id,
+          updatedFields.branch_name,
+          updatedFields.location
+        )
+      }
+
+      showToast('Staff profile & store location updated successfully!', 'success')
       setEditingStaff(null)
       await fetchStaffData()
+      await fetchOverviewData()
     } catch (err) {
       showToast(err.message || 'Failed to update staff', 'error')
     }
@@ -649,6 +687,24 @@ export default function App() {
     })
   }, [checkins, activeTableFilter, advancedFilter, tableSearch, selectedBranchFilter, staffList, branches, tableSort])
 
+  // Paginated Rows for Tasks & Notifications (Filter short: <- 0 1 2 3 ... 10 ->)
+  // When tablePage is 0: Show all records unfiltered by page
+  // When tablePage is 1..10: Show that page (10 records per page)
+  const paginatedRows = useMemo(() => {
+    if (tablePage === 0) return filteredRows
+    const pageSize = 10
+    const startIndex = (tablePage - 1) * pageSize
+    return filteredRows.slice(startIndex, startIndex + pageSize)
+  }, [filteredRows, tablePage])
+
+  const totalTablePages = Math.max(1, Math.ceil(filteredRows.length / 10))
+
+  useEffect(() => {
+    if (tablePage !== 0 && tablePage > totalTablePages) {
+      setTablePage(1)
+    }
+  }, [totalTablePages, tablePage])
+
   // Filtered Staff List by Branch
   const filteredStaffList = useMemo(() => {
     if (selectedBranchFilter === 'all') return staffList
@@ -662,10 +718,20 @@ export default function App() {
     })
   }, [staffList, selectedBranchFilter, branches])
 
+  // 12-Hour Time Formatter (e.g. "8:30 AM", "1:15 PM")
   const formatTime = (timeStr) => {
     if (!timeStr) return '-'
+    if (typeof timeStr === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(timeStr.trim())) {
+      const parts = timeStr.trim().split(':')
+      let h = parseInt(parts[0], 10)
+      const m = parts[1]
+      const ampm = h >= 12 ? 'PM' : 'AM'
+      h = h % 12 || 12
+      return `${h}:${m} ${ampm}`
+    }
     const d = new Date(timeStr)
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    if (isNaN(d.getTime())) return timeStr
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
   }
 
   const formatDate = (timeStr) => {
@@ -1450,6 +1516,54 @@ export default function App() {
                   />
                 </div>
 
+                {/* Tasks & Notifications Quick Page & Short Filter Navigator (<- 0 1 2 3 ... 10 ->) */}
+                <div className="table-quick-nav-bar">
+                  <div className="quick-nav-left">
+                    <span className="quick-nav-tag">FILTER / PAGER</span>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                      Quick Navigator:
+                    </span>
+                  </div>
+                  <div className="quick-nav-buttons">
+                    <button
+                      type="button"
+                      className="quick-nav-arrow-btn"
+                      title="Previous Page"
+                      disabled={tablePage === 0}
+                      onClick={() => setTablePage(p => (p > 1 ? p - 1 : 0))}
+                    >
+                      <span>&lt;-</span>
+                    </button>
+                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                      <button
+                        key={num}
+                        type="button"
+                        className={`quick-nav-num-btn ${tablePage === num ? 'active' : ''}`}
+                        onClick={() => setTablePage(num)}
+                        title={num === 0 ? '0: Show All Records (Unfiltered Paging)' : `Page ${num} (10 records/page)`}
+                      >
+                        {num}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="quick-nav-arrow-btn"
+                      title="Next Page"
+                      disabled={tablePage === 10}
+                      onClick={() => setTablePage(p => (p === 0 ? 1 : Math.min(10, p + 1)))}
+                    >
+                      <span>-&gt;</span>
+                    </button>
+                  </div>
+                  <div className="quick-nav-summary">
+                    {tablePage === 0 ? (
+                      <span>Showing All <strong>{filteredRows.length}</strong> records</span>
+                    ) : (
+                      <span>Page <strong>{tablePage}</strong> of <strong>{totalTablePages}</strong> • Showing <strong>{paginatedRows.length}</strong> of {filteredRows.length} records</span>
+                    )}
+                  </div>
+                </div>
+
                 {/* Corporate Table */}
                 <div className="table-responsive">
                   <table className="data-table">
@@ -1520,8 +1634,14 @@ export default function App() {
                             No activity records found for today.
                           </td>
                         </tr>
+                      ) : paginatedRows.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
+                            No activity records on Page {tablePage}. Click '0' to show all records, or '1' to go to page 1.
+                          </td>
+                        </tr>
                       ) : (
-                        filteredRows.map((item) => {
+                        paginatedRows.map((item) => {
                           const isInside = item.status === 'checked_in'
                           const matchedStaff = staffList.find(s => s.id === item.staff_id || s.name === item.name)
                           const photo = item.photo_url || matchedStaff?.photo_url || ''
@@ -1627,6 +1747,58 @@ export default function App() {
                       )}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Table Footer Pagination & Quick Navigator */}
+                <div className="table-quick-nav-bar footer-nav">
+                  <div className="quick-nav-left">
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
+                      {tablePage === 0 ? `Displaying all ${filteredRows.length} entries` : `Showing page ${tablePage} of ${totalTablePages}`}
+                    </span>
+                  </div>
+                  <div className="quick-nav-buttons">
+                    <button
+                      type="button"
+                      className="quick-nav-arrow-btn"
+                      title="Previous Page"
+                      disabled={tablePage === 0}
+                      onClick={() => setTablePage(p => (p > 1 ? p - 1 : 0))}
+                    >
+                      <span>&lt;-</span>
+                    </button>
+                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                      <button
+                        key={num}
+                        type="button"
+                        className={`quick-nav-num-btn ${tablePage === num ? 'active' : ''}`}
+                        onClick={() => setTablePage(num)}
+                        title={num === 0 ? '0: All Records' : `Page ${num}`}
+                      >
+                        {num}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="quick-nav-arrow-btn"
+                      title="Next Page"
+                      disabled={tablePage === 10}
+                      onClick={() => setTablePage(p => (p === 0 ? 1 : Math.min(10, p + 1)))}
+                    >
+                      <span>-&gt;</span>
+                    </button>
+                  </div>
+                  <div className="quick-nav-summary">
+                    {tablePage !== 0 && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: '11px', padding: '3px 8px' }}
+                        onClick={() => setTablePage(0)}
+                      >
+                        Show All ({filteredRows.length})
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1897,7 +2069,6 @@ export default function App() {
                         <th>Branch (សាខា)</th>
                         <th>Assigned Role</th>
                         <th>Shift Schedule Time</th>
-                        <th>Hourly Pay</th>
                         <th>Status</th>
                         <th style={{ textAlign: 'right' }}>Actions</th>
                       </tr>
@@ -1905,13 +2076,13 @@ export default function App() {
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan="8" style={{ padding: 0 }}>
-                            <SkeletonTable rows={6} columns={8} />
+                          <td colSpan="7" style={{ padding: 0 }}>
+                            <SkeletonTable rows={6} columns={7} />
                           </td>
                         </tr>
                       ) : filteredStaffList.length === 0 ? (
                         <tr>
-                          <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
                             No staff members found for the selected branch. Click "+ Create Staff" to add team members.
                           </td>
                         </tr>
@@ -1972,12 +2143,8 @@ export default function App() {
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <IconClock size={13} color="#64748b" />
-                                <strong>{s.shift_start} - {s.shift_end}</strong>
+                                <strong>{formatTime(s.shift_start)} - {formatTime(s.shift_end)}</strong>
                               </div>
-                            </td>
-
-                            <td>
-                              <strong>${parseFloat(s.hourly_rate || 20).toFixed(2)}/hr</strong>
                             </td>
 
                             <td>
@@ -2609,10 +2776,13 @@ export default function App() {
                     value={staffForm.branch_id || branches[0]?.id || 'branch_2'}
                     onChange={(e) => {
                       const sel = branches.find(b => b.id === e.target.value)
+                      const bName = sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : (branches[0]?.name || 'Chafé • Kohke'))
                       setStaffForm({
                         ...staffForm,
                         branch_id: e.target.value,
-                        branch_name: sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : (branches[0]?.name || 'Chafé • Kohke'))
+                        branch_name: bName,
+                        location: bName, // Auto update location to branch
+                        branch_address: sel?.address || 'Siem Reap, Cambodia'
                       })
                     }}
                   >
@@ -2623,6 +2793,9 @@ export default function App() {
                     ))}
                     <option value="all">🌐 All Branches (សាខាទាំងអស់ - Floating Staff)</option>
                   </select>
+                  <span style={{ fontSize: '11px', color: '#0284c7', marginTop: '4px', display: 'block', fontWeight: 600 }}>
+                    🔒 Location automatically matches this branch and is locked for staff.
+                  </span>
                 </div>
 
                 <div className="form-group">
@@ -2709,11 +2882,14 @@ export default function App() {
             <form onSubmit={async (e) => {
               e.preventDefault()
               const chosenBranch = branches.find(b => b.id === editingStaff.branch_id) || branches[0]
+              const branchName = editingStaff.branch_id === 'all' ? 'All Branches (Floating)' : (chosenBranch?.name || editingStaff.branch_name || 'Chafé • Kohke')
               const payload = {
                 name: (editingStaff.name || '').trim(),
                 role: editingStaff.role || 'Barista',
                 branch_id: editingStaff.branch_id || chosenBranch?.id || 'branch_2',
-                branch_name: editingStaff.branch_id === 'all' ? 'All Branches (Floating)' : (editingStaff.branch_name || chosenBranch?.name || 'Chafé • Kohke'),
+                branch_name: branchName,
+                location: branchName, // Automatically changed to branch location
+                branch_address: chosenBranch?.address || 'Siem Reap, Cambodia',
                 shift_start: editingStaff.shift_start || '07:30',
                 shift_end: editingStaff.shift_end || '16:00',
                 username: (editingStaff.username || '').trim(),
@@ -2780,10 +2956,13 @@ export default function App() {
                     value={editingStaff.branch_id || branches[0]?.id || 'branch_2'}
                     onChange={(e) => {
                       const sel = branches.find(b => b.id === e.target.value)
+                      const bName = sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : (branches[0]?.name || 'Chafé • Kohke'))
                       setEditingStaff({
                         ...editingStaff,
                         branch_id: e.target.value,
-                        branch_name: sel ? sel.name : (e.target.value === 'all' ? 'All Branches (Floating)' : (branches[0]?.name || 'Chafé • Kohke'))
+                        branch_name: bName,
+                        location: bName, // Auto update location
+                        branch_address: sel?.address || 'Siem Reap, Cambodia'
                       })
                     }}
                   >
@@ -2794,6 +2973,9 @@ export default function App() {
                     ))}
                     <option value="all">🌐 All Branches (សាខាទាំងអស់ - Floating Staff)</option>
                   </select>
+                  <span style={{ fontSize: '11px', color: '#0284c7', marginTop: '4px', display: 'block', fontWeight: 600 }}>
+                    🔒 Location automatically updates to this branch and is locked for staff.
+                  </span>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>

@@ -129,6 +129,16 @@ export default function StaffCameraScanner({
         setCameraActive(true)
       }
     } catch (err) {
+      const isAbortError =
+        err?.name === 'AbortError' ||
+        err?.code === 20 ||
+        (typeof err?.message === 'string' && (
+          err.message.toLowerCase().includes('abort') ||
+          err.message.toLowerCase().includes('aborted')
+        ))
+      if (isAbortError) {
+        return
+      }
       setCameraError(`Camera error: ${err.message || 'Permission denied'}. Please allow camera access or use the manual roster below.`)
       setCameraActive(false)
     }
@@ -176,7 +186,7 @@ export default function StaffCameraScanner({
           action: 'Clocked In',
           name: staffMember.name,
           role: staffMember.role,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : 'Late Arrival',
           lateMins: newRecord?.late_minutes || 0,
         })
@@ -186,7 +196,7 @@ export default function StaffCameraScanner({
           role: staffMember.role,
           photo_url: staffMember.photo_url || null,
           branch_name: staffMember.branch_name || 'Chafé Store',
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
           isLate: newRecord?.punctuality_status === 'late',
@@ -211,7 +221,7 @@ export default function StaffCameraScanner({
           action: 'Clocked Out',
           name: staffMember.name,
           role: staffMember.role,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           status: 'Shift Completed',
         })
         setScanSuccessModal({
@@ -220,7 +230,7 @@ export default function StaffCameraScanner({
           role: staffMember.role,
           photo_url: staffMember.photo_url || null,
           branch_name: staffMember.branch_name || 'Chafé Store',
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
           status: 'Shift Completed ✓',
           isLate: false,

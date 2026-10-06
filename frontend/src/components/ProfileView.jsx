@@ -109,7 +109,6 @@ export default function ProfileView({
   // Save profile changes
   const handleSaveProfile = () => {
     const combinedName = `${firstName.trim()} ${lastName.trim()}`.trim() || user?.name || 'Staff Member'
-    const chosenBranch = branchesList.find(b => b.id === selectedBranchId) || branchesList[0]
     const updatedUser = {
       ...(user || {}),
       name: combinedName,
@@ -117,9 +116,11 @@ export default function ProfileView({
       phone: phone.trim() ? `${countryCode} ${phone.trim()}` : '',
       gender,
       photo_url: avatarUrl,
-      branch_id: chosenBranch?.id || user?.branch_id || 'branch_2',
-      branch_name: chosenBranch?.name || user?.branch_name || 'Chafé • Kohke',
-      branch_address: chosenBranch?.address || user?.branch_address || 'Siem Reap, Cambodia',
+      // Strictly maintain admin-assigned branch & location (cannot be changed by staff)
+      branch_id: user?.branch_id || 'branch_2',
+      branch_name: user?.branch_name || 'Chafé • Kohke',
+      branch_address: user?.branch_address || 'Siem Reap, Cambodia',
+      location: user?.location || user?.branch_name || 'Chafé • Kohke',
     }
 
     if (onUpdateUser) {
@@ -515,22 +516,29 @@ export default function ProfileView({
                 </select>
               </div>
 
-              {/* 6. Store Branch */}
-              <div className="edit-input-group select-group">
+              {/* 6. Store Branch (Assigned by Admin - Locked) */}
+              <div className="edit-input-group">
                 <label className="edit-input-label">
-                  {appLang === 'kh' ? 'សាខាហាង' : 'Store Branch'}
+                  {appLang === 'kh' ? 'សាខាហាង (ចាត់តាំងដោយ Admin)' : 'Store Branch (Assigned by Admin)'}
                 </label>
-                <select
-                  className="edit-input-field select-field"
-                  value={selectedBranchId}
-                  onChange={(e) => setSelectedBranchId(e.target.value)}
-                >
-                  {branchesList.map(b => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({b.radiusMeters || 50}m scan radius)
-                    </option>
-                  ))}
-                </select>
+                <div className="locked-branch-box">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '16px' }}>📍</span>
+                      <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+                        {user?.branch_name || 'Chafé Store'}
+                      </strong>
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#ea580c', background: '#fff7ed', border: '1px solid #ffedd5', padding: '2px 8px', borderRadius: '6px' }}>
+                      🔒 {appLang === 'kh' ? 'ចាក់សោ' : 'Locked'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>
+                    {appLang === 'kh'
+                      ? 'ទីតាំងសាខាត្រូវបានចាត់តាំងដោយ Admin។ បុគ្គលិកមិនអាចផ្លាស់ប្តូរដោយខ្លួនឯងបានទេ។'
+                      : 'Store branch & location are automatically assigned by Admin and cannot be changed by staff.'}
+                  </div>
+                </div>
               </div>
 
               {/* Save Button */}
@@ -621,59 +629,52 @@ export default function ProfileView({
                 </div>
               )}
 
-              {/* LOCATION MODAL */}
+              {/* LOCATION MODAL (Admin assigned - Locked) */}
               {activeModal === 'location' && (
                 <div style={{ fontSize: '13px', color: '#334155' }}>
-                  <p style={{ marginBottom: '12px', fontWeight: 600 }}>
-                    {appLang === 'kh'
-                      ? 'ជ្រើសរើសសាខាហាងសម្រាប់ការស្កេនវត្តមាន៖'
-                      : 'Select active store branch for attendance scanning:'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: '#fef2f2', border: '1px solid #fee2e2', borderRadius: '8px', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '16px' }}>🔒</span>
+                    <div style={{ fontSize: '11px', color: '#991b1b', fontWeight: 600 }}>
+                      {appLang === 'kh'
+                        ? 'ទីតាំងត្រូវបានចាត់តាំងដោយ Admin។ បុគ្គលិកមិនអាចផ្លាស់ប្តូរដោយខ្លួនឯងបានទេ។'
+                        : 'Store location is set by Admin and cannot be changed by staff.'}
+                    </div>
+                  </div>
+                  <p style={{ marginBottom: '10px', fontWeight: 600, color: '#475569', fontSize: '12px' }}>
+                    {appLang === 'kh' ? 'សាខាដែលបានចាត់តាំងបច្ចុប្បន្ន៖' : 'Your Currently Assigned Branch:'}
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {branchesList.map(b => {
-                      const isSelected = (user?.branch_id === b.id) || (!user?.branch_id && b.id === selectedBranchId)
+                      const isAssigned = (user?.branch_id === b.id) || (!user?.branch_id && b.id === branchesList[0]?.id)
                       return (
                         <div
                           key={b.id}
-                          onClick={() => {
-                            const updated = {
-                              ...(user || {}),
-                              branch_id: b.id,
-                              branch_name: b.name,
-                              branch_address: b.address || 'Siem Reap, Cambodia',
-                            }
-                            setSelectedBranchId(b.id)
-                            if (onUpdateUser) onUpdateUser(updated)
-                            try {
-                              localStorage.setItem('chafe_custom_staff_profile', JSON.stringify(updated))
-                            } catch { /* quiet */ }
-                            showToast?.(
-                              appLang === 'kh' ? `បានប្តូរទៅកាន់ ${b.name}` : `Active branch set to ${b.name}`,
-                              'success'
-                            )
-                            setActiveModal(null)
-                          }}
                           style={{
                             padding: '12px 14px',
-                            background: isSelected ? '#ecfdf5' : '#f8fafc',
-                            border: `1.5px solid ${isSelected ? '#10b981' : '#e2e8f0'}`,
+                            background: isAssigned ? '#ecfdf5' : '#f8fafc',
+                            border: `1.5px solid ${isAssigned ? '#10b981' : '#e2e8f0'}`,
                             borderRadius: '10px',
-                            cursor: 'pointer',
+                            opacity: isAssigned ? 1 : 0.6,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            transition: 'all 0.2s ease',
                           }}
                         >
                           <div>
-                            <div style={{ fontWeight: 700, color: isSelected ? '#065f46' : '#0f172a', fontSize: '13px' }}>
+                            <div style={{ fontWeight: 700, color: isAssigned ? '#065f46' : '#64748b', fontSize: '13px' }}>
                               {b.name}
                             </div>
                             <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                               {b.address || 'Siem Reap'} • {b.radiusMeters || 50}m allowed radius
                             </div>
                           </div>
-                          {isSelected && <span style={{ color: '#10b981', fontWeight: 800, fontSize: '16px' }}>✓</span>}
+                          {isAssigned ? (
+                            <span style={{ color: '#10b981', fontWeight: 800, fontSize: '12px', background: '#d1fae5', padding: '3px 8px', borderRadius: '6px' }}>
+                              ✓ {appLang === 'kh' ? 'សាខារបស់អ្នក' : 'Your Branch'}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#94a3b8', fontSize: '11px' }}>🔒 {appLang === 'kh' ? 'ចាក់សោ' : 'Locked'}</span>
+                          )}
                         </div>
                       )
                     })}

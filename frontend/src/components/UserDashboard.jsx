@@ -186,11 +186,15 @@ export default function UserDashboard({
   // Check if selected staff is currently checked in
   const activeRecord = useMemo(() => {
     return todayStaffLogs.find(
-      l => (l.name === currentStaff?.name || l.email === currentStaff?.email) && l.status === 'checked_in'
+      l => (
+        (currentStaff?.id && (l.staff_id === currentStaff.id || String(l.staff_id) === String(currentStaff.id))) ||
+        (currentStaff?.name && l.name?.toLowerCase() === currentStaff.name?.toLowerCase()) ||
+        (currentStaff?.email && l.email?.toLowerCase() === currentStaff.email?.toLowerCase())
+      ) && l.status === 'checked_in'
     )
   }, [todayStaffLogs, currentStaff])
 
-  const isCheckedIn = Boolean(activeRecord)
+  const isCheckedIn = Boolean(activeRecord || currentStaff?.is_on_shift)
 
   // Stop camera stream cleanly
   const stopCamera = useCallback(() => {
@@ -243,6 +247,16 @@ export default function UserDashboard({
         setCameraActive(true)
       }
     } catch (err) {
+      const isAbortError =
+        err?.name === 'AbortError' ||
+        err?.code === 20 ||
+        (typeof err?.message === 'string' && (
+          err.message.toLowerCase().includes('abort') ||
+          err.message.toLowerCase().includes('aborted')
+        ))
+      if (isAbortError) {
+        return
+      }
       setCameraError(`Camera error: ${err.message || 'Permission denied'}`)
       setCameraActive(false)
     }
@@ -295,7 +309,7 @@ export default function UserDashboard({
           action: 'Clocked In',
           name: staffMember.name,
           role: staffMember.role,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
         })
         setScanSuccessModal({
@@ -305,7 +319,7 @@ export default function UserDashboard({
           photo_url: staffMember.photo_url || null,
           branch_name: activeBranch?.name || staffMember.branch_name || 'Chafé Store',
           distance: verifiedLocation?.distance ?? null,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
           status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
           isLate: newRecord?.punctuality_status === 'late',
@@ -330,7 +344,7 @@ export default function UserDashboard({
           action: 'Clocked Out',
           name: staffMember.name,
           role: staffMember.role,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           status: 'Shift Completed ✓',
         })
         setScanSuccessModal({
@@ -340,7 +354,7 @@ export default function UserDashboard({
           photo_url: staffMember.photo_url || null,
           branch_name: activeBranch?.name || staffMember.branch_name || 'Chafé Store',
           distance: verifiedLocation?.distance ?? null,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
           status: 'Shift Completed ✓',
           isLate: false,
@@ -466,9 +480,9 @@ export default function UserDashboard({
     return hubItems.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()))
   }, [hubItems, searchQuery])
 
-  // Formatted date and time string matching reference screenshot style (e.g. 10.00 am | 27 Nov 2026)
+  // Formatted date and time string matching 12-hour style (e.g. 10:00 AM | 27 Nov 2026)
   const formattedShiftDateTime = useMemo(() => {
-    const timeStr = currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase().replace(' ', ' ')
+    const timeStr = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
     const dateStr = currentTime.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })
     return `${timeStr} | ${dateStr}`
   }, [currentTime])
@@ -617,13 +631,17 @@ export default function UserDashboard({
                 <button
                   type="button"
                   className={`mobile-action-card ${!isCheckedIn ? 'active-state' : ''}`}
-                  onClick={() => handleInitiateScan('in')}
-                  disabled={isProcessing}
+                  onClick={() => {
+                    if (isCheckedIn) return
+                    handleInitiateScan('in')
+                  }}
+                  disabled={isProcessing || isCheckedIn}
+                  style={isCheckedIn ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
                 >
                   <div className="mobile-action-icon">
-                    <IconDoorIn size={36} color="#f59e0b" />
+                    <IconDoorIn size={36} color={isCheckedIn ? '#94a3b8' : '#f59e0b'} />
                   </div>
-                  <div className="mobile-action-label">Check - In</div>
+                  <div className="mobile-action-label" style={isCheckedIn ? { color: '#64748b' } : {}}>Check - In</div>
                   <div className="mobile-action-sublabel">
                     {!isCheckedIn ? 'Ready to Start' : 'Already on Shift'}
                   </div>
@@ -716,7 +734,7 @@ export default function UserDashboard({
                             {log.name}
                           </div>
                           <div style={{ fontSize: '11px', color: '#64748b' }}>
-                            {log.department} • {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                            {log.department} • {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '-'}
                           </div>
                         </div>
                         <span className={`pro-badge ${log.status === 'checked_in' ? 'badge-emerald' : 'badge-slate'}`}>
@@ -833,7 +851,7 @@ export default function UserDashboard({
                       <div>
                         <strong style={{ fontSize: '13px', color: '#0f172a' }}>{log.name}</strong>
                         <div style={{ fontSize: '11px', color: '#64748b' }}>
-                          {log.department} • {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                          {log.department} • {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '-'}
                         </div>
                       </div>
                       <span className={`pro-badge ${log.status === 'checked_in' ? 'badge-emerald' : 'badge-slate'}`}>
@@ -1190,20 +1208,56 @@ export default function UserDashboard({
 
             <div className="staff-modal-body">
               <div
-                className={`modal-action-card card-in ${!isCheckedIn ? 'recommended' : ''}`}
-                onClick={() => handleExecuteClock('in')}
+                className={`modal-action-card card-in ${!isCheckedIn ? 'recommended' : 'disabled'}`}
+                style={isCheckedIn ? {
+                  opacity: 0.55,
+                  backgroundColor: '#f1f5f9',
+                  borderColor: '#cbd5e1',
+                  cursor: 'not-allowed',
+                  filter: 'grayscale(0.6)',
+                } : {}}
+                onClick={() => {
+                  if (isCheckedIn || isProcessing) return
+                  handleExecuteClock('in')
+                }}
+                role="button"
+                aria-disabled={isCheckedIn}
               >
                 <div className="action-card-icon-col">
-                  <div className="action-icon-circle in-circle">
-                    <span style={{ fontSize: '26px' }}>🟢</span>
+                  <div className="action-icon-circle in-circle" style={isCheckedIn ? { background: '#e2e8f0', borderColor: '#cbd5e1' } : {}}>
+                    <span style={{ fontSize: '26px' }}>{isCheckedIn ? '⚪' : '🟢'}</span>
                   </div>
                 </div>
                 <div className="action-card-content">
-                  <h4 className="action-card-title">Clock In (Check In)</h4>
-                  <p className="action-card-desc">Verify your arrival time.</p>
+                  <div className="action-card-header">
+                    <h4 className="action-card-title" style={isCheckedIn ? { color: '#64748b' } : {}}>Clock In (Check In)</h4>
+                    <span
+                      className={`action-status-pill ${!isCheckedIn ? 'pill-ready' : 'pill-muted'}`}
+                      style={isCheckedIn ? { background: '#e2e8f0', color: '#64748b' } : {}}
+                    >
+                      {!isCheckedIn ? 'Ready to Start' : 'Already on Shift'}
+                    </span>
+                  </div>
+                  <p className="action-card-desc">
+                    {isCheckedIn
+                      ? 'You are already clocked into an active shift.'
+                      : 'Verify your arrival time.'}
+                  </p>
                 </div>
                 <div className="action-card-arrow">
-                  <span className="action-proceed-btn in-btn">Confirm In ✓</span>
+                  <button
+                    type="button"
+                    disabled={isCheckedIn || isProcessing}
+                    className="action-proceed-btn in-btn"
+                    style={isCheckedIn ? {
+                      background: '#94a3b8',
+                      boxShadow: 'none',
+                      cursor: 'not-allowed',
+                      pointerEvents: 'none',
+                    } : {}}
+                  >
+                    {isCheckedIn ? 'Already on Shift' : 'Confirm In ✓'}
+                  </button>
                 </div>
               </div>
 
