@@ -20,6 +20,18 @@ import {
   IconSearch,
   IconHome,
   IconCoffee,
+  IconAlertTriangle,
+  IconSun,
+  IconFlashlight,
+  IconZap,
+  IconAward,
+  IconX,
+  IconMapPin,
+  IconBuilding,
+  IconMail,
+  IconFileText,
+  IconCheckCircle,
+  IconXCircle,
 } from '../Icons'
 import { Skeleton } from './Skeleton'
 import ProfileView from './ProfileView'
@@ -349,7 +361,7 @@ export default function StaffPortal({
           type: 'success',
           action: 'Shift Started Successfully! (Clocked In)',
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : 'Late Arrival',
         })
         setScanSuccessModal({
           action: 'in',
@@ -360,7 +372,7 @@ export default function StaffPortal({
           distance: verifiedLocation?.distance ?? null,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
-          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : 'Late Arrival',
           isLate: newRecord?.punctuality_status === 'late',
           lateMins: newRecord?.late_minutes || 0,
         })
@@ -376,7 +388,7 @@ export default function StaffPortal({
           type: 'success',
           action: 'Shift Completed Successfully! (Clocked Out)',
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          status: 'Shift Logged to Timesheet ✓',
+          status: 'Shift Logged to Timesheet',
         })
         setScanSuccessModal({
           action: 'out',
@@ -387,7 +399,7 @@ export default function StaffPortal({
           distance: verifiedLocation?.distance ?? null,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
-          status: 'Shift Completed ✓',
+          status: 'Shift Completed',
           isLate: false,
           lateMins: 0,
         })
@@ -675,7 +687,7 @@ export default function StaffPortal({
   // Hub items matching 3x3 grid
   const hubItems = useMemo(() => [
     { id: 'roster', title: t('shiftRoster', 'Shift Roster'), icon: <IconCalendar size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
-    { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <span style={{ fontSize: '24px', lineHeight: 1 }}>🌴</span>, action: () => setActiveTab('schedule') },
+    { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <IconSun size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
     { id: 'perf', title: t('performance', 'Performance'), icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
     { id: 'logs', title: t('shiftLogs', 'Shift Logs'), icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('history') },
     { id: 'station', title: t('station', 'Station'), icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
@@ -748,7 +760,7 @@ export default function StaffPortal({
         {/* Scheduled Day Off Banner (if applicable today) */}
         {todayDayoff && (
           <div className="pro-dayoff-alert-banner" style={{ margin: '14px 18px 0' }}>
-            <div className="pro-dayoff-icon">🌴</div>
+            <div className="pro-dayoff-icon"><IconSun size={28} color="#0284c7" /></div>
             <div className="pro-dayoff-info">
               <h3>SCHEDULED DAY OFF TODAY ({todayDayoff.type.replace('_', ' ').toUpperCase()})</h3>
               <p>
@@ -824,7 +836,7 @@ export default function StaffPortal({
                   className={`pro-action-alert ${actionResult.type === 'success' ? 'alert-success' : 'alert-error'}`}
                   style={{ margin: '0 0 16px' }}
                 >
-                  <div className="alert-icon-box">{actionResult.type === 'success' ? '✓' : '⚠️'}</div>
+                  <div className="alert-icon-box">{actionResult.type === 'success' ? <IconCheck size={18} color="#059669" /> : <IconAlertTriangle size={18} color="#dc2626" />}</div>
                   <div className="alert-content">
                     <strong>{actionResult.action || actionResult.message}</strong>
                     {actionResult.status && <div>{actionResult.status} at {actionResult.time}</div>}
@@ -878,7 +890,7 @@ export default function StaffPortal({
               {activeCheckin && (
                 <div className="pro-active-session-banner" style={{ margin: '0 0 16px' }}>
                   <div className="session-banner-top">
-                    <span className="session-badge">🟢 ON SHIFT SESSION ACTIVE</span>
+                    <span className="session-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span><span>ON SHIFT SESSION ACTIVE</span></span>
                     <span className="session-timer-live">{elapsedShiftTime}</span>
                   </div>
                   <div className="session-meta-row">
@@ -891,7 +903,7 @@ export default function StaffPortal({
                     <div>
                       <span className="meta-label">PUNCTUALITY</span>
                       <strong className={`meta-val ${activeCheckin.punctuality_status === 'on_time' ? 'text-emerald' : 'text-amber'}`}>
-                        {activeCheckin.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : `Late by ${activeCheckin.late_minutes} min`}
+                        {activeCheckin.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : `Late by ${activeCheckin.late_minutes} min`}
                       </strong>
                     </div>
                   </div>
@@ -1001,12 +1013,12 @@ export default function StaffPortal({
                   </span>
                   <span className={`pro-scanner-lens-badge ${selectedScanAction ? 'badge-' + selectedScanAction : ''}`}>
                     {selectedScanAction === 'in'
-                      ? '🟢 CHECK IN MODE'
+                      ? 'CHECK IN MODE'
                       : selectedScanAction === 'out'
-                      ? '🔴 CHECK OUT MODE'
+                      ? 'CHECK OUT MODE'
                       : cameraFacing === 'environment'
-                      ? '📷 BACK CAMERA (REAR)'
-                      : '🤳 FRONT CAMERA'}
+                      ? 'BACK CAMERA (REAR)'
+                      : 'FRONT CAMERA'}
                   </span>
                 </div>
                 <button
@@ -1019,7 +1031,7 @@ export default function StaffPortal({
                   }}
                   title="Close scanner"
                 >
-                  ✕
+                  <IconX size={16} />
                 </button>
               </div>
 
@@ -1047,9 +1059,9 @@ export default function StaffPortal({
 
                     <div className="pro-reticle-hint">
                       {selectedScanAction === 'in'
-                        ? '🟢 Point at Store QR to Clock In'
+                        ? 'Point at Store QR to Clock In'
                         : selectedScanAction === 'out'
-                        ? '🔴 Point at Store QR to Clock Out'
+                        ? 'Point at Store QR to Clock Out'
                         : 'Align Store QR (Modal will ask Check In or Out)'}
                     </div>
                   </div>
@@ -1081,7 +1093,8 @@ export default function StaffPortal({
                   onClick={handleToggleTorch}
                   title="Toggle flashlight"
                 >
-                  <span>{torchOn ? '🔦 Flash On' : '💡 Flashlight'}</span>
+                  <IconFlashlight size={14} />
+                  <span>{torchOn ? 'Flash On' : 'Flashlight'}</span>
                 </button>
 
                 <button
@@ -1097,14 +1110,14 @@ export default function StaffPortal({
 
               {/* Status footer notice */}
               <div className="pro-scanner-footer-notice">
-                <div className="notice-icon">⚡</div>
+                <div className="notice-icon"><IconZap size={16} color="#f59e0b" /></div>
                 <div className="notice-text">
                   <strong>
                     {selectedScanAction === 'in'
-                      ? '🟢 Check In Mode Active'
+                      ? 'Check In Mode Active'
                       : selectedScanAction === 'out'
-                      ? '🔴 Check Out Mode Active'
-                      : '📷 Universal Store QR Scanner'}
+                      ? 'Check Out Mode Active'
+                      : 'Universal Store QR Scanner'}
                   </strong>
                   <p>
                     {selectedScanAction === 'in'
@@ -1162,7 +1175,7 @@ export default function StaffPortal({
                 </div>
               ) : filteredDayoffs.length === 0 ? (
                 <div className="pro-empty-placeholder">
-                  <div className="empty-icon">🌴</div>
+                  <div className="empty-icon"><IconSun size={32} color="#0284c7" /></div>
                   <h3>No Scheduled Days Off Found</h3>
                   <p>You currently do not have any {dayoffFilter !== 'all' ? dayoffFilter : ''} days off assigned.</p>
                   <p className="sub">Contact your manager if you need to schedule leave or swap days off.</p>
@@ -1177,7 +1190,7 @@ export default function StaffPortal({
                       <div key={item.id} className={`pro-dayoff-card ${isToday ? 'card-today-glow' : ''}`}>
                         <div className="dayoff-card-top">
                           <span className="dayoff-type-icon">
-                            {item.type === 'annual_leave' ? '🏖️' : item.type === 'sick_leave' ? '🏥' : item.type === 'holiday' ? '🌟' : '🌴'}
+                            {item.type === 'annual_leave' ? <IconSun size={18} color="#0284c7" /> : item.type === 'sick_leave' ? <IconActivity size={18} color="#dc2626" /> : item.type === 'holiday' ? <IconAward size={18} color="#d97706" /> : <IconSun size={18} color="#059669" />}
                           </span>
                           <span className={`pro-badge ${isToday ? 'badge-emerald' : isPast ? 'badge-slate' : 'badge-blue'}`}>
                             {isToday ? 'TODAY' : isPast ? 'COMPLETED' : 'UPCOMING'}
@@ -1236,7 +1249,7 @@ export default function StaffPortal({
                 </div>
               ) : recentLogs.length === 0 ? (
                 <div className="pro-empty-placeholder">
-                  <div className="empty-icon">📜</div>
+                  <div className="empty-icon"><IconFileText size={32} color="#94a3b8" /></div>
                   <h3>No Shift History Recorded</h3>
                   <p>When you clock in and out, your verified shift hours will be automatically recorded here.</p>
                 </div>
@@ -1279,7 +1292,7 @@ export default function StaffPortal({
                             </td>
                             <td>
                               <span className={`pro-badge ${log.punctuality_status === 'on_time' ? 'badge-emerald' : 'badge-amber'}`}>
-                                {log.punctuality_status === 'on_time' ? '✓ On-Time' : `⚠️ Late (${log.late_minutes}m)`}
+                                {log.punctuality_status === 'on_time' ? 'On-Time' : `Late (${log.late_minutes}m)`}
                               </span>
                             </td>
                           </tr>
@@ -1408,7 +1421,7 @@ export default function StaffPortal({
                 <div className="drawer-avatar">{initials}</div>
                 <div>
                   <div className="drawer-name">{staffUser?.name || 'Staff Member'}</div>
-                  <div className="drawer-role">☕ {staffUser?.role || 'Team Member'} • Chafé</div>
+                  <div className="drawer-role"><IconCoffee size={12} color="#059669" /> <span>{staffUser?.role || 'Team Member'} • Chafé</span></div>
                 </div>
               </div>
             </div>
@@ -1529,18 +1542,18 @@ export default function StaffPortal({
           <div className="mobile-feature-modal" onClick={(e) => e.stopPropagation()}>
             <div className="mobile-feature-modal-header">
               <h3 className="mobile-feature-modal-title">
-                {activeModal === 'performance' && <><span>🏆</span> Staff Performance Review</>}
-                {activeModal === 'station' && <><span>☕</span> Assigned Counter Station</>}
-                {activeModal === 'alerts' && <><span>🔔</span> Store Alerts & Notices</>}
-                {activeModal === 'profile' && <><span>👤</span> Employee Profile</>}
-                {activeModal === 'support' && <><span>📞</span> Store Support & Contacts</>}
+                {activeModal === 'performance' && <><IconAward size={20} color="#eab308" /> Staff Performance Review</>}
+                {activeModal === 'station' && <><IconCoffee size={20} color="#d97706" /> Assigned Counter Station</>}
+                {activeModal === 'alerts' && <><IconBell size={20} color="#ec4899" /> Store Alerts & Notices</>}
+                {activeModal === 'profile' && <><IconUserCircle size={20} color="#10b981" /> Employee Profile</>}
+                {activeModal === 'support' && <><IconPhone size={20} color="#14b8a6" /> Store Support & Contacts</>}
               </h3>
               <button
                 type="button"
                 className="mobile-feature-modal-close"
                 onClick={() => setActiveModal(null)}
               >
-                ✕
+                <IconX size={16} />
               </button>
             </div>
 
@@ -1583,7 +1596,7 @@ export default function StaffPortal({
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
                     <span style={{ color: '#64748b' }}>Machine:</span>
-                    <strong style={{ color: '#0f172a' }}>La Marzocco Linea PB (Ready ✓)</strong>
+                    <strong style={{ color: '#0f172a' }}>La Marzocco Linea PB (Ready)</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
                     <span style={{ color: '#64748b' }}>Recipe Standard:</span>
@@ -1616,8 +1629,9 @@ export default function StaffPortal({
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534' }}>
-                            🔔 {alert.title}
+                          <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <IconBell size={13} />
+                            <span>{alert.title}</span>
                           </div>
                           {alert.priority === 'high' && (
                             <span style={{ fontSize: '10px', fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px' }}>
@@ -1664,11 +1678,17 @@ export default function StaffPortal({
               {activeModal === 'support' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
                   <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '12px' }}>
-                    <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>☕ Store Manager Hotline</div>
+                    <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <IconPhone size={14} color="#0284c7" />
+                      <span>Store Manager Hotline</span>
+                    </div>
                     <div style={{ color: '#64748b' }}>+1 (555) 234-5678 (Call or WhatsApp)</div>
                   </div>
                   <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '12px' }}>
-                    <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>📧 Shift Swapping & Inquiries</div>
+                    <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <IconMail size={14} color="#0284c7" />
+                      <span>Shift Swapping & Inquiries</span>
+                    </div>
                     <div style={{ color: '#64748b' }}>operations@chafe.internal</div>
                   </div>
                   <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', padding: '12px', fontSize: '12px', color: '#92400e' }}>
@@ -1695,8 +1715,8 @@ export default function StaffPortal({
           >
             <div className="staff-modal-header">
               <div className="staff-modal-title-box">
-                <span className="staff-modal-badge">
-                  {scannedQrData ? '⚡ QR CODE SCANNED' : '📷 STORE ATTENDANCE'}
+                <span className="staff-modal-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  {scannedQrData ? <><IconZap size={13} color="#f59e0b" /> QR CODE SCANNED</> : <><IconCamera size={13} /> STORE ATTENDANCE</>}
                 </span>
                 <h3 id="modal-action-title" className="staff-modal-title">
                   {scannedQrData ? 'Choose Attendance Action' : 'Check In or Check Out?'}
@@ -1718,7 +1738,7 @@ export default function StaffPortal({
                 }}
                 aria-label="Close modal"
               >
-                ✕
+                <IconX size={16} />
               </button>
             </div>
 
@@ -1748,7 +1768,7 @@ export default function StaffPortal({
               >
                 <div className="action-card-icon-col">
                   <div className="action-icon-circle in-circle" style={isOnShift ? { background: '#e2e8f0', borderColor: '#cbd5e1' } : {}}>
-                    <span style={{ fontSize: '26px' }}>{isOnShift ? '⚪' : '🟢'}</span>
+                    <IconDoorIn size={22} color={isOnShift ? '#64748b' : '#059669'} />
                   </div>
                 </div>
                 <div className="action-card-content">
@@ -1768,7 +1788,7 @@ export default function StaffPortal({
                       : 'Start your shift arrival time. Punctuality is automatically verified.'}
                   </p>
                   <div className="action-card-meta">
-                    <span>⏰ Shift: <strong>{staffUser?.shift_start || '07:30'} - {staffUser?.shift_end || '16:00'}</strong></span>
+                    <span>Shift: <strong>{staffUser?.shift_start || '07:30'} - {staffUser?.shift_end || '16:00'}</strong></span>
                   </div>
                 </div>
                 <div className="action-card-arrow">
@@ -1783,7 +1803,7 @@ export default function StaffPortal({
                       pointerEvents: 'none',
                     } : {}}
                   >
-                    {isOnShift ? 'Already Clocked In' : (scannedQrData ? 'Confirm In ✓' : 'Scan to In →')}
+                    {isOnShift ? 'Already Clocked In' : (scannedQrData ? 'Confirm In' : 'Scan to In →')}
                   </button>
                 </div>
               </div>
@@ -1804,7 +1824,7 @@ export default function StaffPortal({
               >
                 <div className="action-card-icon-col">
                   <div className="action-icon-circle out-circle">
-                    <span style={{ fontSize: '26px' }}>🔴</span>
+                    <IconDoorOut size={22} color="#dc2626" />
                   </div>
                 </div>
                 <div className="action-card-content">
@@ -1821,7 +1841,7 @@ export default function StaffPortal({
                   </p>
                   <div className="action-card-meta">
                     {isOnShift ? (
-                      <span>🟢 Active Session: <strong>{elapsedShiftTime}</strong></span>
+                      <span>Active Session: <strong>{elapsedShiftTime}</strong></span>
                     ) : (
                       <span>Current status: Not on shift</span>
                     )}
@@ -1829,7 +1849,7 @@ export default function StaffPortal({
                 </div>
                 <div className="action-card-arrow">
                   <span className="action-proceed-btn out-btn">
-                    {scannedQrData ? 'Confirm Out ✓' : 'Scan to Out →'}
+                    {scannedQrData ? 'Confirm Out' : 'Scan to Out →'}
                   </span>
                 </div>
               </div>
@@ -1856,7 +1876,7 @@ export default function StaffPortal({
       {locationAlert && (
         <div className="location-alert-backdrop" onClick={() => setLocationAlert(null)}>
           <div className="location-alert-card" onClick={(e) => e.stopPropagation()}>
-            <div className="location-alert-icon">📍</div>
+            <div className="location-alert-icon"><IconMapPin size={28} color="#dc2626" /></div>
             <h3 className="location-alert-title">Real-Time Location Required</h3>
             <p className="location-alert-text">
               {locationAlert.message}
@@ -1864,8 +1884,9 @@ export default function StaffPortal({
             {locationAlert.distance !== undefined && (
               <div className="location-alert-details">
                 {locationAlert.branch && (
-                  <div style={{ marginBottom: '6px', color: '#1e293b' }}>
-                    🏢 Branch: <strong>{locationAlert.branch.name}</strong>
+                  <div style={{ marginBottom: '6px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <IconBuilding size={14} color="#059669" />
+                    <span>Branch: <strong>{locationAlert.branch.name}</strong></span>
                   </div>
                 )}
                 Your Current Distance: <strong>{locationAlert.distance}m</strong> away<br />
@@ -1884,7 +1905,7 @@ export default function StaffPortal({
               <button
                 type="button"
                 className="btn-primary"
-                style={{ flex: 1, padding: '12px', borderRadius: '10px' }}
+                style={{ flex: 1, padding: '12px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                 onClick={() => {
                   const act = pendingLocationAction
                   setLocationAlert(null)
@@ -1893,7 +1914,8 @@ export default function StaffPortal({
                   }
                 }}
               >
-                Try Again 🔄
+                <IconRefresh size={14} />
+                <span>Try Again</span>
               </button>
             </div>
           </div>

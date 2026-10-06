@@ -89,7 +89,7 @@ test('Tasks & Notifications table includes sort controls and Security Database R
   assert.ok(fs.existsSync(appPath), 'App.jsx must exist')
   const content = fs.readFileSync(appPath, 'utf-8')
   assert.match(content, /tableSort/, 'Must maintain tableSort state')
-  assert.match(content, /Sort: 🛡️ Security Verified/, 'Must include Security Verified sort option')
+  assert.match(content, /Sort: Security Verified/, 'Must include Security Verified sort option')
   assert.match(content, /Security Request/, 'Must have Security Request column header')
   assert.match(content, /security-tag-badge/, 'Must render security tag badges')
 })

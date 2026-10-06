@@ -6,6 +6,9 @@ import {
   IconMapPin,
   IconDoorIn,
   IconDoorOut,
+  IconX,
+  IconAlertTriangle,
+  IconTarget,
 } from '../Icons'
 
 export default function ScanSuccessModal({ data, onClose, autoCloseSeconds = 6 }) {
@@ -61,7 +64,7 @@ export default function ScanSuccessModal({ data, onClose, autoCloseSeconds = 6 }
             onClick={onClose}
             title="Close"
           >
-            ✕
+            <IconX size={16} />
           </button>
         </div>
 
@@ -70,7 +73,7 @@ export default function ScanSuccessModal({ data, onClose, autoCloseSeconds = 6 }
             {isClockIn ? 'Clocked In Successfully!' : 'Clocked Out Successfully!'}
           </h2>
           <div className="scan-success-title-kh">
-            {isClockIn ? 'បានចុះវត្តមានចូលធ្វើការជោគជ័យ! ✓' : 'បានចុះវត្តមានចេញពីធ្វើការជោគជ័យ! ✓'}
+            {isClockIn ? 'បានចុះវត្តមានចូលធ្វើការជោគជ័យ!' : 'បានចុះវត្តមានចេញពីធ្វើការជោគជ័យ!'}
           </div>
         </div>
 
@@ -149,7 +152,7 @@ export default function ScanSuccessModal({ data, onClose, autoCloseSeconds = 6 }
         {/* Punctuality Status Banner */}
         <div className={`scan-punctuality-card ${data.isLate ? 'card-late' : 'card-ontime'}`}>
           <div className="scan-punctuality-icon">
-            {data.isLate ? '⚠️' : '🎯'}
+            {data.isLate ? <IconAlertTriangle size={20} color="#dc2626" /> : <IconTarget size={20} color="#059669" />}
           </div>
           <div className="scan-punctuality-info">
             <div className="scan-punctuality-title">

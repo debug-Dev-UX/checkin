@@ -18,7 +18,15 @@ import {
   IconCoffee,
   IconTrophy,
   IconQrCode,
-  IconLogOut
+  IconLogOut,
+  IconAlertTriangle,
+  IconAward,
+  IconX,
+  IconMapPin,
+  IconBuilding,
+  IconZap,
+  IconMail,
+  IconSun
 } from '../Icons'
 import ProfileView from './ProfileView'
 import ScanSuccessModal from './ScanSuccessModal'
@@ -378,7 +386,7 @@ export default function UserDashboard({
           name: staffMember.name,
           role: staffMember.role,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : 'Late Arrival',
         })
         setScanSuccessModal({
           action: 'in',
@@ -389,7 +397,7 @@ export default function UserDashboard({
           distance: verifiedLocation?.distance ?? null,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
-          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : 'Late Arrival',
           isLate: newRecord?.punctuality_status === 'late',
           lateMins: newRecord?.late_minutes || 0,
         })
@@ -413,7 +421,7 @@ export default function UserDashboard({
           name: staffMember.name,
           role: staffMember.role,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          status: 'Shift Completed ✓',
+          status: 'Shift Completed',
         })
         setScanSuccessModal({
           action: 'out',
@@ -424,7 +432,7 @@ export default function UserDashboard({
           distance: verifiedLocation?.distance ?? null,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
-          status: 'Shift Completed ✓',
+          status: 'Shift Completed',
           isLate: false,
           lateMins: 0,
         })
@@ -536,7 +544,7 @@ export default function UserDashboard({
   // Hub items matching 3x3 grid
   const hubItems = useMemo(() => [
     { id: 'roster', title: t('shiftRoster', 'Shift Roster'), icon: <IconCalendar size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
-    { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <span style={{ fontSize: '24px', lineHeight: 1 }}>🌴</span>, action: () => setActiveTab('schedule') },
+    { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <IconSun size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
     { id: 'perf', title: t('performance', 'Performance'), icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
     { id: 'logs', title: t('shiftLogs', 'Shift Logs'), icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
     { id: 'station', title: t('station', 'Station'), icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
@@ -659,7 +667,7 @@ export default function UserDashboard({
                     <div className="shift-detail-label">Purpose of Visit / Shift</div>
                     <div className="shift-detail-val">
                       {isCheckedIn
-                        ? 'Active On Shift ✓'
+                        ? 'Active On Shift'
                         : `${currentStaff?.shift_start || '07:30'} - ${currentStaff?.shift_end || '16:00'}`}
                     </div>
                   </div>
@@ -688,7 +696,9 @@ export default function UserDashboard({
                   className={`pro-action-alert ${scanResult.type === 'success' ? 'alert-success' : 'alert-error'}`}
                   style={{ margin: '0 0 16px' }}
                 >
-                  <div className="alert-icon-box">{scanResult.type === 'success' ? '✓' : '⚠️'}</div>
+                  <div className="alert-icon-box">
+                    {scanResult.type === 'success' ? <IconCheck size={18} color="#059669" /> : <IconAlertTriangle size={18} color="#dc2626" />}
+                  </div>
                   <div className="alert-content">
                     <strong>{scanResult.action ? `${scanResult.action} Confirmed!` : scanResult.message}</strong>
                     {scanResult.name && <div>{scanResult.name} • {scanResult.time} • {scanResult.status}</div>}
@@ -838,9 +848,10 @@ export default function UserDashboard({
                     stopCamera()
                     setActiveTab('clock')
                   }}
-                  style={{ padding: '5px 10px', fontSize: '12px' }}
+                  style={{ padding: '5px 10px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                 >
-                  ✕ Close
+                  <IconX size={14} />
+                  <span>Close</span>
                 </button>
               </div>
 
@@ -864,15 +875,18 @@ export default function UserDashboard({
 
                 {!cameraActive && (
                   <div className="camera-off-overlay">
-                    <div style={{ fontSize: '36px' }}>📷</div>
+                    <div style={{ marginBottom: '8px' }}>
+                      <IconCamera size={36} color="#64748b" />
+                    </div>
                     <strong>Starting Back Camera...</strong>
                   </div>
                 )}
               </div>
 
               {cameraError && (
-                <div className="camera-error-banner" style={{ marginTop: '12px' }}>
-                  ⚠️ {cameraError}
+                <div className="camera-error-banner" style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <IconAlertTriangle size={16} color="#dc2626" />
+                  <span>{cameraError}</span>
                 </div>
               )}
 
@@ -1060,7 +1074,10 @@ export default function UserDashboard({
                 <div className="drawer-avatar">{initials}</div>
                 <div>
                   <div className="drawer-name">{currentStaff?.name || 'Staff Member'}</div>
-                  <div className="drawer-role">☕ {currentStaff?.role || 'Staff'} • Chafé</div>
+                  <div className="drawer-role" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <IconCoffee size={12} color="#059669" />
+                    <span>{currentStaff?.role || 'Staff'} • Chafé</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1166,19 +1183,19 @@ export default function UserDashboard({
         <div className="mobile-feature-modal-backdrop" onClick={() => setActiveModal(null)}>
           <div className="mobile-feature-modal" onClick={(e) => e.stopPropagation()}>
             <div className="mobile-feature-modal-header">
-              <h3 className="mobile-feature-modal-title">
-                {activeModal === 'performance' && <><span>🏆</span> Staff Performance Review</>}
-                {activeModal === 'station' && <><span>☕</span> Assigned Counter Station</>}
-                {activeModal === 'alerts' && <><span>🔔</span> Store Announcements</>}
-                {activeModal === 'profile' && <><span>👤</span> Staff Profile</>}
-                {activeModal === 'support' && <><span>📞</span> Store Support</>}
+              <h3 className="mobile-feature-modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {activeModal === 'performance' && <><IconAward size={18} color="#eab308" /> <span>Staff Performance Review</span></>}
+                {activeModal === 'station' && <><IconCoffee size={18} color="#d97706" /> <span>Assigned Counter Station</span></>}
+                {activeModal === 'alerts' && <><IconBell size={18} color="#0284c7" /> <span>Store Announcements</span></>}
+                {activeModal === 'profile' && <><IconUserCircle size={18} color="#7c3aed" /> <span>Staff Profile</span></>}
+                {activeModal === 'support' && <><IconPhone size={18} color="#059669" /> <span>Store Support</span></>}
               </h3>
               <button
                 type="button"
                 className="mobile-feature-modal-close"
                 onClick={() => setActiveModal(null)}
               >
-                ✕
+                <IconX size={16} />
               </button>
             </div>
 
@@ -1190,7 +1207,7 @@ export default function UserDashboard({
                     <div style={{ fontSize: '13px', color: '#64748b', fontWeight: 700 }}>Overall Punctuality Standard</div>
                   </div>
                   <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px', fontSize: '12.5px', color: '#166534', lineHeight: 1.5 }}>
-                    ⭐ <strong>Good Standing:</strong> Shift records are synced with cloud timesheets in real-time.
+                    <strong>Good Standing:</strong> Shift records are synced with cloud timesheets in real-time.
                   </div>
                 </div>
               )}
@@ -1203,7 +1220,7 @@ export default function UserDashboard({
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
                     <span style={{ color: '#64748b' }}>Espresso Machine:</span>
-                    <strong style={{ color: '#0f172a' }}>La Marzocco Linea PB (Ready ✓)</strong>
+                    <strong style={{ color: '#0f172a' }}>La Marzocco Linea PB (Ready)</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: '#64748b' }}>Sanitization:</span>
@@ -1231,8 +1248,9 @@ export default function UserDashboard({
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534' }}>
-                            🔔 {alert.title}
+                          <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <IconBell size={14} color={alert.priority === 'high' ? '#1e40af' : '#166534'} />
+                            <span>{alert.title}</span>
                           </div>
                           {alert.priority === 'high' && (
                             <span style={{ fontSize: '10px', fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px' }}>
@@ -1269,11 +1287,17 @@ export default function UserDashboard({
               {activeModal === 'support' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
                   <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px' }}>
-                    <div style={{ fontWeight: 800 }}>☕ Manager Hotline:</div>
+                    <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', color: '#0f172a', marginBottom: '4px' }}>
+                      <IconPhone size={14} color="#059669" />
+                      <span>Manager Hotline:</span>
+                    </div>
                     <div style={{ color: '#64748b' }}>+1 (555) 234-5678</div>
                   </div>
                   <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px' }}>
-                    <div style={{ fontWeight: 800 }}>📧 Shift Operations:</div>
+                    <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', color: '#0f172a', marginBottom: '4px' }}>
+                      <IconMail size={14} color="#0284c7" />
+                      <span>Shift Operations:</span>
+                    </div>
                     <div style={{ color: '#64748b' }}>operations@chafe.internal</div>
                   </div>
                 </div>
@@ -1289,7 +1313,10 @@ export default function UserDashboard({
           <div className="staff-action-modal" onClick={(e) => e.stopPropagation()}>
             <div className="staff-modal-header">
               <div className="staff-modal-title-box">
-                <span className="staff-modal-badge">⚡ QR SCAN CONFIRMED</span>
+                <span className="staff-modal-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <IconZap size={12} color="#f59e0b" />
+                  <span>QR SCAN CONFIRMED</span>
+                </span>
                 <h3 className="staff-modal-title">Confirm Attendance Action</h3>
                 <p className="staff-modal-subtitle">
                   Select your attendance status for {currentStaff?.name}:
@@ -1303,7 +1330,7 @@ export default function UserDashboard({
                   stopCamera()
                 }}
               >
-                ✕
+                <IconX size={16} />
               </button>
             </div>
 
@@ -1326,7 +1353,7 @@ export default function UserDashboard({
               >
                 <div className="action-card-icon-col">
                   <div className="action-icon-circle in-circle" style={isCheckedIn ? { background: '#e2e8f0', borderColor: '#cbd5e1' } : {}}>
-                    <span style={{ fontSize: '26px' }}>{isCheckedIn ? '⚪' : '🟢'}</span>
+                    <IconDoorIn size={22} color={isCheckedIn ? '#64748b' : '#059669'} />
                   </div>
                 </div>
                 <div className="action-card-content">
@@ -1357,7 +1384,7 @@ export default function UserDashboard({
                       pointerEvents: 'none',
                     } : {}}
                   >
-                    {isCheckedIn ? 'Already on Shift' : 'Confirm In ✓'}
+                    {isCheckedIn ? 'Already on Shift' : 'Confirm In'}
                   </button>
                 </div>
               </div>
@@ -1368,7 +1395,7 @@ export default function UserDashboard({
               >
                 <div className="action-card-icon-col">
                   <div className="action-icon-circle out-circle">
-                    <span style={{ fontSize: '26px' }}>🔴</span>
+                    <IconDoorOut size={22} color="#dc2626" />
                   </div>
                 </div>
                 <div className="action-card-content">
@@ -1376,7 +1403,7 @@ export default function UserDashboard({
                   <p className="action-card-desc">Complete your working hours.</p>
                 </div>
                 <div className="action-card-arrow">
-                  <span className="action-proceed-btn out-btn">Confirm Out ✓</span>
+                  <span className="action-proceed-btn out-btn">Confirm Out</span>
                 </div>
               </div>
             </div>
@@ -1401,7 +1428,9 @@ export default function UserDashboard({
       {locationAlert && (
         <div className="location-alert-backdrop" onClick={() => setLocationAlert(null)}>
           <div className="location-alert-card" onClick={(e) => e.stopPropagation()}>
-            <div className="location-alert-icon">📍</div>
+            <div className="location-alert-icon">
+              <IconMapPin size={28} color="#dc2626" />
+            </div>
             <h3 className="location-alert-title">Real-Time Location Required</h3>
             <p className="location-alert-text">
               {locationAlert.message}
@@ -1409,8 +1438,9 @@ export default function UserDashboard({
             {locationAlert.distance !== undefined && (
               <div className="location-alert-details">
                 {locationAlert.branch && (
-                  <div style={{ marginBottom: '6px', color: '#1e293b' }}>
-                    🏢 Branch: <strong>{locationAlert.branch.name}</strong>
+                  <div style={{ marginBottom: '6px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <IconBuilding size={14} color="#059669" />
+                    <span>Branch: <strong>{locationAlert.branch.name}</strong></span>
                   </div>
                 )}
                 Your Current Distance: <strong>{locationAlert.distance}m</strong> away<br />
@@ -1429,7 +1459,7 @@ export default function UserDashboard({
               <button
                 type="button"
                 className="btn-primary"
-                style={{ flex: 1, padding: '12px', borderRadius: '10px' }}
+                style={{ flex: 1, padding: '12px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                 onClick={() => {
                   const act = pendingLocationAction
                   setLocationAlert(null)
@@ -1438,7 +1468,8 @@ export default function UserDashboard({
                   }
                 }}
               >
-                Try Again 🔄
+                <IconRefresh size={14} />
+                <span>Try Again</span>
               </button>
             </div>
           </div>

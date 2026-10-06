@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { IconLock, IconZap } from '../Icons'
 
 export default function LoadingPage({ message = 'Loading Chafé HR System...' }) {
   const [progress, setProgress] = useState(16)
@@ -149,7 +150,7 @@ export default function LoadingPage({ message = 'Loading Chafé HR System...' })
         {/* Security & System Metadata */}
         <div className="loading-meta-status">
           <div className="status-pill">
-            <span className="status-icon">🔒</span>
+            <span className="status-icon"><IconLock size={12} color="currentColor" /></span>
             <span>256-BIT SSL</span>
           </div>
           <span className="meta-bullet">•</span>
@@ -159,7 +160,7 @@ export default function LoadingPage({ message = 'Loading Chafé HR System...' })
           </div>
           <span className="meta-bullet">•</span>
           <div className="status-pill">
-            <span className="status-icon">⚡</span>
+            <span className="status-icon"><IconZap size={12} color="currentColor" /></span>
             <span>v2.4 READY</span>
           </div>
         </div>

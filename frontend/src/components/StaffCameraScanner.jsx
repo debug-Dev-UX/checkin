@@ -6,7 +6,11 @@ import {
   IconClock,
   IconRefresh,
   IconUsers,
-  IconArrowPointer
+  IconArrowPointer,
+  IconAlertTriangle,
+  IconZap,
+  IconSun,
+  IconMoon
 } from '../Icons'
 import {
   getTodayControlFromFirebase,
@@ -245,7 +249,7 @@ export default function StaffCameraScanner({
           branch_name: staffMember.branch_name || 'Chafé Store',
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
-          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing ✓)' : 'Late Arrival ⚠️',
+          status: newRecord?.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : 'Late Arrival',
           isLate: newRecord?.punctuality_status === 'late',
           lateMins: newRecord?.late_minutes || 0,
         })
@@ -279,7 +283,7 @@ export default function StaffCameraScanner({
           branch_name: staffMember.branch_name || 'Chafé Store',
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
-          status: 'Shift Completed ✓',
+          status: 'Shift Completed',
           isLate: false,
           lateMins: 0,
         })
@@ -449,7 +453,9 @@ export default function StaffCameraScanner({
               {/* Overlay Prompt when Camera is Off */}
               {!cameraActive && (
                 <div className="camera-off-overlay">
-                  <div style={{ fontSize: '42px', marginBottom: '8px' }}>📷</div>
+                  <div style={{ marginBottom: '8px' }}>
+                    <IconCamera size={42} color="#64748b" />
+                  </div>
                   <strong style={{ fontSize: '14px', color: '#1e293b' }}>Camera is currently stopped</strong>
                   <p style={{ fontSize: '12px', color: '#64748b', maxWidth: '280px', marginTop: '4px' }}>
                     Click &quot;Start Camera&quot; to begin scanning staff QR badges.
@@ -468,8 +474,9 @@ export default function StaffCameraScanner({
 
             {/* Error Message */}
             {cameraError && (
-              <div className="camera-error-banner">
-                ⚠️ {cameraError}
+              <div className="camera-error-banner" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <IconAlertTriangle size={16} color="#dc2626" />
+                <span>{cameraError}</span>
               </div>
             )}
 
@@ -506,8 +513,10 @@ export default function StaffCameraScanner({
                   }
                 }}
                 disabled={staffList.length === 0}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               >
-                ⚡ Test Scan Simulation
+                <IconZap size={14} color="#f59e0b" />
+                <span>Test Scan Simulation</span>
               </button>
             </div>
           </div>
@@ -526,7 +535,7 @@ export default function StaffCameraScanner({
                 className={`mode-toggle-card ${scanMode === 'in' ? 'active-in' : ''}`}
                 onClick={() => setScanMode('in')}
               >
-                <div style={{ fontSize: '20px' }}>☀️</div>
+                <IconSun size={22} color={scanMode === 'in' ? '#059669' : '#64748b'} />
                 <div>
                   <div style={{ fontWeight: 800, fontSize: '13px' }}>CLOCK IN</div>
                   <div style={{ fontSize: '11px', opacity: 0.8 }}>Start Work Shift</div>
@@ -537,7 +546,7 @@ export default function StaffCameraScanner({
                 className={`mode-toggle-card ${scanMode === 'out' ? 'active-out' : ''}`}
                 onClick={() => setScanMode('out')}
               >
-                <div style={{ fontSize: '20px' }}>🌙</div>
+                <IconMoon size={22} color={scanMode === 'out' ? '#d97706' : '#64748b'} />
                 <div>
                   <div style={{ fontWeight: 800, fontSize: '13px' }}>CLOCK OUT</div>
                   <div style={{ fontSize: '11px', opacity: 0.8 }}>End Work Shift</div>

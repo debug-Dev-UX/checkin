@@ -1074,11 +1074,11 @@ export async function saveCustomRolesToFirebase(roles) {
 }
 
 export const DEFAULT_LEAVE_TYPES = [
-  { id: 'day_off', label: 'Regular Day Off', icon: '🌴', color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd' },
-  { id: 'annual_leave', label: 'Annual Leave / Vacation', icon: '🏖️', color: '#059669', bg: '#d1fae5', border: '#a7f3d0' },
-  { id: 'sick_leave', label: 'Medical / Sick Leave', icon: '🏥', color: '#dc2626', bg: '#fee2e2', border: '#fecaca' },
-  { id: 'personal', label: 'Personal Leave', icon: '📋', color: '#7c3aed', bg: '#ede9fe', border: '#ddd6fe' },
-  { id: 'holiday', label: 'Public Holiday Off', icon: '🌟', color: '#d97706', bg: '#fef3c7', border: '#fde68a' },
+  { id: 'day_off', label: 'Regular Day Off', icon: 'sun', color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd' },
+  { id: 'annual_leave', label: 'Annual Leave / Vacation', icon: 'calendar', color: '#059669', bg: '#d1fae5', border: '#a7f3d0' },
+  { id: 'sick_leave', label: 'Medical / Sick Leave', icon: 'cross', color: '#dc2626', bg: '#fee2e2', border: '#fecaca' },
+  { id: 'personal', label: 'Personal Leave', icon: 'clipboard', color: '#7c3aed', bg: '#ede9fe', border: '#ddd6fe' },
+  { id: 'holiday', label: 'Public Holiday Off', icon: 'star', color: '#d97706', bg: '#fef3c7', border: '#fde68a' },
 ]
 
 export async function getLeaveTypesFromFirebase() {

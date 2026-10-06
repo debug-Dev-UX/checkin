@@ -13,6 +13,7 @@ import {
   IconLock,
   IconEye,
   IconEyeOff,
+  IconX,
 } from '../Icons'
 import { getBranches } from '../services/locationService'
 import { useLanguage } from '../context/LanguageContext'
@@ -142,7 +143,7 @@ export default function ProfileView({
     }
 
     showToast?.(
-      appLang === 'kh' ? 'បានរក្សាទុកព័ត៌មានរួចរាល់! ✓' : 'Profile saved successfully! ✓',
+      appLang === 'kh' ? 'បានរក្សាទុកព័ត៌មានរួចរាល់!' : 'Profile saved successfully!',
       'success'
     )
     setIsEditing(false)
@@ -198,7 +199,7 @@ export default function ProfileView({
       } catch {}
 
       showToast?.(
-        appLang === 'kh' ? 'ប្តូរពាក្យសម្ងាត់បានជោគជ័យ! ✓' : 'Password changed successfully! ✓',
+        appLang === 'kh' ? 'ប្តូរពាក្យសម្ងាត់បានជោគជ័យ!' : 'Password changed successfully!',
         'success'
       )
       setNewPassword('')
@@ -600,13 +601,14 @@ export default function ProfileView({
                 <div className="locked-branch-box">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>📍</span>
+                      <IconMapPin size={16} color="#059669" />
                       <strong style={{ fontSize: '13px', color: '#0f172a' }}>
                         {user?.branch_name || 'Chafé Store'}
                       </strong>
                     </div>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#ea580c', background: '#fff7ed', border: '1px solid #ffedd5', padding: '2px 8px', borderRadius: '6px' }}>
-                      🔒 {appLang === 'kh' ? 'ចាក់សោ' : 'Locked'}
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#ea580c', background: '#fff7ed', border: '1px solid #ffedd5', padding: '2px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <IconLock size={12} color="#ea580c" />
+                      <span>{appLang === 'kh' ? 'ចាក់សោ' : 'Locked'}</span>
                     </span>
                   </div>
                   <div style={{ fontSize: '11px', color: '#64748b' }}>
@@ -646,35 +648,35 @@ export default function ProfileView({
             style={{ maxWidth: '400px' }}
           >
             <div className="mobile-feature-modal-header">
-              <h3 className="mobile-feature-modal-title">
+              <h3 className="mobile-feature-modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {activeModal === 'language' && (
                   <>
-                    <span>🌐</span> {appLang === 'kh' ? 'ជ្រើសរើសភាសា' : 'App Language'}
+                    <IconGlobe size={18} color="#0284c7" /> <span>{appLang === 'kh' ? 'ជ្រើសរើសភាសា' : 'App Language'}</span>
                   </>
                 )}
                 {activeModal === 'location' && (
                   <>
-                    <span>📍</span> {appLang === 'kh' ? 'ទីតាំងហាង' : 'Store Location'}
+                    <IconMapPin size={18} color="#059669" /> <span>{appLang === 'kh' ? 'ទីតាំងហាង' : 'Store Location'}</span>
                   </>
                 )}
                 {activeModal === 'display' && (
                   <>
-                    <span>📱</span> {appLang === 'kh' ? 'ការបង្ហាញ' : 'Display & Theme'}
+                    <IconDeviceMobile size={18} color="#7c3aed" /> <span>{appLang === 'kh' ? 'ការបង្ហាញ' : 'Display & Theme'}</span>
                   </>
                 )}
                 {activeModal === 'feed' && (
                   <>
-                    <span>🔔</span> {appLang === 'kh' ? 'ការជូនដំណឹង' : 'Feed Preferences'}
+                    <IconBell size={18} color="#d97706" /> <span>{appLang === 'kh' ? 'ការជូនដំណឹង' : 'Feed Preferences'}</span>
                   </>
                 )}
                 {activeModal === 'settings' && (
                   <>
-                    <span>⚙️</span> {appLang === 'kh' ? 'ការកំណត់គណនី' : 'Account Settings'}
+                    <IconGear size={18} color="#0f172a" /> <span>{appLang === 'kh' ? 'ការកំណត់គណនី' : 'Account Settings'}</span>
                   </>
                 )}
                 {activeModal === 'password' && (
                   <>
-                    <span>🔒</span> {appLang === 'kh' ? 'ប្តូរពាក្យសម្ងាត់' : 'Change Password'}
+                    <IconLock size={18} color="#dc2626" /> <span>{appLang === 'kh' ? 'ប្តូរពាក្យសម្ងាត់' : 'Change Password'}</span>
                   </>
                 )}
               </h3>
@@ -683,7 +685,7 @@ export default function ProfileView({
                 className="mobile-feature-modal-close"
                 onClick={() => setActiveModal(null)}
               >
-                ✕
+                <IconX size={16} />
               </button>
             </div>
 
@@ -697,7 +699,7 @@ export default function ProfileView({
                     onClick={() => handleSelectLanguage('en')}
                   >
                     <span>English (en)</span>
-                    {appLang === 'en' && <span>✓</span>}
+                    {appLang === 'en' && <IconCheck size={16} color="#059669" />}
                   </button>
                   <button
                     type="button"
@@ -705,7 +707,7 @@ export default function ProfileView({
                     onClick={() => handleSelectLanguage('kh')}
                   >
                     <span>ភាសាខ្មែរ (kh)</span>
-                    {appLang === 'kh' && <span>✓</span>}
+                    {appLang === 'kh' && <IconCheck size={16} color="#059669" />}
                   </button>
                 </div>
               )}
@@ -714,7 +716,7 @@ export default function ProfileView({
               {activeModal === 'location' && (
                 <div style={{ fontSize: '13px', color: '#334155' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', background: '#fef2f2', border: '1px solid #fee2e2', borderRadius: '8px', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '16px' }}>🔒</span>
+                    <IconLock size={16} color="#dc2626" />
                     <div style={{ fontSize: '11px', color: '#991b1b', fontWeight: 600 }}>
                       {appLang === 'kh'
                         ? 'ទីតាំងត្រូវបានចាត់តាំងដោយ Admin។ បុគ្គលិកមិនអាចផ្លាស់ប្តូរដោយខ្លួនឯងបានទេ។'
@@ -750,11 +752,15 @@ export default function ProfileView({
                             </div>
                           </div>
                           {isAssigned ? (
-                            <span style={{ color: '#10b981', fontWeight: 800, fontSize: '12px', background: '#d1fae5', padding: '3px 8px', borderRadius: '6px' }}>
-                              ✓ {appLang === 'kh' ? 'សាខារបស់អ្នក' : 'Your Branch'}
+                            <span style={{ color: '#10b981', fontWeight: 800, fontSize: '12px', background: '#d1fae5', padding: '3px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <IconCheck size={12} color="#10b981" />
+                              <span>{appLang === 'kh' ? 'សាខារបស់អ្នក' : 'Your Branch'}</span>
                             </span>
                           ) : (
-                            <span style={{ color: '#94a3b8', fontSize: '11px' }}>🔒 {appLang === 'kh' ? 'ចាក់សោ' : 'Locked'}</span>
+                            <span style={{ color: '#94a3b8', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              <IconLock size={11} color="#94a3b8" />
+                              <span>{appLang === 'kh' ? 'ចាក់សោ' : 'Locked'}</span>
+                            </span>
                           )}
                         </div>
                       )
@@ -778,7 +784,7 @@ export default function ProfileView({
                       }}
                     >
                       <span>{mode}</span>
-                      {themeMode === mode && <span>✓</span>}
+                      {themeMode === mode && <IconCheck size={16} color="#059669" />}
                     </button>
                   ))}
                 </div>
@@ -842,10 +848,13 @@ export default function ProfileView({
               {/* PASSWORD MODAL */}
               {activeModal === 'password' && (
                 <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <div style={{ fontSize: '12.5px', color: '#64748b', lineHeight: 1.5, background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    {appLang === 'kh'
-                      ? '🔒 បញ្ចូលពាក្យសម្ងាត់ថ្មីរបស់អ្នក ដើម្បីសុវត្ថិភាពគណនី។ អ្នកអាចប្រើពាក្យសម្ងាត់ថ្មីនេះភ្លាមៗដើម្បីចូលប្រព័ន្ធ។'
-                      : '🔒 Set a new password for your account. You can use this new password immediately for all subsequent logins.'}
+                  <div style={{ fontSize: '12.5px', color: '#64748b', lineHeight: 1.5, background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    <IconLock size={15} color="#64748b" style={{ flexShrink: 0, marginTop: '2px' }} />
+                    <span>
+                      {appLang === 'kh'
+                        ? 'បញ្ចូលពាក្យសម្ងាត់ថ្មីរបស់អ្នក ដើម្បីសុវត្ថិភាពគណនី។ អ្នកអាចប្រើពាក្យសម្ងាត់ថ្មីនេះភ្លាមៗដើម្បីចូលប្រព័ន្ធ។'
+                        : 'Set a new password for your account. You can use this new password immediately for all subsequent logins.'}
+                    </span>
                   </div>
 
                   <div className="edit-input-group">
@@ -915,7 +924,7 @@ export default function ProfileView({
                     >
                       {passwordLoading
                         ? (appLang === 'kh' ? 'កំពុងរក្សាទុក...' : 'Updating...')
-                        : (appLang === 'kh' ? 'រក្សាទុក ✓' : 'Save Password ✓')}
+                        : (appLang === 'kh' ? 'រក្សាទុក' : 'Save Password')}
                     </button>
                   </div>
                 </form>

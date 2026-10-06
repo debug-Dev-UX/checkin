@@ -10,7 +10,14 @@ import {
   IconSearch,
   IconClock,
   IconGrid,
-  IconList
+  IconList,
+  IconSun,
+  IconCoffee,
+  IconGear,
+  IconX,
+  IconActivity,
+  IconFileText,
+  IconStar,
 } from '../Icons'
 import {
   SkeletonCalendar,
@@ -26,6 +33,16 @@ import {
   saveLeaveTypesToFirebase,
 } from '../services/firebaseService'
 
+export function renderLeaveIcon(iconKey, size = 14, color = 'currentColor') {
+  if (iconKey === 'sun' || iconKey?.includes('\uD83C\uDF34')) return <IconSun size={size} color={color} />
+  if (iconKey === 'calendar' || iconKey?.includes('\uD83C\uDFD6') || iconKey?.includes('\uD83D\uDDD3')) return <IconCalendar size={size} color={color} />
+  if (iconKey === 'cross' || iconKey?.includes('\uD83C\uDFE5')) return <IconActivity size={size} color={color} />
+  if (iconKey === 'clipboard' || iconKey?.includes('\uD83D\uDCCB') || iconKey?.includes('\uD83D\uDCDC')) return <IconFileText size={size} color={color} />
+  if (iconKey === 'star' || iconKey?.includes('\uD83C\uDF1F')) return <IconStar size={size} color={color} />
+  if (iconKey === 'coffee' || iconKey?.includes('\u2615')) return <IconCoffee size={size} color={color} />
+  return <IconCalendar size={size} color={color} />
+}
+
 export const LEAVE_TYPES = DEFAULT_LEAVE_TYPES
 
 export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
@@ -33,7 +50,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
   const [leaveTypes, setLeaveTypes] = useState(DEFAULT_LEAVE_TYPES)
   const [isManageLeaveModalOpen, setIsManageLeaveModalOpen] = useState(false)
   const [editingLeaveType, setEditingLeaveType] = useState(null)
-  const [newLeaveTypeForm, setNewLeaveTypeForm] = useState({ label: '', icon: '🌴', color: '#0284c7' })
+  const [newLeaveTypeForm, setNewLeaveTypeForm] = useState({ label: '', icon: 'sun', color: '#0284c7' })
 
   useEffect(() => {
     getLeaveTypesFromFirebase().then(types => {
@@ -142,7 +159,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
     const created = {
       id,
       label: newLeaveTypeForm.label.trim(),
-      icon: newLeaveTypeForm.icon.trim() || '🌴',
+      icon: newLeaveTypeForm.icon.trim() || 'calendar',
       color: newLeaveTypeForm.color || '#0284c7',
       bg: (newLeaveTypeForm.color || '#0284c7') + '15',
       border: (newLeaveTypeForm.color || '#0284c7') + '40',
@@ -150,7 +167,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
     const updated = [...leaveTypes, created]
     setLeaveTypes(updated)
     await saveLeaveTypesToFirebase(updated)
-    setNewLeaveTypeForm({ label: '', icon: '🌴', color: '#0284c7' })
+    setNewLeaveTypeForm({ label: '', icon: 'calendar', color: '#0284c7' })
     showToast?.(`Created leave type: ${created.label}`, 'success')
   }
 
@@ -160,7 +177,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
     const updated = leaveTypes.map(lt => lt.id === editingLeaveType.id ? {
       ...lt,
       label: editingLeaveType.label.trim(),
-      icon: editingLeaveType.icon.trim() || '🌴',
+      icon: editingLeaveType.icon.trim() || 'calendar',
       color: editingLeaveType.color || '#0284c7',
       bg: (editingLeaveType.color || '#0284c7') + '15',
       border: (editingLeaveType.color || '#0284c7') + '40',
@@ -486,7 +503,9 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
       {/* ============================================================== */}
       <div className="calendar-kpi-row">
         <div className="calendar-kpi-card blue">
-          <div className="kpi-icon-box">🌴</div>
+          <div className="kpi-icon-box">
+            <IconSun size={24} color="#0284c7" />
+          </div>
           <div className="kpi-text-box">
             <span className="kpi-stat-label">TOTAL SCHEDULED THIS MONTH</span>
             <span className="kpi-stat-value">{dayoffs.length} Days</span>
@@ -494,7 +513,9 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
         </div>
 
         <div className="calendar-kpi-card amber">
-          <div className="kpi-icon-box">🏖️</div>
+          <div className="kpi-icon-box">
+            <IconCalendar size={24} color="#d97706" />
+          </div>
           <div className="kpi-text-box">
             <span className="kpi-stat-label">STAFF ON DAY OFF TODAY</span>
             <span className="kpi-stat-value">
@@ -504,7 +525,9 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
         </div>
 
         <div className="calendar-kpi-card green">
-          <div className="kpi-icon-box">☕</div>
+          <div className="kpi-icon-box">
+            <IconCoffee size={24} color="#059669" />
+          </div>
           <div className="kpi-text-box">
             <span className="kpi-stat-label">AVAILABLE / ROSTER STAFF</span>
             <span className="kpi-stat-value">{Math.max(0, staffList.length - todayOnLeave.length)} of {staffList.length}</span>
@@ -611,7 +634,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                             title={`${staffName} - ${leaveMeta.label}: ${item.reason || 'Assigned Day Off'}`}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <span className="chip-icon">{leaveMeta.icon}</span>
+                            <span className="chip-icon">{renderLeaveIcon(leaveMeta.icon, 12, leaveMeta.color)}</span>
                             <span className="chip-name">{staffName}</span>
                             <button
                               type="button"
@@ -706,7 +729,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', padding: '8px 14px' }}
                 title="Manage Leave Types (Admin)"
               >
-                <span>⚙️</span>
+                <IconGear size={14} />
                 <span>Manage Leave Types</span>
               </button>
 
@@ -791,7 +814,10 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                 className={`time-tab-btn ${timeTabFilter === 'today' ? 'active' : ''}`}
                 onClick={() => setTimeTabFilter('today')}
               >
-                🏖️ Off Today ({todayOnLeave.length})
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  <IconCalendar size={13} />
+                  <span>Off Today ({todayOnLeave.length})</span>
+                </span>
               </button>
               <button
                 type="button"
@@ -829,7 +855,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                   className={`type-chip-btn ${selectedTypeFilter === lt.id ? 'active' : ''}`}
                   onClick={() => setSelectedTypeFilter(selectedTypeFilter === lt.id ? 'all' : lt.id)}
                 >
-                  <span>{lt.icon}</span>
+                  <span>{renderLeaveIcon(lt.icon, 13, lt.color)}</span>
                   <span>{lt.label}</span>
                   <span className="type-chip-count">{count}</span>
                 </button>
@@ -864,7 +890,9 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                     <tr>
                       <td colSpan="6">
                         <div className="leave-empty-state">
-                          <div className="empty-state-icon">🗓️</div>
+                          <div className="empty-state-icon">
+                            <IconCalendar size={32} color="#94a3b8" />
+                          </div>
                           <h4 className="empty-state-title">No scheduled days off found</h4>
                           <p className="empty-state-desc">
                             {searchQuery || selectedTypeFilter !== 'all' || timeTabFilter !== 'all'
@@ -959,7 +987,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                                 borderColor: leaveMeta.border,
                               }}
                             >
-                              <span className="badge-emoji">{leaveMeta.icon}</span>
+                              <span className="badge-emoji">{renderLeaveIcon(leaveMeta.icon, 13, leaveMeta.color)}</span>
                               <span className="badge-text">{leaveMeta.label}</span>
                             </span>
                           </td>
@@ -1007,7 +1035,9 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
             <div className="leave-cards-grid">
               {filteredLeaveList.length === 0 ? (
                 <div className="leave-empty-state" style={{ gridColumn: '1 / -1' }}>
-                  <div className="empty-state-icon">🗓️</div>
+                  <div className="empty-state-icon">
+                    <IconCalendar size={32} color="#94a3b8" />
+                  </div>
                   <h4 className="empty-state-title">No scheduled days off found</h4>
                   <p className="empty-state-desc">
                     No records match the current filters.
@@ -1061,7 +1091,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                             borderColor: leaveMeta.border,
                           }}
                         >
-                          <span>{leaveMeta.icon}</span>
+                          <span>{renderLeaveIcon(leaveMeta.icon, 12, leaveMeta.color)}</span>
                           <span>{leaveMeta.label}</span>
                         </span>
                       </div>
@@ -1124,7 +1154,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                 onClick={() => setIsModalOpen(false)}
                 title="Close"
               >
-                ✕
+                <IconX size={16} />
               </button>
             </div>
 
@@ -1262,7 +1292,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                   >
                     {leaveTypes.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.icon} {t.label}
+                        {t.label}
                       </option>
                     ))}
                   </select>
@@ -1314,8 +1344,13 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
         <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setIsManageLeaveModalOpen(false)}>
           <div className="modal-content" style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">⚙️ Manage Leave / Day Off Types</h2>
-              <button type="button" className="btn-close" onClick={() => setIsManageLeaveModalOpen(false)}>✕</button>
+              <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <IconGear size={18} />
+                <span>Manage Leave / Day Off Types</span>
+              </h2>
+              <button type="button" className="btn-close" onClick={() => setIsManageLeaveModalOpen(false)}>
+                <IconX size={16} />
+              </button>
             </div>
 
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1332,11 +1367,11 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="🌴"
+                    placeholder="tag"
                     value={newLeaveTypeForm.icon}
                     onChange={(e) => setNewLeaveTypeForm({ ...newLeaveTypeForm, icon: e.target.value })}
-                    title="Icon or Emoji"
-                    style={{ textAlign: 'center', fontSize: '16px' }}
+                    title="Icon key (sun, calendar, etc.)"
+                    style={{ textAlign: 'center', fontSize: '13px' }}
                   />
                   <input
                     type="text"
@@ -1351,13 +1386,13 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                     value={newLeaveTypeForm.color}
                     onChange={(e) => setNewLeaveTypeForm({ ...newLeaveTypeForm, color: e.target.value })}
                   >
-                    <option value="#0284c7">🔵 Blue</option>
-                    <option value="#059669">🟢 Emerald</option>
-                    <option value="#dc2626">🔴 Red</option>
-                    <option value="#7c3aed">🟣 Purple</option>
-                    <option value="#d97706">🟡 Amber</option>
-                    <option value="#db2777">🌸 Pink</option>
-                    <option value="#0d9488">🌊 Teal</option>
+                    <option value="#0284c7">Blue</option>
+                    <option value="#059669">Emerald</option>
+                    <option value="#dc2626">Red</option>
+                    <option value="#7c3aed">Purple</option>
+                    <option value="#d97706">Amber</option>
+                    <option value="#db2777">Pink</option>
+                    <option value="#0d9488">Teal</option>
                   </select>
                   <button type="submit" className="btn-primary" style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}>
                     Add
@@ -1416,12 +1451,14 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                             <option value="#0d9488">Teal</option>
                           </select>
                           <button type="submit" className="btn-primary" style={{ padding: '6px 10px', fontSize: '11px' }}>Save</button>
-                          <button type="button" className="btn-secondary" onClick={() => setEditingLeaveType(null)} style={{ padding: '6px 10px', fontSize: '11px' }}>✕</button>
+                          <button type="button" className="btn-secondary" onClick={() => setEditingLeaveType(null)} style={{ padding: '6px 10px', fontSize: '11px' }}>
+                            <IconX size={12} />
+                          </button>
                         </form>
                       ) : (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontSize: '18px' }}>{lt.icon}</span>
+                            <span style={{ display: 'flex', alignItems: 'center' }}>{renderLeaveIcon(lt.icon, 18, lt.color)}</span>
                             <div>
                               <strong style={{ fontSize: '13px', color: '#0f172a' }}>{lt.label}</strong>
                               <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: lt.color, marginLeft: '8px' }} />

@@ -29,7 +29,32 @@ import {
   IconLogOut,
   IconEye,
   IconEyeOff,
-  IconRefresh
+  IconRefresh,
+  IconCoffee,
+  IconMapPin,
+  IconBuilding,
+  IconAlertTriangle,
+  IconShield,
+  IconZap,
+  IconSave,
+  IconTarget,
+  IconSun,
+  IconFileText,
+  IconAward,
+  IconStar,
+  IconX,
+  IconRotateCw,
+  IconFlashlight,
+  IconBarChart,
+  IconCheckCircle,
+  IconXCircle,
+  IconMegaphone,
+  IconActivity,
+  IconDoorIn,
+  IconDoorOut,
+  IconUser,
+  IconBell,
+  IconPhone
 } from './Icons'
 import UserDashboard from './components/UserDashboard'
 import LoginForm from './components/LoginForm'
@@ -314,6 +339,7 @@ export default function App() {
   const [isTableSortMenuOpen, setIsTableSortMenuOpen] = useState(false)
   const [advancedFilter, setAdvancedFilter] = useState('all') // 'all' | 'late' | 'on_time' | 'staff' | 'guest'
   const [tablePage, setTablePage] = useState(1) // Tasks & Notifications pager: 0 = All records, 1..10 = Pages
+  const [controlPage, setControlPage] = useState(1) // Control Room today logs pager
 
   // Weekly & Monthly Tardiness & Clean Record Audit State
   const [auditPeriod, setAuditPeriod] = useState('weekly') // 'weekly' | 'monthly'
@@ -933,6 +959,23 @@ export default function App() {
     }
   }, [totalTablePages, tablePage])
 
+  // Paginated Rows for Control Room (Short Today-Only Activity Table)
+  const controlTodayRows = useMemo(() => todayData.data || [], [todayData.data])
+  const totalControlPages = Math.max(1, Math.ceil(controlTodayRows.length / 10))
+
+  const paginatedControlRows = useMemo(() => {
+    const pageSize = 10
+    const safePage = Math.min(Math.max(1, controlPage), totalControlPages)
+    const startIndex = (safePage - 1) * pageSize
+    return controlTodayRows.slice(startIndex, startIndex + pageSize)
+  }, [controlTodayRows, controlPage, totalControlPages])
+
+  useEffect(() => {
+    if (controlPage > totalControlPages) {
+      setControlPage(1)
+    }
+  }, [totalControlPages, controlPage])
+
   // Filtered Staff List by Branch
   const filteredStaffList = useMemo(() => {
     if (selectedBranchFilter === 'all') return staffList
@@ -1028,7 +1071,7 @@ export default function App() {
         id: 'alert_weekly_perf',
         category: 'performance',
         severity: 'info',
-        icon: '📊',
+        icon: <IconBarChart size={20} color="#0284c7" />,
         badge: '1/Week Alert',
         title: 'Weekly Attendance & Punctuality Digest',
         message: `Weekly staff punctuality rating is ${performanceData.overall_punctuality || 100}%. ${performanceData.total_late_arrivals || 0} late arrivals recorded across ${performanceData.total_shifts || 0} shifts this week.`,
@@ -1043,7 +1086,7 @@ export default function App() {
         id: 'alert_monthly_perf',
         category: 'performance',
         severity: 'success',
-        icon: '🏆',
+        icon: <IconAward size={20} color="#059669" />,
         badge: '1/Month Review',
         title: 'Monthly Staff Performance Review',
         message: `Monthly roster attendance review active. ${staffList.length} staff roster members registered. Punctuality standard at ${performanceData.overall_punctuality || 100}%. Action plans maintained.`,
@@ -1059,7 +1102,7 @@ export default function App() {
         id: `late_${c.id}`,
         category: 'late',
         severity: 'warning',
-        icon: '⚠️',
+        icon: <IconAlertTriangle size={20} color="#dc2626" />,
         badge: 'Late Alert',
         title: `Late Check-In Alert: ${c.name}`,
         message: `${c.name} clocked in at ${formatTime(c.check_in_at || c.created_at)} (Exceeded ${cafeSettings.late_grace_period_mins || 10}m grace period).`,
@@ -1075,7 +1118,7 @@ export default function App() {
           id: `in_${c.id}`,
           category: 'checkin_out',
           severity: 'success',
-          icon: '🟢',
+          icon: <IconDoorIn size={20} color="#059669" />,
           badge: 'Check-In',
           title: `Staff Check-In: ${c.name}`,
           message: `${c.name} clocked in at ${formatTime(c.check_in_at || c.created_at)} at ${c.location || 'Main Counter'}.`,
@@ -1087,7 +1130,7 @@ export default function App() {
           id: `out_${c.id}`,
           category: 'checkin_out',
           severity: 'info',
-          icon: '🔵',
+          icon: <IconDoorOut size={20} color="#0284c7" />,
           badge: 'Check-Out',
           title: `Staff Check-Out: ${c.name}`,
           message: `${c.name} completed shift and clocked out at ${formatTime(c.check_out_at || c.created_at)}.`,
@@ -1615,7 +1658,7 @@ export default function App() {
                         onChange={(e) => setSelectedBranchFilter(e.target.value)}
                         style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: 700, color: '#0f172a' }}
                       >
-                        <option value="all">🏢 All Branches (សាខាទាំងអស់)</option>
+                        <option value="all">All Branches (សាខាទាំងអស់)</option>
                         {branches.map(b => (
                           <option key={b.id} value={b.id}>{b.name}</option>
                         ))}
@@ -1674,28 +1717,36 @@ export default function App() {
                             className={`filter-dropdown-item ${advancedFilter === 'late' ? 'active' : ''}`}
                             onClick={() => { setAdvancedFilter('late'); setIsTableFilterMenuOpen(false) }}
                           >
-                            <span style={{ color: '#dc2626' }}>⚠️ Late Arrivals Only</span>
+                            <span style={{ color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                              <IconAlertTriangle size={12} color="#dc2626" /> Late Arrivals Only
+                            </span>
                             {advancedFilter === 'late' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                           <button
                             className={`filter-dropdown-item ${advancedFilter === 'on_time' ? 'active' : ''}`}
                             onClick={() => { setAdvancedFilter('on_time'); setIsTableFilterMenuOpen(false) }}
                           >
-                            <span>✓ On-Time Shifts Only</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                              <IconCheck size={12} color="#10b981" /> On-Time Shifts Only
+                            </span>
                             {advancedFilter === 'on_time' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                           <button
                             className={`filter-dropdown-item ${advancedFilter === 'staff' ? 'active' : ''}`}
                             onClick={() => { setAdvancedFilter('staff'); setIsTableFilterMenuOpen(false) }}
                           >
-                            <span>👥 Staff Members Only</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                              <IconUsers size={12} color="#0284c7" /> Staff Members Only
+                            </span>
                             {advancedFilter === 'staff' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                           <button
                             className={`filter-dropdown-item ${advancedFilter === 'guest' ? 'active' : ''}`}
                             onClick={() => { setAdvancedFilter('guest'); setIsTableFilterMenuOpen(false) }}
                           >
-                            <span>☕ Guests / Visitors Only</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                              <IconCoffee size={12} color="#854d0e" /> Guests / Visitors Only
+                            </span>
                             {advancedFilter === 'guest' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                         </div>
@@ -1715,12 +1766,12 @@ export default function App() {
                       >
                         <IconArrowPointer size={11} style={{ transform: 'rotate(90deg)' }} />
                         <span>
-                          {tableSort === 'security' && 'Sort: 🛡️ Security Verified'}
-                          {tableSort === 'newest' && 'Sort: 🕒 Newest'}
-                          {tableSort === 'oldest' && 'Sort: ⏳ Oldest'}
-                          {tableSort === 'name_asc' && 'Sort: 🔤 Name (A-Z)'}
-                          {tableSort === 'name_desc' && 'Sort: 🔤 Name (Z-A)'}
-                          {tableSort === 'status' && 'Sort: ⚡ Active First'}
+                          {tableSort === 'security' && 'Sort: Security Verified'}
+                          {tableSort === 'newest' && 'Sort: Newest'}
+                          {tableSort === 'oldest' && 'Sort: Oldest'}
+                          {tableSort === 'name_asc' && 'Sort: Name (A-Z)'}
+                          {tableSort === 'name_desc' && 'Sort: Name (Z-A)'}
+                          {tableSort === 'status' && 'Sort: Active First'}
                         </span>
                         <IconChevronDown size={10} />
                       </button>
@@ -1731,42 +1782,50 @@ export default function App() {
                             className={`filter-dropdown-item ${tableSort === 'security' ? 'active' : ''}`}
                             onClick={() => { setTableSort('security'); setIsTableSortMenuOpen(false) }}
                           >
-                            <span style={{ color: '#0284c7', fontWeight: 700 }}>🛡️ Security Verified First</span>
+                            <span style={{ color: '#0284c7', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <IconShield size={12} color="#0284c7" /> Security Verified First
+                            </span>
                             {tableSort === 'security' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                           <button
                             className={`filter-dropdown-item ${tableSort === 'newest' ? 'active' : ''}`}
                             onClick={() => { setTableSort('newest'); setIsTableSortMenuOpen(false) }}
                           >
-                            <span>🕒 Newest First (Latest Request)</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <IconClock size={12} /> Newest First (Latest Request)
+                            </span>
                             {tableSort === 'newest' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                           <button
                             className={`filter-dropdown-item ${tableSort === 'oldest' ? 'active' : ''}`}
                             onClick={() => { setTableSort('oldest'); setIsTableSortMenuOpen(false) }}
                           >
-                            <span>⏳ Oldest First</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <IconHistory size={12} /> Oldest First
+                            </span>
                             {tableSort === 'oldest' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                           <button
                             className={`filter-dropdown-item ${tableSort === 'name_asc' ? 'active' : ''}`}
                             onClick={() => { setTableSort('name_asc'); setIsTableSortMenuOpen(false) }}
                           >
-                            <span>🔤 Name (A → Z)</span>
+                            <span>Name (A → Z)</span>
                             {tableSort === 'name_asc' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                           <button
                             className={`filter-dropdown-item ${tableSort === 'name_desc' ? 'active' : ''}`}
                             onClick={() => { setTableSort('name_desc'); setIsTableSortMenuOpen(false) }}
                           >
-                            <span>🔤 Name (Z → A)</span>
+                            <span>Name (Z → A)</span>
                             {tableSort === 'name_desc' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                           <button
                             className={`filter-dropdown-item ${tableSort === 'status' ? 'active' : ''}`}
                             onClick={() => { setTableSort('status'); setIsTableSortMenuOpen(false) }}
                           >
-                            <span>⚡ Status (Active Checked-In First)</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <IconZap size={12} color="#ea580c" /> Status (Active Checked-In First)
+                            </span>
                             {tableSort === 'status' && <IconCheck size={12} color="#ea580c" />}
                           </button>
                         </div>
@@ -1844,7 +1903,7 @@ export default function App() {
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                             <span>Security Request</span>
                             <span style={{ fontSize: '10px', color: tableSort === 'security' ? '#0284c7' : '#94a3b8' }}>
-                              {tableSort === 'security' ? '🛡️' : '⇅'}
+                              {tableSort === 'security' ? '▲' : '⇅'}
                             </span>
                           </div>
                         </th>
@@ -2164,7 +2223,7 @@ export default function App() {
                 {/* Header Row matching screenshot */}
                 <div className="audit-header-row">
                   <div className="audit-title-block">
-                    <span className="audit-title-icon">👥</span>
+                    <IconUsers size={24} color="#0f172a" />
                     <div>
                       <h3 className="audit-title-main">
                         Weekly & Monthly Tardiness & Clean Record Audit
@@ -2292,7 +2351,9 @@ export default function App() {
                                 {isNeverLate ? (
                                   <span className="audit-badge-clean">Never Late (0)</span>
                                 ) : (
-                                  <span className="audit-badge-late">⚠️ {staff.lateCount} Late Record(s)</span>
+                                  <span className="audit-badge-late">
+                                    <IconAlertTriangle size={12} color="#dc2626" /> {staff.lateCount} Late Record(s)
+                                  </span>
                                 )}
                               </td>
 
@@ -2333,7 +2394,7 @@ export default function App() {
                         onChange={(e) => setSelectedBranchFilter(e.target.value)}
                         style={{ fontSize: '12px', padding: '5px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', background: '#f8fafc', fontWeight: 700, color: '#0f172a' }}
                       >
-                        <option value="all">🏢 All Branches (សាខាទាំងអស់)</option>
+                        <option value="all">All Branches (សាខាទាំងអស់)</option>
                         {branches.map(b => (
                           <option key={b.id} value={b.id}>{b.name}</option>
                         ))}
@@ -2420,9 +2481,9 @@ export default function App() {
                             <td>
                               <span
                                 className="branch-badge"
-                                style={{ fontSize: '11px' }}
+                                style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                               >
-                                📍 {branches.find(b => b.id === s.branch_id)?.name || s.branch_name || branches[0]?.name || 'Store'}
+                                <IconMapPin size={11} /> {branches.find(b => b.id === s.branch_id)?.name || s.branch_name || branches[0]?.name || 'Store'}
                               </span>
                             </td>
 
@@ -2443,8 +2504,8 @@ export default function App() {
                                   {s.is_on_shift ? 'On Shift' : 'Off Duty'}
                                 </span>
                                 {s.has_dayoff_today && (
-                                  <span className="badge-status-pill amber" style={{ fontSize: '10px' }}>
-                                    🌴 Day Off Today
+                                  <span className="badge-status-pill amber" style={{ fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <IconCalendar size={10} /> Day Off Today
                                   </span>
                                 )}
                               </div>
@@ -2581,14 +2642,14 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(todayData.data || []).length === 0 ? (
+                        {controlTodayRows.length === 0 ? (
                           <tr>
                             <td colSpan="6" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
                               No check-in or check-out records recorded yet today.
                             </td>
                           </tr>
                         ) : (
-                          (todayData.data || []).map((row) => {
+                          paginatedControlRows.map((row) => {
                             const isInside = row.status === 'checked_in'
                             const matchedStaff = staffList.find(s => s.id === row.staff_id || s.name === row.name)
                             const photo = row.photo_url || matchedStaff?.photo_url || ''
@@ -2644,6 +2705,65 @@ export default function App() {
                         )}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* Table Footer Pagination for Control Room */}
+                  <div className="table-pagination-footer">
+                    <div className="table-pagination-info">
+                      {lang === 'kh' ? 'សរុប' : 'Total'}: {controlTodayRows.length} | {lang === 'kh' ? 'ទំព័រ' : 'Page'} {controlPage}/{totalControlPages}
+                    </div>
+                    <div className="table-pagination-controls">
+                      <button
+                        type="button"
+                        className="pager-nav-btn"
+                        disabled={controlPage <= 1}
+                        onClick={() => setControlPage(1)}
+                        title={lang === 'kh' ? 'ទំព័រដំបូង' : 'First Page'}
+                      >
+                        «
+                      </button>
+                      <button
+                        type="button"
+                        className="pager-nav-btn"
+                        disabled={controlPage <= 1}
+                        onClick={() => setControlPage(p => Math.max(1, p - 1))}
+                        title={lang === 'kh' ? 'ទំព័រមុន' : 'Previous Page'}
+                      >
+                        ‹
+                      </button>
+                      {getPaginationItems(controlPage, totalControlPages).map((item, idx) => (
+                        item === '...' ? (
+                          <span key={`dots-${idx}`} className="pager-ellipsis">...</span>
+                        ) : (
+                          <button
+                            key={item}
+                            type="button"
+                            className={`pager-num-btn ${controlPage === item ? 'active' : ''}`}
+                            onClick={() => setControlPage(item)}
+                          >
+                            {item}
+                          </button>
+                        )
+                      ))}
+                      <button
+                        type="button"
+                        className="pager-nav-btn"
+                        disabled={controlPage >= totalControlPages}
+                        onClick={() => setControlPage(p => Math.min(totalControlPages, p + 1))}
+                        title={lang === 'kh' ? 'ទំព័របន្ទាប់' : 'Next Page'}
+                      >
+                        ›
+                      </button>
+                      <button
+                        type="button"
+                        className="pager-nav-btn"
+                        disabled={controlPage >= totalControlPages}
+                        onClick={() => setControlPage(totalControlPages)}
+                        title={lang === 'kh' ? 'ទំព័រចុងក្រោយ' : 'Last Page'}
+                      >
+                        »
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2702,7 +2822,7 @@ export default function App() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
                     <div>
                       <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>🏢</span> Store Branches & Geofence Rules (ការកំណត់សាខា & គម្លាតស្កេន)
+                        <IconBuilding size={16} color="#0f172a" /> Store Branches & Geofence Rules (ការកំណត់សាខា & គម្លាតស្កេន)
                       </h4>
                       <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
                         Configure store GPS coordinates and allowed scan radius per branch. Staff far from their branch cannot scan.
@@ -2716,7 +2836,8 @@ export default function App() {
                         disabled={isBranchesSaving}
                         onClick={() => handleSaveBranches(branches)}
                       >
-                        <span>💾 {isBranchesSaving ? 'Saving...' : 'Save Branches (រក្សាទុកសាខា)'}</span>
+                        <IconSave size={13} color="#ffffff" />
+                        <span>{isBranchesSaving ? 'Saving...' : 'Save Branches (រក្សាទុកសាខា)'}</span>
                       </button>
                       <button
                         type="button"
@@ -2758,8 +2879,8 @@ export default function App() {
                             <strong style={{ fontSize: '14px', color: '#0f172a' }}>{b.name}</strong>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span className="branch-radius-chip">
-                              🎯 Allowed: {b.radiusMeters || 200}m
+                            <span className="branch-radius-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <IconTarget size={12} /> Allowed: {b.radiusMeters || 200}m
                             </span>
                             <button
                               type="button"
@@ -2783,7 +2904,7 @@ export default function App() {
                                 }
                               }}
                             >
-                              📍 Capture Current GPS
+                              <IconMapPin size={12} /> Capture Current GPS
                             </button>
                             {branches.length > 1 && (
                               <button
@@ -2898,7 +3019,7 @@ export default function App() {
                 <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
                   <div style={{ marginBottom: '14px' }}>
                     <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>👤</span> Custom Roles & Role Assignment (តួនាទីបុគ្គលិក)
+                      <IconUser size={16} color="#0f172a" /> Custom Roles & Role Assignment (តួនាទីបុគ្គលិក)
                     </h4>
                     <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
                       Admin can create custom roles and assign them to staff members. Changes save live to the system.
@@ -2935,10 +3056,12 @@ export default function App() {
                               cursor: 'pointer',
                               fontWeight: 800,
                               fontSize: '12px',
-                              padding: '0 2px'
+                              padding: '0 2px',
+                              display: 'inline-flex',
+                              alignItems: 'center'
                             }}
                           >
-                            ✕
+                            <IconX size={12} />
                           </button>
                         )}
                       </div>
@@ -2973,7 +3096,7 @@ export default function App() {
                 <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
                   <div style={{ marginBottom: '14px' }}>
                     <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>📢</span> Store Alerts & Notices (ការជូនដំណឹង & សេចក្តីប្រកាសហាង)
+                      <IconMegaphone size={16} color="#0f172a" /> Store Alerts & Notices (ការជូនដំណឹង & សេចក្តីប្រកាសហាង)
                     </h4>
                     <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
                       Dynamic announcements broadcast live to the staff workspace hub. Staff see these instantly.
@@ -3154,7 +3277,9 @@ export default function App() {
           <div className="modal-content">
             <div className="modal-header">
               <h2 className="modal-title">Quick Check-In • Chafé</h2>
-              <button className="btn-close" onClick={() => setIsCheckinModalOpen(false)}>✕</button>
+              <button className="btn-close" onClick={() => setIsCheckinModalOpen(false)} aria-label="Close">
+                <IconX size={16} />
+              </button>
             </div>
 
             <form onSubmit={handleCheckinSubmit}>
@@ -3248,7 +3373,9 @@ export default function App() {
           <div className="modal-content">
             <div className="modal-header">
               <h2 className="modal-title">Create Staff Member</h2>
-              <button className="btn-close" onClick={() => setIsCreateStaffModalOpen(false)}>✕</button>
+              <button className="btn-close" onClick={() => setIsCreateStaffModalOpen(false)} aria-label="Close">
+                <IconX size={16} />
+              </button>
             </div>
 
             <form onSubmit={handleCreateStaffSubmit}>
@@ -3332,10 +3459,10 @@ export default function App() {
                         {b.name} ({b.radiusMeters}m allowed scan radius)
                       </option>
                     ))}
-                    <option value="all">🌐 All Branches (សាខាទាំងអស់ - Floating Staff)</option>
+                    <option value="all">All Branches (សាខាទាំងអស់ - Floating Staff)</option>
                   </select>
-                  <span style={{ fontSize: '11px', color: '#0284c7', marginTop: '4px', display: 'block', fontWeight: 600 }}>
-                    🔒 Location automatically matches this branch and is locked for staff.
+                  <span style={{ fontSize: '11px', color: '#0284c7', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                    <IconLock size={12} color="#0284c7" /> Location automatically matches this branch and is locked for staff.
                   </span>
                 </div>
 
@@ -3478,7 +3605,9 @@ export default function App() {
           <div className="modal-content">
             <div className="modal-header">
               <h2 className="modal-title">Edit Staff Profile & Credentials • {editingStaff.name}</h2>
-              <button className="btn-close" onClick={() => setEditingStaff(null)}>✕</button>
+              <button className="btn-close" onClick={() => setEditingStaff(null)} aria-label="Close">
+                <IconX size={16} />
+              </button>
             </div>
 
             <form onSubmit={async (e) => {
@@ -3573,10 +3702,10 @@ export default function App() {
                         {b.name} ({b.radiusMeters}m allowed scan radius)
                       </option>
                     ))}
-                    <option value="all">🌐 All Branches (សាខាទាំងអស់ - Floating Staff)</option>
+                    <option value="all">All Branches (សាខាទាំងអស់ - Floating Staff)</option>
                   </select>
-                  <span style={{ fontSize: '11px', color: '#0284c7', marginTop: '4px', display: 'block', fontWeight: 600 }}>
-                    🔒 Location automatically updates to this branch and is locked for staff.
+                  <span style={{ fontSize: '11px', color: '#0284c7', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                    <IconLock size={12} color="#0284c7" /> Location automatically updates to this branch and is locked for staff.
                   </span>
                 </div>
 
@@ -3719,7 +3848,9 @@ export default function App() {
                     Mark All Read
                   </button>
                 )}
-                <button className="btn-close" onClick={() => setIsMessagesOpen(false)}>✕</button>
+                <button className="btn-close" onClick={() => setIsMessagesOpen(false)} aria-label="Close">
+                  <IconX size={16} />
+                </button>
               </div>
             </div>
 
@@ -3734,24 +3865,27 @@ export default function App() {
               </button>
               <button
                 className={`pill-filter-btn ${messagesTab === 'checkin_out' ? 'active' : ''}`}
-                style={{ fontSize: '11px', padding: '4px 10px' }}
+                style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                 onClick={() => setMessagesTab('checkin_out')}
               >
-                🟢 Check-In / Out ({allAlerts.filter(a => a.category === 'checkin_out').length})
+                <IconDoorIn size={12} color="#10b981" />
+                <span>Check-In / Out ({allAlerts.filter(a => a.category === 'checkin_out').length})</span>
               </button>
               <button
                 className={`pill-filter-btn ${messagesTab === 'late' ? 'active' : ''}`}
-                style={{ fontSize: '11px', padding: '4px 10px' }}
+                style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                 onClick={() => setMessagesTab('late')}
               >
-                ⚠️ Late Alerts ({allAlerts.filter(a => a.category === 'late').length})
+                <IconAlertTriangle size={12} color="#ea580c" />
+                <span>Late Alerts ({allAlerts.filter(a => a.category === 'late').length})</span>
               </button>
               <button
                 className={`pill-filter-btn ${messagesTab === 'performance' ? 'active' : ''}`}
-                style={{ fontSize: '11px', padding: '4px 10px' }}
+                style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                 onClick={() => setMessagesTab('performance')}
               >
-                📊 Performance (1/Wk & 1/Mo) ({allAlerts.filter(a => a.category === 'performance').length})
+                <IconBarChart size={12} color="#0284c7" />
+                <span>Performance (1/Wk & 1/Mo) ({allAlerts.filter(a => a.category === 'performance').length})</span>
               </button>
             </div>
 
@@ -3772,7 +3906,7 @@ export default function App() {
                         key={alert.id}
                         className={`alert-card-item ${isUnread ? 'unread' : ''}`}
                       >
-                        <div style={{ fontSize: '20px', lineHeight: 1, marginTop: '2px' }}>
+                        <div style={{ fontSize: '20px', lineHeight: 1, marginTop: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {alert.icon}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -3848,7 +3982,9 @@ export default function App() {
                 <IconTrophy size={18} color="#f97316" />
                 <h2 className="modal-title">Performance Review & Alert Schedule</h2>
               </div>
-              <button className="btn-close" onClick={() => setIsPerfModalOpen(false)}>✕</button>
+              <button className="btn-close" onClick={() => setIsPerfModalOpen(false)} aria-label="Close">
+                <IconX size={16} />
+              </button>
             </div>
 
             <form onSubmit={handleSavePerfSettings}>
@@ -3870,10 +4006,11 @@ export default function App() {
                     <button
                       type="button"
                       className="btn-secondary"
-                      style={{ fontSize: '11px', padding: '4px 10px' }}
+                      style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                       onClick={handleTriggerWeeklyAlert}
                     >
-                      ⚡ Trigger 1/Week Alert Now
+                      <IconZap size={12} color="#f97316" />
+                      <span>Trigger 1/Week Alert Now</span>
                     </button>
                   </div>
                 </div>
@@ -3895,10 +4032,11 @@ export default function App() {
                     <button
                       type="button"
                       className="btn-secondary"
-                      style={{ fontSize: '11px', padding: '4px 10px' }}
+                      style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                       onClick={handleTriggerMonthlyAlert}
                     >
-                      ⚡ Trigger 1/Month Review Now
+                      <IconAward size={12} color="#f97316" />
+                      <span>Trigger 1/Month Review Now</span>
                     </button>
                   </div>
                 </div>
@@ -3956,7 +4094,9 @@ export default function App() {
                 <IconGear size={18} color="#f97316" />
                 <h2 className="modal-title">Configure Seating Capacity & Goals</h2>
               </div>
-              <button className="btn-close" onClick={() => setIsGoalsModalOpen(false)}>✕</button>
+              <button className="btn-close" onClick={() => setIsGoalsModalOpen(false)} aria-label="Close">
+                <IconX size={16} />
+              </button>
             </div>
 
             <form onSubmit={handleSaveGoals}>
@@ -4031,7 +4171,9 @@ export default function App() {
                 <IconUserCircle size={20} color="#f97316" />
                 <h2 className="modal-title">Administrator Profile</h2>
               </div>
-              <button className="btn-close" onClick={() => setIsProfileModalOpen(false)}>✕</button>
+              <button className="btn-close" onClick={() => setIsProfileModalOpen(false)} aria-label="Close">
+                <IconX size={16} />
+              </button>
             </div>
 
             <div className="modal-body" style={{ textAlign: 'center', padding: '24px 20px' }}>
