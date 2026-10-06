@@ -531,24 +531,50 @@ export default function App() {
   // Create Staff
   const handleCreateStaffSubmit = async (e) => {
     e.preventDefault()
-    if (!staffForm.name.trim() || !staffForm.email.trim()) {
-      showToast('Name and email are required.', 'error')
+    const trimmedName = (staffForm.name || '').trim()
+    if (!trimmedName) {
+      showToast('Staff Full Name is required.', 'error')
       return
     }
 
     setStaffSubmitting(true)
     try {
       const targetBranch = branches.find(b => b.id === staffForm.branch_id) || branches[0]
-      const branchName = staffForm.branch_id === 'all' ? 'All Branches (Floating)' : (targetBranch?.name || branches[0]?.name || 'Chafé • Kohke')
+      const branchName = staffForm.branch_id === 'all'
+        ? 'All Branches (Floating)'
+        : (targetBranch?.name || branches[0]?.name || 'Chafé • Kohke')
+
+      const fallbackUsername = trimmedName.toLowerCase().replace(/[^a-z0-9]/g, '') || `staff_${Date.now()}`
+      const username = (staffForm.username && staffForm.username.trim().toLowerCase()) || fallbackUsername
+      const email = (staffForm.email && staffForm.email.trim().toLowerCase()) || `${username}@chafe.com`
+      const password = (staffForm.password && staffForm.password.trim()) || '123456'
+
       const payload = {
         ...staffForm,
+        name: trimmedName,
+        email: email,
+        username: username,
+        password: password,
         branch_id: staffForm.branch_id || targetBranch?.id || (branches[0] ? branches[0].id : 'branch_2'),
         branch_name: branchName,
         location: branchName, // Auto change location to match branch
         branch_address: targetBranch?.address || 'Siem Reap, Cambodia',
       }
-      await createStaffInFirebase(payload)
-      showToast(`Staff member ${staffForm.name} created for ${payload.branch_name}!`)
+
+      const created = await createStaffInFirebase(payload)
+
+      // Instantly update state in memory so the new staff member is visible immediately
+      setStaffList(prev => {
+        const filtered = (prev || []).filter(s => s.id !== created.id && s.email !== created.email)
+        return [created, ...filtered]
+      })
+
+      // If branch filter was set to another branch, reset to 'all' so the new staff is visible in table
+      if (selectedBranchFilter !== 'all' && selectedBranchFilter !== payload.branch_id) {
+        setSelectedBranchFilter('all')
+      }
+
+      showToast(`Staff member ${trimmedName} created for ${payload.branch_name}!`)
       setIsCreateStaffModalOpen(false)
       setStaffForm({
         name: '',
@@ -562,7 +588,7 @@ export default function App() {
         shift_end: '16:00',
         hourly_rate: 20.00,
       })
-      fetchStaffData()
+      await fetchStaffData()
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -2729,36 +2755,46 @@ export default function App() {
                     className="form-input"
                     placeholder="Staff Full Name"
                     value={staffForm.name}
-                    onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })}
+                    onChange={(e) => {
+                      const newName = e.target.value
+                      setStaffForm(prev => {
+                        const prevAuto = (prev.name || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+                        const shouldUpdateUser = !prev.username || prev.username === prevAuto
+                        return {
+                          ...prev,
+                          name: newName,
+                          username: shouldUpdateUser ? newName.toLowerCase().replace(/[^a-z0-9]/g, '') : prev.username,
+                        }
+                      })
+                    }}
                     required
                   />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Staff Email *</label>
+                  <label className="form-label">Staff Email (Optional - defaults to username@chafe.com)</label>
                   <input
-                    type="email"
+                    type="text"
                     className="form-input"
-                    placeholder="staff@example.com"
+                    placeholder="staff@example.com (or leave empty to auto-generate)"
                     value={staffForm.email}
                     onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
-                    required
                   />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
-                    <label className="form-label">Username (Staff Login) *</label>
+                    <label className="form-label">Username (Staff Login)</label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="username"
+                      placeholder="e.g. username"
                       value={staffForm.username}
                       onChange={(e) => setStaffForm({ ...staffForm, username: e.target.value })}
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Password *</label>
+                    <label className="form-label">Password</label>
                     <input
                       type="text"
                       className="form-input"
@@ -2848,7 +2884,31 @@ export default function App() {
                       if (file) {
                         const reader = new FileReader()
                         reader.onload = () => {
-                          setStaffForm(prev => ({ ...prev, photo_url: reader.result }))
+                          const img = new Image()
+                          img.onload = () => {
+                            const canvas = document.createElement('canvas')
+                            const maxDim = 256
+                            let w = img.width
+                            let h = img.height
+                            if (w > h) {
+                              if (w > maxDim) {
+                                h = Math.round((h * maxDim) / w)
+                                w = maxDim
+                              }
+                            } else {
+                              if (h > maxDim) {
+                                w = Math.round((w * maxDim) / h)
+                                h = maxDim
+                              }
+                            }
+                            canvas.width = w
+                            canvas.height = h
+                            const ctx = canvas.getContext('2d')
+                            ctx.drawImage(img, 0, 0, w, h)
+                            const thumb = canvas.toDataURL('image/jpeg', 0.82)
+                            setStaffForm(prev => ({ ...prev, photo_url: thumb }))
+                          }
+                          img.src = reader.result
                         }
                         reader.readAsDataURL(file)
                       }

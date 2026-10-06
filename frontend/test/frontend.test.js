@@ -173,6 +173,20 @@ test('Action Modal State bug fix: Clock In button is disabled, styled as disable
   assert.match(cssContent, /cursor:\s*not-allowed/, 'App.css must set cursor: not-allowed on disabled modal-action-card')
 })
 
+test('Staff creation fix: createStaffInFirebase sanitizes all fields, provides safe fallbacks, and preserves local records', () => {
+  const fbPath = path.resolve('src/services/firebaseService.js')
+  const fbContent = fs.readFileSync(fbPath, 'utf-8')
+  assert.match(fbContent, /export async function createStaffInFirebase/, 'Must export createStaffInFirebase')
+  assert.match(fbContent, /fallbackUsername/, 'Must auto-generate fallback username')
+  assert.match(fbContent, /cleanStaff/, 'Must sanitize staff object')
+  assert.match(fbContent, /localOnly/, 'Must preserve local staff records')
+
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
+  assert.match(appContent, /handleCreateStaffSubmit/, 'App.jsx must have handleCreateStaffSubmit')
+  assert.match(appContent, /setStaffList\(prev =>/, 'handleCreateStaffSubmit must update staffList state immediately')
+})
+
 
 
 

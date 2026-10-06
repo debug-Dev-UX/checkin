@@ -218,6 +218,10 @@ export async function getStaffFromFirebase() {
       list = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(s => !DEMO_STAFF_IDS.includes(s.id))
+      // Merge with locally stored staff so newly created or offline staff are never wiped out
+      const currentLocal = getLocal('staff', [])
+      const localOnly = currentLocal.filter(l => !list.some(r => r.id === l.id || (r.email && r.email.toLowerCase() === l.email?.toLowerCase())))
+      list = [...list, ...localOnly]
       setLocal('staff', list)
     } else {
       list = getLocal('staff', [])
@@ -245,23 +249,54 @@ export async function getStaffFromFirebase() {
  * Create Staff Member
  */
 export async function createStaffInFirebase(data) {
-  const newStaff = {
-    ...data,
+  const trimmedName = (data.name || '').trim()
+  const fallbackUsername = trimmedName.toLowerCase().replace(/[^a-z0-9]/g, '') || `staff_${Date.now()}`
+  const username = (data.username || '').trim().toLowerCase() || fallbackUsername
+  const email = (data.email || '').trim().toLowerCase() || `${username}@chafe.com`
+
+  const cleanStaff = {
+    name: trimmedName,
+    email: email,
+    username: username,
+    password: (data.password || '').trim() || '123456',
+    role: data.role || 'Barista',
+    branch_id: data.branch_id || 'branch_2',
+    branch_name: data.branch_name || 'Chafé • Kohke',
+    location: data.location || data.branch_name || 'Chafé • Kohke',
+    branch_address: data.branch_address || 'Siem Reap, Cambodia',
+    shift_start: data.shift_start || '07:30',
+    shift_end: data.shift_end || '16:00',
     hourly_rate: parseFloat(data.hourly_rate) || 20.0,
-    status: 'active',
+    status: data.status || 'active',
     created_at: new Date().toISOString()
   }
 
-  try {
-    const docRef = await addDoc(collection(db, 'staff'), newStaff)
-    newStaff.id = docRef.id
-  } catch {
-    newStaff.id = 'stf_' + Date.now()
+  if (data.photo_url) {
+    cleanStaff.photo_url = data.photo_url
   }
 
+  // Remove any remaining undefined properties to guarantee Firestore never throws
+  for (const [k, v] of Object.entries(cleanStaff)) {
+    if (v === undefined) {
+      delete cleanStaff[k]
+    }
+  }
+
+  let createdId = null
+  try {
+    const docRef = await addDoc(collection(db, 'staff'), cleanStaff)
+    createdId = docRef.id
+  } catch (err) {
+    console.warn('Failed to add staff document to Firestore, saving locally:', err)
+    createdId = 'stf_' + Date.now()
+  }
+
+  cleanStaff.id = createdId
+
   const current = getLocal('staff', [])
-  setLocal('staff', [newStaff, ...current])
-  return newStaff
+  const filtered = current.filter(s => s.id !== cleanStaff.id && s.email !== cleanStaff.email)
+  setLocal('staff', [cleanStaff, ...filtered])
+  return cleanStaff
 }
 
 /**
@@ -362,10 +397,14 @@ export function subscribeToStaff(callback) {
   try {
     const colRef = collection(db, 'staff')
     const unsubscribe = onSnapshot(colRef, (snap) => {
-      const list = snap.docs
+      let list = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(s => !DEMO_STAFF_IDS.includes(s.id))
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      // Merge with locally stored staff so newly created staff are preserved
+      const currentLocal = getLocal('staff', [])
+      const localOnly = currentLocal.filter(l => !list.some(r => r.id === l.id || (r.email && r.email.toLowerCase() === l.email?.toLowerCase())))
+      list = [...list, ...localOnly]
+      list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       setLocal('staff', list)
       if (typeof callback === 'function') {
         callback(list)

@@ -64,10 +64,10 @@ class StaffController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:100',
-            'email' => 'required|email|max:150|unique:staff,email',
-            'username' => 'nullable|string|max:50|unique:staff,username',
+            'email' => 'nullable|email|max:150',
+            'username' => 'nullable|string|max:50',
             'password' => 'nullable|string|min:4',
-            'role' => 'required|string|max:100',
+            'role' => 'nullable|string|max:100',
             'shift_start' => 'nullable|string|max:10',
             'shift_end' => 'nullable|string|max:10',
             'hourly_rate' => 'nullable|numeric|min:0',
@@ -79,13 +79,27 @@ class StaffController extends Controller
         // Generate clean username if not provided
         $username = !empty($validated['username'])
             ? trim(strtolower($validated['username']))
-            : strtolower(preg_replace('/[^a-zA-Z0-9]/', '', explode('@', $validated['email'])[0]));
+            : strtolower(preg_replace('/[^a-zA-Z0-9]/', '', !empty($validated['email']) ? explode('@', $validated['email'])[0] : $validated['name']));
 
         // Ensure unique username
-        $baseUsername = $username;
+        $baseUsername = $username ?: 'staff';
+        $username = $baseUsername;
         $counter = 1;
         while (Staff::where('username', $username)->exists()) {
             $username = $baseUsername . $counter;
+            $counter++;
+        }
+
+        $email = !empty($validated['email'])
+            ? trim(strtolower($validated['email']))
+            : ($username . '@chafe.com');
+
+        // Ensure unique email if auto-generated
+        $baseEmail = $email;
+        $counter = 1;
+        while (Staff::where('email', $email)->exists()) {
+            $parts = explode('@', $baseEmail);
+            $email = $parts[0] . $counter . '@' . ($parts[1] ?? 'chafe.com');
             $counter++;
         }
 
@@ -93,10 +107,10 @@ class StaffController extends Controller
 
         $staff = Staff::create([
             'name' => $validated['name'],
-            'email' => $validated['email'],
+            'email' => $email,
             'username' => $username,
             'password' => \Illuminate\Support\Facades\Hash::make($passwordRaw),
-            'role' => $validated['role'],
+            'role' => $validated['role'] ?? 'Barista',
             'shift_start' => $validated['shift_start'] ?? '07:30',
             'shift_end' => $validated['shift_end'] ?? '16:00',
             'hourly_rate' => $validated['hourly_rate'] ?? 19.50,
