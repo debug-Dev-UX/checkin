@@ -54,6 +54,7 @@ export default function StaffCameraScanner({
   const canvasRef = useRef(null)
   const animFrameIdRef = useRef(null)
   const streamRef = useRef(null)
+  const cameraSessionIdRef = useRef(0)
 
   // Scanner state
   const [cameraActive, setCameraActive] = useState(false)
@@ -86,16 +87,40 @@ export default function StaffCameraScanner({
 
   // Stop camera stream cleanly
   const stopCamera = useCallback(() => {
+    cameraSessionIdRef.current += 1
     if (animFrameIdRef.current) {
       cancelAnimationFrame(animFrameIdRef.current)
       animFrameIdRef.current = null
     }
+    // Explicitly stop all tracks on the active stream ref
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
+      try {
+        streamRef.current.getTracks().forEach(track => {
+          track.enabled = false
+          track.stop()
+        })
+      } catch (err) {
+        console.warn('Error stopping stream tracks:', err)
+      }
       streamRef.current = null
     }
+    // Also explicitly stop tracks attached directly to the video element
     if (videoRef.current) {
+      try {
+        const videoStream = videoRef.current.srcObject
+        if (videoStream && typeof videoStream.getTracks === 'function') {
+          videoStream.getTracks().forEach(track => {
+            track.enabled = false
+            track.stop()
+          })
+        }
+      } catch (err) {
+        console.warn('Error stopping video element tracks:', err)
+      }
       videoRef.current.srcObject = null
+      try { videoRef.current.pause() } catch { /* ignore */ }
+      try { videoRef.current.removeAttribute('src') } catch { /* ignore */ }
+      try { videoRef.current.load?.() } catch { /* ignore */ }
     }
     setCameraActive(false)
   }, [])
@@ -103,6 +128,7 @@ export default function StaffCameraScanner({
   // Start camera stream
   const startCamera = useCallback(async () => {
     stopCamera()
+    const currentSession = cameraSessionIdRef.current
     setCameraError(null)
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -120,15 +146,36 @@ export default function StaffCameraScanner({
       }
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
+
+      // If camera was stopped or unmounted while awaiting getUserMedia, shut down stream immediately
+      if (cameraSessionIdRef.current !== currentSession) {
+        if (stream && stream.getTracks) {
+          stream.getTracks().forEach(track => {
+            try {
+              track.enabled = false
+              track.stop()
+            } catch { /* ignore */ }
+          })
+        }
+        return
+      }
+
       streamRef.current = stream
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         // Wait for video metadata to load
         await videoRef.current.play()
+        if (cameraSessionIdRef.current !== currentSession) {
+          stopCamera()
+          return
+        }
         setCameraActive(true)
       }
     } catch (err) {
+      if (cameraSessionIdRef.current !== currentSession) {
+        return
+      }
       const isAbortError =
         err?.name === 'AbortError' ||
         err?.code === 20 ||
@@ -295,6 +342,7 @@ export default function StaffCameraScanner({
           }
 
           if (matchedStaff) {
+            stopCamera()
             executeStaffAction(matchedStaff, 'Camera QR')
           } else {
             setScanResult({
@@ -618,7 +666,10 @@ export default function StaffCameraScanner({
       {/* Scan Success Popup Confirmation Modal */}
       <ScanSuccessModal
         data={scanSuccessModal}
-        onClose={() => setScanSuccessModal(null)}
+        onClose={() => {
+          setScanSuccessModal(null)
+          stopCamera()
+        }}
       />
     </div>
   )

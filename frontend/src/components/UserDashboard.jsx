@@ -73,6 +73,7 @@ export default function UserDashboard({
   const canvasRef = useRef(null)
   const animFrameIdRef = useRef(null)
   const streamRef = useRef(null)
+  const cameraSessionIdRef = useRef(0)
 
   // Clock
   const [currentTime, setCurrentTime] = useState(new Date())
@@ -198,16 +199,40 @@ export default function UserDashboard({
 
   // Stop camera stream cleanly
   const stopCamera = useCallback(() => {
+    cameraSessionIdRef.current += 1
     if (animFrameIdRef.current) {
       cancelAnimationFrame(animFrameIdRef.current)
       animFrameIdRef.current = null
     }
+    // Explicitly stop all tracks on the active stream ref
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
+      try {
+        streamRef.current.getTracks().forEach(track => {
+          track.enabled = false
+          track.stop()
+        })
+      } catch (err) {
+        console.warn('Error stopping stream tracks:', err)
+      }
       streamRef.current = null
     }
+    // Also explicitly stop tracks attached directly to the video element
     if (videoRef.current) {
+      try {
+        const videoStream = videoRef.current.srcObject
+        if (videoStream && typeof videoStream.getTracks === 'function') {
+          videoStream.getTracks().forEach(track => {
+            track.enabled = false
+            track.stop()
+          })
+        }
+      } catch (err) {
+        console.warn('Error stopping video element tracks:', err)
+      }
       videoRef.current.srcObject = null
+      try { videoRef.current.pause() } catch { /* ignore */ }
+      try { videoRef.current.removeAttribute('src') } catch { /* ignore */ }
+      try { videoRef.current.load?.() } catch { /* ignore */ }
     }
     setCameraActive(false)
   }, [])
@@ -215,6 +240,7 @@ export default function UserDashboard({
   // Start camera stream (ALWAYS BACK CAMERA PREFERRED)
   const startCamera = useCallback(async () => {
     stopCamera()
+    const currentSession = cameraSessionIdRef.current
     setCameraError(null)
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -240,13 +266,33 @@ export default function UserDashboard({
         })
       }
 
+      // If camera was stopped or unmounted while awaiting getUserMedia, shut down stream immediately
+      if (cameraSessionIdRef.current !== currentSession) {
+        if (stream && stream.getTracks) {
+          stream.getTracks().forEach(track => {
+            try {
+              track.enabled = false
+              track.stop()
+            } catch { /* ignore */ }
+          })
+        }
+        return
+      }
+
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
+        if (cameraSessionIdRef.current !== currentSession) {
+          stopCamera()
+          return
+        }
         setCameraActive(true)
       }
     } catch (err) {
+      if (cameraSessionIdRef.current !== currentSession) {
+        return
+      }
       const isAbortError =
         err?.name === 'AbortError' ||
         err?.code === 20 ||
@@ -279,10 +325,16 @@ export default function UserDashboard({
   const handleExecuteClock = useCallback(async (actionType, staffMember = currentStaff, source = 'Quick Touch') => {
     if (!staffMember) return
     setIsProcessing(true)
+    stopCamera()
 
     try {
+      const activeBranch =
+        verifiedLocation?.branch ||
+        (branches && branches.find(b => b.id === staffMember?.branch_id)) ||
+        (branches && branches[0]) ||
+        null
+
       if (actionType === 'in') {
-        const activeBranch = verifiedLocation?.branch || branches.find(b => b.id === staffMember.branch_id) || branches[0]
         const payload = {
           staff_id: staffMember.id,
           name: staffMember.name,
@@ -291,9 +343,9 @@ export default function UserDashboard({
           type: 'employee',
           department: staffMember.role || staffMember.department || 'Service',
           badge_no: `STAFF-${staffMember.id || 'ROSTER'}`,
-          branch_id: activeBranch?.id || staffMember.branch_id || 'branch_2',
-          branch_name: activeBranch?.name || staffMember.branch_name || 'Chafé • Kohke',
-          location: activeBranch?.name || staffMember.branch_name || 'Main Counter Terminal',
+          branch_id: activeBranch?.id || staffMember?.branch_id || 'branch_2',
+          branch_name: activeBranch?.name || staffMember?.branch_name || 'Chafé • Kohke',
+          location: activeBranch?.name || staffMember?.branch_name || 'Main Counter Terminal',
           latitude: verifiedLocation?.coords?.lat || null,
           longitude: verifiedLocation?.coords?.lng || null,
           distance_to_store_meters: verifiedLocation?.distance || null,
@@ -317,7 +369,7 @@ export default function UserDashboard({
           name: staffMember.name,
           role: staffMember.role,
           photo_url: staffMember.photo_url || null,
-          branch_name: activeBranch?.name || staffMember.branch_name || 'Chafé Store',
+          branch_name: activeBranch?.name || staffMember?.branch_name || 'Chafé Store',
           distance: verifiedLocation?.distance ?? null,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
@@ -352,7 +404,7 @@ export default function UserDashboard({
           name: staffMember.name,
           role: staffMember.role,
           photo_url: staffMember.photo_url || null,
-          branch_name: activeBranch?.name || staffMember.branch_name || 'Chafé Store',
+          branch_name: activeBranch?.name || staffMember?.branch_name || 'Chafé Store',
           distance: verifiedLocation?.distance ?? null,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
@@ -375,11 +427,12 @@ export default function UserDashboard({
       })
       setTimeout(() => setScanResult(null), 5000)
     } finally {
+      stopCamera()
       setIsProcessing(false)
       setActiveModal(null)
       setPendingAction(null)
     }
-  }, [currentStaff, fetchTodayLogs, onShiftUpdated, verifiedLocation])
+  }, [branches, currentStaff, fetchTodayLogs, onShiftUpdated, stopCamera, verifiedLocation])
 
   // Real-time location validation before opening camera scanner (Multi-Branch aware)
   const handleInitiateScan = async (action) => {
@@ -436,6 +489,8 @@ export default function UserDashboard({
 
           if (matchedStaff) {
             playSuccessBeep()
+            // Explicitly stop camera immediately upon QR detection so hardware turns off
+            stopCamera()
             if (pendingAction) {
               handleExecuteClock(pendingAction, matchedStaff, 'QR Scan')
             } else {
@@ -763,7 +818,10 @@ export default function UserDashboard({
                 <button
                   type="button"
                   className="pro-btn-secondary"
-                  onClick={() => setActiveTab('clock')}
+                  onClick={() => {
+                    stopCamera()
+                    setActiveTab('clock')
+                  }}
                   style={{ padding: '5px 10px', fontSize: '12px' }}
                 >
                   ✕ Close
@@ -1187,7 +1245,7 @@ export default function UserDashboard({
 
       {/* Action Confirmation Modal */}
       {activeModal === 'action_confirm' && (
-        <div className="staff-modal-backdrop" onClick={() => setActiveModal(null)}>
+        <div className="staff-modal-backdrop" onClick={() => { setActiveModal(null); stopCamera(); }}>
           <div className="staff-action-modal" onClick={(e) => e.stopPropagation()}>
             <div className="staff-modal-header">
               <div className="staff-modal-title-box">
@@ -1200,7 +1258,10 @@ export default function UserDashboard({
               <button
                 type="button"
                 className="staff-modal-close"
-                onClick={() => setActiveModal(null)}
+                onClick={() => {
+                  setActiveModal(null)
+                  stopCamera()
+                }}
               >
                 ✕
               </button>
@@ -1284,7 +1345,10 @@ export default function UserDashboard({
               <button
                 type="button"
                 className="btn-modal-cancel"
-                onClick={() => setActiveModal(null)}
+                onClick={() => {
+                  setActiveModal(null)
+                  stopCamera()
+                }}
               >
                 Cancel
               </button>
@@ -1343,7 +1407,10 @@ export default function UserDashboard({
       {/* Scan Success Popup Confirmation Modal */}
       <ScanSuccessModal
         data={scanSuccessModal}
-        onClose={() => setScanSuccessModal(null)}
+        onClose={() => {
+          setScanSuccessModal(null)
+          stopCamera()
+        }}
       />
     </div>
   )

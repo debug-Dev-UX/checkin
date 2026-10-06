@@ -187,6 +187,43 @@ test('Staff creation fix: createStaffInFirebase sanitizes all fields, provides s
   assert.match(appContent, /setStaffList\(prev =>/, 'handleCreateStaffSubmit must update staffList state immediately')
 })
 
+test('Variable Error fix during Check-Out: activeBranch is properly defined in scope for both Clock In and Clock Out', () => {
+  const staffPortalPath = path.resolve('src/components/StaffPortal.jsx')
+  const staffPortalContent = fs.readFileSync(staffPortalPath, 'utf-8')
+  // Verify activeBranch is declared at function level before if (actionType === 'in')
+  const spIndexActiveBranch = staffPortalContent.indexOf('const activeBranch =')
+  const spIndexActionIn = staffPortalContent.indexOf("if (actionType === 'in')")
+  assert.ok(spIndexActiveBranch > 0, 'StaffPortal must define activeBranch')
+  assert.ok(spIndexActiveBranch < spIndexActionIn, 'activeBranch must be declared before if (actionType === in)')
+  assert.match(staffPortalContent, /branch_name:\s*activeBranch\?\.name/, 'StaffPortal must reference activeBranch for branch_name')
 
+  const userDashboardPath = path.resolve('src/components/UserDashboard.jsx')
+  const userDashboardContent = fs.readFileSync(userDashboardPath, 'utf-8')
+  const udIndexActiveBranch = userDashboardContent.indexOf('const activeBranch =')
+  const udIndexActionIn = userDashboardContent.indexOf("if (actionType === 'in')")
+  assert.ok(udIndexActiveBranch > 0, 'UserDashboard must define activeBranch')
+  assert.ok(udIndexActiveBranch < udIndexActionIn, 'activeBranch must be declared before if (actionType === in)')
+  assert.match(userDashboardContent, /branch_name:\s*activeBranch\?\.name/, 'UserDashboard must reference activeBranch for branch_name')
+})
 
+test('Camera Memory/Hardware Leak fix: stopCamera explicitly stops all video tracks and turns off camera on scan/close', () => {
+  const staffPortalPath = path.resolve('src/components/StaffPortal.jsx')
+  const staffPortalContent = fs.readFileSync(staffPortalPath, 'utf-8')
+  assert.match(staffPortalContent, /track\.stop\(\)/, 'StaffPortal must call track.stop()')
+  assert.match(staffPortalContent, /track\.enabled = false/, 'StaffPortal must disable track before stopping')
+  assert.match(staffPortalContent, /videoRef\.current\.srcObject/, 'StaffPortal must clean up videoRef.current.srcObject tracks')
+  assert.match(staffPortalContent, /cameraSessionIdRef/, 'StaffPortal must use session tracking to prevent orphaned camera streams')
 
+  const userDashboardPath = path.resolve('src/components/UserDashboard.jsx')
+  const userDashboardContent = fs.readFileSync(userDashboardPath, 'utf-8')
+  assert.match(userDashboardContent, /track\.stop\(\)/, 'UserDashboard must call track.stop()')
+  assert.match(userDashboardContent, /track\.enabled = false/, 'UserDashboard must disable track before stopping')
+  assert.match(userDashboardContent, /videoRef\.current\.srcObject/, 'UserDashboard must clean up videoRef.current.srcObject tracks')
+  assert.match(userDashboardContent, /cameraSessionIdRef/, 'UserDashboard must use session tracking to prevent orphaned camera streams')
+
+  const staffScannerPath = path.resolve('src/components/StaffCameraScanner.jsx')
+  const staffScannerContent = fs.readFileSync(staffScannerPath, 'utf-8')
+  assert.match(staffScannerContent, /track\.stop\(\)/, 'StaffCameraScanner must call track.stop()')
+  assert.match(staffScannerContent, /track\.enabled = false/, 'StaffCameraScanner must disable track before stopping')
+  assert.match(staffScannerContent, /cameraSessionIdRef/, 'StaffCameraScanner must use session tracking to prevent orphaned camera streams')
+})

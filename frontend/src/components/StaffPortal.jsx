@@ -173,6 +173,7 @@ export default function StaffPortal({
   const canvasRef = useRef(null)
   const animFrameIdRef = useRef(null)
   const streamRef = useRef(null)
+  const cameraSessionIdRef = useRef(0)
 
   // Live Digital Clock
   useEffect(() => {
@@ -291,11 +292,18 @@ export default function StaffPortal({
     }
     setProcessing(true)
     setActionResult(null)
+    stopCamera()
+    setShowCamera(false)
 
     try {
+      const activeBranch =
+        verifiedLocation?.branch ||
+        (branches && branches.find(b => b.id === (staffProfile?.branch_id || staffUser?.branch_id))) ||
+        (branches && branches[0]) ||
+        null
+
       if (actionType === 'in') {
         // CLOCK IN
-        const activeBranch = verifiedLocation?.branch || branches.find(b => b.id === staffUser.branch_id) || branches[0]
         const payload = {
           staff_id: staffUser.id,
           name: staffProfile?.name || staffUser.name,
@@ -304,9 +312,9 @@ export default function StaffPortal({
           type: 'employee',
           department: staffProfile?.role || staffUser.role || 'Service Team',
           badge_no: `STAFF-${staffUser.id || 'MEM'}`,
-          branch_id: activeBranch?.id || staffUser.branch_id || 'branch_2',
-          branch_name: activeBranch?.name || staffUser.branch_name || 'Chafé • Kohke',
-          location: activeBranch?.name || staffUser.branch_name || 'Staff Mobile Portal',
+          branch_id: activeBranch?.id || staffUser?.branch_id || 'branch_2',
+          branch_name: activeBranch?.name || staffUser?.branch_name || 'Chafé • Kohke',
+          location: activeBranch?.name || staffUser?.branch_name || 'Staff Mobile Portal',
           latitude: verifiedLocation?.coords?.lat || null,
           longitude: verifiedLocation?.coords?.lng || null,
           distance_to_store_meters: verifiedLocation?.distance || null,
@@ -332,7 +340,7 @@ export default function StaffPortal({
           name: staffProfile?.name || staffUser.name || 'Staff Member',
           role: staffProfile?.role || staffUser.role || 'Barista',
           photo_url: staffPhotoUrl || null,
-          branch_name: activeBranch?.name || staffUser.branch_name || 'Chafé Store',
+          branch_name: activeBranch?.name || staffUser?.branch_name || 'Chafé Store',
           distance: verifiedLocation?.distance ?? null,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
@@ -359,7 +367,7 @@ export default function StaffPortal({
           name: staffProfile?.name || staffUser.name || 'Staff Member',
           role: staffProfile?.role || staffUser.role || 'Barista',
           photo_url: staffPhotoUrl || null,
-          branch_name: activeBranch?.name || staffUser.branch_name || 'Chafé Store',
+          branch_name: activeBranch?.name || staffUser?.branch_name || 'Chafé Store',
           distance: verifiedLocation?.distance ?? null,
           time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
           date: new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
@@ -380,6 +388,7 @@ export default function StaffPortal({
       })
       if (showToast) showToast(err.message, 'error')
     } finally {
+      stopCamera()
       setProcessing(false)
       setShowActionModal(false)
       setSelectedScanAction(null)
@@ -417,16 +426,40 @@ export default function StaffPortal({
 
   // Camera functions - ALWAYS PREFER BACK CAMERA (environment)
   const stopCamera = useCallback(() => {
+    cameraSessionIdRef.current += 1
     if (animFrameIdRef.current) {
       cancelAnimationFrame(animFrameIdRef.current)
       animFrameIdRef.current = null
     }
+    // Explicitly stop all tracks on the active stream ref so camera hardware turns off
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
+      try {
+        streamRef.current.getTracks().forEach(track => {
+          track.enabled = false
+          track.stop()
+        })
+      } catch (err) {
+        console.warn('Error stopping stream tracks:', err)
+      }
       streamRef.current = null
     }
+    // Also explicitly stop tracks attached directly to the video element (WebKit / iOS hardware requirement)
     if (videoRef.current) {
+      try {
+        const videoStream = videoRef.current.srcObject
+        if (videoStream && typeof videoStream.getTracks === 'function') {
+          videoStream.getTracks().forEach(track => {
+            track.enabled = false
+            track.stop()
+          })
+        }
+      } catch (err) {
+        console.warn('Error stopping video element tracks:', err)
+      }
       videoRef.current.srcObject = null
+      try { videoRef.current.pause() } catch { /* ignore */ }
+      try { videoRef.current.removeAttribute('src') } catch { /* ignore */ }
+      try { videoRef.current.load?.() } catch { /* ignore */ }
     }
     setCameraActive(false)
     setTorchOn(false)
@@ -434,6 +467,7 @@ export default function StaffPortal({
 
   const startCamera = useCallback(async (facing = cameraFacing) => {
     stopCamera()
+    const currentSession = cameraSessionIdRef.current
     try {
       let stream = null
       // 1. Always attempt back camera first with ideal constraints
@@ -462,13 +496,33 @@ export default function StaffPortal({
         }
       }
 
+      // If camera was stopped or unmounted while awaiting getUserMedia, shut down stream immediately
+      if (cameraSessionIdRef.current !== currentSession) {
+        if (stream && stream.getTracks) {
+          stream.getTracks().forEach(track => {
+            try {
+              track.enabled = false
+              track.stop()
+            } catch { /* ignore */ }
+          })
+        }
+        return
+      }
+
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
+        if (cameraSessionIdRef.current !== currentSession) {
+          stopCamera()
+          return
+        }
         setCameraActive(true)
       }
     } catch (err) {
+      if (cameraSessionIdRef.current !== currentSession) {
+        return
+      }
       const isAbortError =
         err?.name === 'AbortError' ||
         err?.code === 20 ||
@@ -546,6 +600,10 @@ export default function StaffPortal({
 
         if (code && code.data && !isScanningRef.current) {
           isScanningRef.current = true
+          // Explicitly stop camera immediately upon successful scan so hardware turns off
+          stopCamera()
+          setShowCamera(false)
+
           playSuccessBeep()
           if (navigator.vibrate) {
             try { navigator.vibrate([100, 50, 100]) } catch { /* ignore */ }
@@ -938,7 +996,11 @@ export default function StaffPortal({
                 <button
                   type="button"
                   className="pro-btn-scanner-close"
-                  onClick={() => setActiveTab('clock')}
+                  onClick={() => {
+                    stopCamera()
+                    setShowCamera(false)
+                    setActiveTab('clock')
+                  }}
                   title="Close scanner"
                 >
                   ✕
@@ -1588,7 +1650,7 @@ export default function StaffPortal({
       {/* 12. POPUP MODAL: ASK CHECK IN OR CHECK OUT                     */}
       {/* ============================================================== */}
       {showActionModal && (
-        <div className="staff-modal-backdrop" onClick={() => !processing && setShowActionModal(false)}>
+        <div className="staff-modal-backdrop" onClick={() => { if (!processing) { setShowActionModal(false); stopCamera(); } }}>
           <div
             className="staff-action-modal"
             onClick={(e) => e.stopPropagation()}
@@ -1613,7 +1675,12 @@ export default function StaffPortal({
               <button
                 type="button"
                 className="staff-modal-close"
-                onClick={() => !processing && setShowActionModal(false)}
+                onClick={() => {
+                  if (!processing) {
+                    setShowActionModal(false)
+                    stopCamera()
+                  }
+                }}
                 aria-label="Close modal"
               >
                 ✕
@@ -1737,7 +1804,10 @@ export default function StaffPortal({
               <button
                 type="button"
                 className="btn-modal-cancel"
-                onClick={() => setShowActionModal(false)}
+                onClick={() => {
+                  setShowActionModal(false)
+                  stopCamera()
+                }}
                 disabled={processing}
               >
                 Cancel
@@ -1797,7 +1867,10 @@ export default function StaffPortal({
       {/* Scan Success Popup Confirmation Modal */}
       <ScanSuccessModal
         data={scanSuccessModal}
-        onClose={() => setScanSuccessModal(null)}
+        onClose={() => {
+          setScanSuccessModal(null)
+          stopCamera()
+        }}
       />
     </div>
   )
