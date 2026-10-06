@@ -20,18 +20,29 @@ import {
 import {
   getDayoffsFromFirebase,
   createDayoffInFirebase,
-  deleteDayoffInFirebase
+  deleteDayoffInFirebase,
+  DEFAULT_LEAVE_TYPES,
+  getLeaveTypesFromFirebase,
+  saveLeaveTypesToFirebase,
 } from '../services/firebaseService'
 
-export const LEAVE_TYPES = [
-  { id: 'day_off', label: 'Regular Day Off', icon: '🌴', color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd' },
-  { id: 'annual_leave', label: 'Annual Leave / Vacation', icon: '🏖️', color: '#059669', bg: '#d1fae5', border: '#a7f3d0' },
-  { id: 'sick_leave', label: 'Medical / Sick Leave', icon: '🏥', color: '#dc2626', bg: '#fee2e2', border: '#fecaca' },
-  { id: 'personal', label: 'Personal Leave', icon: '📋', color: '#7c3aed', bg: '#ede9fe', border: '#ddd6fe' },
-  { id: 'holiday', label: 'Public Holiday Off', icon: '🌟', color: '#d97706', bg: '#fef3c7', border: '#fde68a' },
-]
+export const LEAVE_TYPES = DEFAULT_LEAVE_TYPES
 
 export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
+  // Dynamic Leave Types (Admin can create, edit, delete, and sort)
+  const [leaveTypes, setLeaveTypes] = useState(DEFAULT_LEAVE_TYPES)
+  const [isManageLeaveModalOpen, setIsManageLeaveModalOpen] = useState(false)
+  const [editingLeaveType, setEditingLeaveType] = useState(null)
+  const [newLeaveTypeForm, setNewLeaveTypeForm] = useState({ label: '', icon: '🌴', color: '#0284c7' })
+
+  useEffect(() => {
+    getLeaveTypesFromFirebase().then(types => {
+      if (Array.isArray(types) && types.length > 0) {
+        setLeaveTypes(types)
+      }
+    })
+  }, [])
+
   // Calendar month state
   const [viewDate, setViewDate] = useState(() => new Date())
   const [dayoffs, setDayoffs] = useState([])
@@ -118,6 +129,70 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
     setAssignMode('single')
     setFormErrors({})
     setIsModalOpen(true)
+  }
+
+  // Leave Types Management Handlers (Admin Create, Edit, Delete, Sort)
+  const handleAddLeaveType = async (e) => {
+    e?.preventDefault()
+    if (!newLeaveTypeForm.label.trim()) {
+      showToast?.('Leave type label is required.', 'error')
+      return
+    }
+    const id = `leave_${Date.now()}`
+    const created = {
+      id,
+      label: newLeaveTypeForm.label.trim(),
+      icon: newLeaveTypeForm.icon.trim() || '🌴',
+      color: newLeaveTypeForm.color || '#0284c7',
+      bg: (newLeaveTypeForm.color || '#0284c7') + '15',
+      border: (newLeaveTypeForm.color || '#0284c7') + '40',
+    }
+    const updated = [...leaveTypes, created]
+    setLeaveTypes(updated)
+    await saveLeaveTypesToFirebase(updated)
+    setNewLeaveTypeForm({ label: '', icon: '🌴', color: '#0284c7' })
+    showToast?.(`Created leave type: ${created.label}`, 'success')
+  }
+
+  const handleSaveEditLeaveType = async (e) => {
+    e?.preventDefault()
+    if (!editingLeaveType || !editingLeaveType.label.trim()) return
+    const updated = leaveTypes.map(lt => lt.id === editingLeaveType.id ? {
+      ...lt,
+      label: editingLeaveType.label.trim(),
+      icon: editingLeaveType.icon.trim() || '🌴',
+      color: editingLeaveType.color || '#0284c7',
+      bg: (editingLeaveType.color || '#0284c7') + '15',
+      border: (editingLeaveType.color || '#0284c7') + '40',
+    } : lt)
+    setLeaveTypes(updated)
+    await saveLeaveTypesToFirebase(updated)
+    setEditingLeaveType(null)
+    showToast?.('Leave type updated successfully!', 'success')
+  }
+
+  const handleDeleteLeaveType = async (typeId) => {
+    if (leaveTypes.length <= 1) {
+      showToast?.('At least one leave type must remain.', 'error')
+      return
+    }
+    const target = leaveTypes.find(lt => lt.id === typeId)
+    if (!window.confirm(`Delete leave type "${target?.label}"?`)) return
+    const updated = leaveTypes.filter(lt => lt.id !== typeId)
+    setLeaveTypes(updated)
+    await saveLeaveTypesToFirebase(updated)
+    showToast?.('Leave type deleted.', 'success')
+  }
+
+  const handleMoveLeaveType = async (index, direction) => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= leaveTypes.length) return
+    const next = [...leaveTypes]
+    const [moved] = next.splice(index, 1)
+    next.splice(targetIndex, 0, moved)
+    setLeaveTypes(next)
+    await saveLeaveTypesToFirebase(next)
+    showToast?.('Leave types reordered / sorted.', 'info')
   }
 
   // Submit day off assignment with validation
@@ -521,7 +596,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                     {/* Day Off Chips */}
                     <div className="date-cell-events">
                       {cellDayoffs.map((item) => {
-                        const leaveMeta = LEAVE_TYPES.find(l => l.id === item.type) || LEAVE_TYPES[0]
+                        const leaveMeta = leaveTypes.find(l => l.id === item.type) || leaveTypes[0]
                         const staffName = item.staff?.name || 'Staff'
 
                         return (
@@ -623,6 +698,17 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                   <span>Cards</span>
                 </button>
               </div>
+
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setIsManageLeaveModalOpen(true)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', padding: '8px 14px' }}
+                title="Manage Leave Types (Admin)"
+              >
+                <span>⚙️</span>
+                <span>Manage Leave Types</span>
+              </button>
 
               <button
                 type="button"
@@ -734,7 +820,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
             >
               All Types ({dayoffs.length})
             </button>
-            {LEAVE_TYPES.map((lt) => {
+            {leaveTypes.map((lt) => {
               const count = dayoffs.filter(d => d.type === lt.id).length
               return (
                 <button
@@ -813,7 +899,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                     </tr>
                   ) : (
                     filteredLeaveList.map((item) => {
-                      const leaveMeta = LEAVE_TYPES.find(l => l.id === item.type) || LEAVE_TYPES[0]
+                      const leaveMeta = leaveTypes.find(l => l.id === item.type) || leaveTypes[0]
                       const staffName = item.staff?.name || 'Staff Member'
                       const staffRole = item.staff?.role || 'Team Member'
                       const staffEmail = item.staff?.email || ''
@@ -929,7 +1015,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                 </div>
               ) : (
                 filteredLeaveList.map((item) => {
-                  const leaveMeta = LEAVE_TYPES.find(l => l.id === item.type) || LEAVE_TYPES[0]
+                  const leaveMeta = leaveTypes.find(l => l.id === item.type) || leaveTypes[0]
                   const staffName = item.staff?.name || 'Staff Member'
                   const staffRole = item.staff?.role || 'Team Member'
                   const isCurrentDay = String(item.date).substring(0, 10) === todayIso
@@ -1174,7 +1260,7 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                     value={formType}
                     onChange={(e) => setFormType(e.target.value)}
                   >
-                    {LEAVE_TYPES.map((t) => (
+                    {leaveTypes.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.icon} {t.label}
                       </option>
@@ -1217,6 +1303,187 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MANAGE LEAVE TYPES MODAL (ADMIN: CREATE, EDIT, DELETE, SORT)   */}
+      {/* ============================================================== */}
+      {isManageLeaveModalOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setIsManageLeaveModalOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">⚙️ Manage Leave / Day Off Types</h2>
+              <button type="button" className="btn-close" onClick={() => setIsManageLeaveModalOpen(false)}>✕</button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                Create new leave categories, edit labels, adjust colors, and reorder (sort) them as they appear across the calendar and forms.
+              </p>
+
+              {/* Add New Leave Type Card */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px' }}>
+                <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block', marginBottom: '8px' }}>
+                  + Add New Leave Category
+                </strong>
+                <form onSubmit={handleAddLeaveType} style={{ display: 'grid', gridTemplateColumns: '60px 1.4fr 1fr auto', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="🌴"
+                    value={newLeaveTypeForm.icon}
+                    onChange={(e) => setNewLeaveTypeForm({ ...newLeaveTypeForm, icon: e.target.value })}
+                    title="Icon or Emoji"
+                    style={{ textAlign: 'center', fontSize: '16px' }}
+                  />
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Leave Name"
+                    value={newLeaveTypeForm.label}
+                    onChange={(e) => setNewLeaveTypeForm({ ...newLeaveTypeForm, label: e.target.value })}
+                    required
+                  />
+                  <select
+                    className="form-select"
+                    value={newLeaveTypeForm.color}
+                    onChange={(e) => setNewLeaveTypeForm({ ...newLeaveTypeForm, color: e.target.value })}
+                  >
+                    <option value="#0284c7">🔵 Blue</option>
+                    <option value="#059669">🟢 Emerald</option>
+                    <option value="#dc2626">🔴 Red</option>
+                    <option value="#7c3aed">🟣 Purple</option>
+                    <option value="#d97706">🟡 Amber</option>
+                    <option value="#db2777">🌸 Pink</option>
+                    <option value="#0d9488">🌊 Teal</option>
+                  </select>
+                  <button type="submit" className="btn-primary" style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                    Add
+                  </button>
+                </form>
+              </div>
+
+              {/* List of Existing Leave Types with Sort (Move Up/Down), Edit, Delete */}
+              <div>
+                <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block', marginBottom: '8px' }}>
+                  Current Leave Types & Sorting Order ({leaveTypes.length}):
+                </strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto' }}>
+                  {leaveTypes.map((lt, idx) => (
+                    <div
+                      key={lt.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 12px',
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      {editingLeaveType?.id === lt.id ? (
+                        <form onSubmit={handleSaveEditLeaveType} style={{ display: 'flex', gap: '6px', alignItems: 'center', flex: 1 }}>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={editingLeaveType.icon}
+                            onChange={(e) => setEditingLeaveType({ ...editingLeaveType, icon: e.target.value })}
+                            style={{ width: '45px', textAlign: 'center' }}
+                          />
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={editingLeaveType.label}
+                            onChange={(e) => setEditingLeaveType({ ...editingLeaveType, label: e.target.value })}
+                            style={{ flex: 1 }}
+                            required
+                          />
+                          <select
+                            className="form-select"
+                            value={editingLeaveType.color}
+                            onChange={(e) => setEditingLeaveType({ ...editingLeaveType, color: e.target.value })}
+                            style={{ width: '100px' }}
+                          >
+                            <option value="#0284c7">Blue</option>
+                            <option value="#059669">Emerald</option>
+                            <option value="#dc2626">Red</option>
+                            <option value="#7c3aed">Purple</option>
+                            <option value="#d97706">Amber</option>
+                            <option value="#db2777">Pink</option>
+                            <option value="#0d9488">Teal</option>
+                          </select>
+                          <button type="submit" className="btn-primary" style={{ padding: '6px 10px', fontSize: '11px' }}>Save</button>
+                          <button type="button" className="btn-secondary" onClick={() => setEditingLeaveType(null)} style={{ padding: '6px 10px', fontSize: '11px' }}>✕</button>
+                        </form>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '18px' }}>{lt.icon}</span>
+                            <div>
+                              <strong style={{ fontSize: '13px', color: '#0f172a' }}>{lt.label}</strong>
+                              <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: lt.color, marginLeft: '8px' }} />
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {/* Sort: Move Up */}
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: '3px 8px', fontSize: '12px' }}
+                              disabled={idx === 0}
+                              onClick={() => handleMoveLeaveType(idx, 'up')}
+                              title="Move Up (Sort)"
+                            >
+                              ↑
+                            </button>
+                            {/* Sort: Move Down */}
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: '3px 8px', fontSize: '12px' }}
+                              disabled={idx === leaveTypes.length - 1}
+                              onClick={() => handleMoveLeaveType(idx, 'down')}
+                              title="Move Down (Sort)"
+                            >
+                              ↓
+                            </button>
+                            {/* Edit */}
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '11px' }}
+                              onClick={() => setEditingLeaveType({ ...lt })}
+                            >
+                              Edit
+                            </button>
+                            {/* Delete */}
+                            {leaveTypes.length > 1 && (
+                              <button
+                                type="button"
+                                style={{ background: '#fee2e2', border: 'none', color: '#dc2626', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+                                onClick={() => handleDeleteLeaveType(lt.id)}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn-secondary" onClick={() => setIsManageLeaveModalOpen(false)}>
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

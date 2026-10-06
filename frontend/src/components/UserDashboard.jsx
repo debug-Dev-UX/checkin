@@ -22,13 +22,15 @@ import {
 } from '../Icons'
 import ProfileView from './ProfileView'
 import ScanSuccessModal from './ScanSuccessModal'
+import { useLanguage } from '../context/LanguageContext'
 import {
   getTodayControlFromFirebase,
   getCheckinsFromFirebase,
   createCheckinInFirebase,
   checkoutInFirebase,
   updateStaffInFirebase,
-  subscribeToBranches
+  subscribeToBranches,
+  subscribeToStoreAlerts,
 } from '../services/firebaseService'
 import {
   verifyRealtimeLocationForStaff,
@@ -69,6 +71,7 @@ export default function UserDashboard({
   onShiftUpdated,
   onSwitchToAdmin,
 }) {
+  const { lang, t } = useLanguage()
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const animFrameIdRef = useRef(null)
@@ -99,6 +102,19 @@ export default function UserDashboard({
   const [scanSuccessModal, setScanSuccessModal] = useState(null)
   const [lastScannedCode, setLastScannedCode] = useState(null)
   const [todayStaffLogs, setTodayStaffLogs] = useState([])
+
+  // Dynamic Store Alerts
+  const [storeAlerts, setStoreAlerts] = useState([])
+  useEffect(() => {
+    const unsub = subscribeToStoreAlerts((alerts) => {
+      if (Array.isArray(alerts)) {
+        setStoreAlerts(alerts.filter(a => a.isActive !== false))
+      }
+    })
+    return () => {
+      if (unsub) unsub()
+    }
+  }, [])
 
   // Geolocation validation state
   const [locationAlert, setLocationAlert] = useState(null)
@@ -519,16 +535,16 @@ export default function UserDashboard({
 
   // Hub items matching 3x3 grid
   const hubItems = useMemo(() => [
-    { id: 'roster', title: 'Shift Roster', icon: <IconCalendar size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
-    { id: 'dayoff', title: 'Day Off', icon: <span style={{ fontSize: '24px', lineHeight: 1 }}>🌴</span>, action: () => setActiveTab('schedule') },
-    { id: 'perf', title: 'Performance', icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
-    { id: 'logs', title: 'Shift Logs', icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
-    { id: 'station', title: 'Station', icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
-    { id: 'badge', title: 'ID Badge', icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('badge') },
-    { id: 'alerts', title: 'Store Alerts', icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
-    { id: 'profile', title: 'My Profile', icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
-    { id: 'support', title: 'Support', icon: <IconPhone size={24} color="#ffffff" />, action: () => setActiveModal('support') },
-  ], [])
+    { id: 'roster', title: t('shiftRoster', 'Shift Roster'), icon: <IconCalendar size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
+    { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <span style={{ fontSize: '24px', lineHeight: 1 }}>🌴</span>, action: () => setActiveTab('schedule') },
+    { id: 'perf', title: t('performance', 'Performance'), icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
+    { id: 'logs', title: t('shiftLogs', 'Shift Logs'), icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
+    { id: 'station', title: t('station', 'Station'), icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
+    { id: 'badge', title: t('idBadge', 'ID Badge'), icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('badge') },
+    { id: 'alerts', title: t('storeAlerts', 'Store Alerts'), icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
+    { id: 'profile', title: t('myProfile', 'My Profile'), icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
+    { id: 'support', title: t('support', 'Support'), icon: <IconPhone size={24} color="#ffffff" />, action: () => setActiveModal('support') },
+  ], [t])
 
   const filteredHubItems = useMemo(() => {
     if (!searchQuery.trim()) return hubItems
@@ -559,7 +575,7 @@ export default function UserDashboard({
             <IconMenu size={22} color="#ffffff" />
           </button>
           <div className="mobile-header-brand-title">
-            Chafé • Staff Terminal
+            {t('staffWorkspace', 'Chafé • Staff Workspace')}
           </div>
         </div>
 
@@ -570,7 +586,7 @@ export default function UserDashboard({
           <input
             type="text"
             className="mobile-header-search-input"
-            placeholder="Search here"
+            placeholder={t('searchPlaceholder', 'Search staff, station, tools...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -580,7 +596,7 @@ export default function UserDashboard({
           type="button"
           className="mobile-header-bell-btn"
           onClick={() => setActiveModal('alerts')}
-          title="Store Alerts & Notifications"
+          title={t('storeAlerts', 'Store Alerts & Notifications')}
           aria-label="View Alerts"
         >
           <IconBell size={20} color="#ffffff" />
@@ -696,9 +712,9 @@ export default function UserDashboard({
                   <div className="mobile-action-icon">
                     <IconDoorIn size={36} color={isCheckedIn ? '#94a3b8' : '#f59e0b'} />
                   </div>
-                  <div className="mobile-action-label" style={isCheckedIn ? { color: '#64748b' } : {}}>Check - In</div>
+                  <div className="mobile-action-label" style={isCheckedIn ? { color: '#64748b' } : {}}>{t('clockIn', 'Check - In')}</div>
                   <div className="mobile-action-sublabel">
-                    {!isCheckedIn ? 'Ready to Start' : 'Already on Shift'}
+                    {!isCheckedIn ? t('readyToStart', 'Ready to Start') : t('alreadyOnShift', 'Already on Shift')}
                   </div>
                 </button>
 
@@ -712,9 +728,9 @@ export default function UserDashboard({
                   <div className="mobile-action-icon">
                     <IconDoorOut size={36} color="#f59e0b" />
                   </div>
-                  <div className="mobile-action-label">Check - Out</div>
+                  <div className="mobile-action-label">{t('clockOut', 'Check - Out')}</div>
                   <div className="mobile-action-sublabel">
-                    {isCheckedIn ? 'Complete Shift' : 'No Active Shift'}
+                    {isCheckedIn ? t('completeShift', 'Complete Shift') : t('noShift', 'No Active Shift')}
                   </div>
                 </button>
               </div>
@@ -724,12 +740,12 @@ export default function UserDashboard({
             <div className="responsive-right-column">
               {/* 3. SECTION HEADING: TYPE OF VISIT / WORK HUB */}
               <div className="mobile-section-heading">
-                <span>Type of Visit</span>
+                <span>{t('typeOfVisit', 'Type of Visit')}</span>
                 <span
                   className="mobile-section-heading-sub"
                   onClick={() => setActiveTab('schedule')}
                 >
-                  Today ({todayStaffLogs.length}) →
+                  {t('todayLogs', 'Today')} ({todayStaffLogs.length}) →
                 </span>
               </div>
 
@@ -756,18 +772,18 @@ export default function UserDashboard({
               {/* Desktop Recent Shift Activity Card */}
               <div className="desktop-recent-shifts-card">
                 <div className="desktop-recent-header">
-                  <span>TODAY'S SHIFT ACTIVITY</span>
+                  <span>{t('recentShiftActivity', 'TODAY\'S SHIFT ACTIVITY')}</span>
                   <button
                     type="button"
                     className="pro-link-btn"
                     onClick={() => setActiveTab('schedule')}
                   >
-                    View All ({todayStaffLogs.length}) →
+                    {t('viewAllTimesheets', `View All (${todayStaffLogs.length}) →`)}
                   </button>
                 </div>
                 {todayStaffLogs.length === 0 ? (
                   <div style={{ color: '#94a3b8', fontSize: '12px', padding: '8px 0' }}>
-                    No staff clocked in today yet.
+                    {t('noRecentLogs', 'No staff clocked in today yet.')}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1004,7 +1020,7 @@ export default function UserDashboard({
             <div className="mobile-tab-icon">
               <IconHome size={22} />
             </div>
-            <span>Home</span>
+            <span>{t('home', 'Home')}</span>
           </button>
 
           {/* Item 2: Schedule */}
@@ -1016,7 +1032,7 @@ export default function UserDashboard({
             <div className="mobile-tab-icon">
               <IconCalendar size={22} />
             </div>
-            <span>Schedule</span>
+            <span>{t('schedule', 'Schedule')}</span>
           </button>
 
           {/* Item 3: Profile */}
@@ -1028,7 +1044,7 @@ export default function UserDashboard({
             <div className="mobile-tab-icon">
               <IconUserCircle size={22} />
             </div>
-            <span>Profile</span>
+            <span>{t('profile', 'Profile')}</span>
           </button>
         </div>
       </nav>
@@ -1198,14 +1214,38 @@ export default function UserDashboard({
 
               {activeModal === 'alerts' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '12px', fontSize: '12.5px' }}>
-                    <div style={{ fontWeight: 800, color: '#1e40af', marginBottom: '4px' }}>☕ Single Origin Bean Refill</div>
-                    <div style={{ color: '#3b82f6' }}>Please replenish Colombian hopper before midday peak.</div>
-                  </div>
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '12px', fontSize: '12.5px' }}>
-                    <div style={{ fontWeight: 800, color: '#166534', marginBottom: '4px' }}>📅 Weekly Roster Published</div>
-                    <div style={{ color: '#15803d' }}>New schedule is available in your profile.</div>
-                  </div>
+                  {storeAlerts.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '20px 0', color: '#64748b', fontSize: '13px' }}>
+                      {t('noAlerts', 'No active announcements at this time.')}
+                    </div>
+                  ) : (
+                    storeAlerts.map(alert => (
+                      <div
+                        key={alert.id}
+                        style={{
+                          background: alert.priority === 'high' ? '#eff6ff' : '#f0fdf4',
+                          border: `1px solid ${alert.priority === 'high' ? '#bfdbfe' : '#bbf7d0'}`,
+                          borderRadius: '12px',
+                          padding: '12px',
+                          fontSize: '12.5px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534' }}>
+                            🔔 {alert.title}
+                          </div>
+                          {alert.priority === 'high' && (
+                            <span style={{ fontSize: '10px', fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px' }}>
+                              {t('priorityHigh', 'High Priority')}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ color: alert.priority === 'high' ? '#2563eb' : '#15803d', lineHeight: 1.4 }}>
+                          {alert.message}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
 

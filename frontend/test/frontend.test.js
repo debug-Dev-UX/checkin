@@ -94,13 +94,81 @@ test('Tasks & Notifications table includes sort controls and Security Database R
   assert.match(content, /security-tag-badge/, 'Must render security tag badges')
 })
 
-test('Tasks & Notifications table includes quick pager & filter short controls (<- 0 1 2 3 ... 10 ->)', () => {
+test('Tasks & Notifications table has only one pagination bar at bottom with exact screenshot format', () => {
   const appPath = path.resolve('src/App.jsx')
   const content = fs.readFileSync(appPath, 'utf-8')
   assert.match(content, /tablePage/, 'Must maintain tablePage state')
-  assert.match(content, /\[0,\s*1,\s*2,\s*3,\s*4,\s*5,\s*6,\s*7,\s*8,\s*9,\s*10\]/, 'Must render quick navigation buttons 0 through 10')
-  assert.match(content, /quick-nav-arrow-btn/, 'Must have arrow buttons for previous and next')
+  assert.match(content, /table-pagination-footer/, 'Must render table-pagination-footer at bottom')
+  assert.match(content, /table-pagination-info/, 'Must render table-pagination-info with total and current page')
+  assert.match(content, /getPaginationItems/, 'Must compute pagination items with ellipsis')
+  assert.match(content, /pager-nav-btn/, 'Must have nav buttons for « ‹ › »')
+  assert.match(content, /pager-num-btn/, 'Must have numbered page buttons')
+  assert.doesNotMatch(content, /table-quick-nav-bar.*table-responsive/, 'Must NOT have quick nav bar above table (only at bottom)')
   assert.match(content, /paginatedRows/, 'Must render paginated rows')
+})
+
+test('Staff shift start and end use 12-hour select dropdowns only (no 24-hour inputs)', () => {
+  const appPath = path.resolve('src/App.jsx')
+  const content = fs.readFileSync(appPath, 'utf-8')
+  assert.match(content, /function TimePicker12Hour/, 'Must declare TimePicker12Hour component')
+  assert.match(content, /hourOptions.*01.*12/, 'TimePicker12Hour must use 12-hour options (01 to 12)')
+  assert.match(content, /<TimePicker12Hour[^>]*staffForm\.shift_start/, 'Create Staff modal must use TimePicker12Hour for shift_start')
+  assert.match(content, /<TimePicker12Hour[^>]*staffForm\.shift_end/, 'Create Staff modal must use TimePicker12Hour for shift_end')
+  assert.match(content, /<TimePicker12Hour[^>]*editingStaff\.shift_start/, 'Edit Staff modal must use TimePicker12Hour for shift_start')
+  assert.match(content, /<TimePicker12Hour[^>]*editingStaff\.shift_end/, 'Edit Staff modal must use TimePicker12Hour for shift_end')
+})
+
+test('Role assignment and custom roles can be created and managed by admin', () => {
+  const appPath = path.resolve('src/App.jsx')
+  const content = fs.readFileSync(appPath, 'utf-8')
+  assert.match(content, /handleCreateCustomRole/, 'App.jsx must have handleCreateCustomRole function')
+  assert.match(content, /saveCustomRolesToFirebase/, 'App.jsx must persist custom roles to Firebase')
+  assert.match(content, /customRoles\.map/, 'App.jsx must map dynamic customRoles in role selects')
+  assert.match(content, /\+ Create Role|\+ Add Role/, 'App.jsx must provide create role UI')
+})
+
+test('Leave / Day Off Types can be created, edited, deleted, and sorted by admin', () => {
+  const dayoffPath = path.resolve('src/components/DayoffCalendar.jsx')
+  const content = fs.readFileSync(dayoffPath, 'utf-8')
+  assert.match(content, /saveLeaveTypesToFirebase/, 'DayoffCalendar must persist leave types to Firebase')
+  assert.match(content, /isManageLeaveModalOpen/, 'DayoffCalendar must have Manage Leave Types modal')
+  assert.match(content, /handleMoveLeaveType/, 'DayoffCalendar must allow sorting/reordering leave types')
+  assert.match(content, /handleDeleteLeaveType/, 'DayoffCalendar must allow deleting leave types')
+  assert.match(content, /handleCreateLeaveType|newLeaveTypeForm/, 'DayoffCalendar must allow creating leave types')
+})
+
+test('Store Alerts & Notices are dynamic from admin and synced live to staff workspace', () => {
+  const appPath = path.resolve('src/App.jsx')
+  const content = fs.readFileSync(appPath, 'utf-8')
+  assert.match(content, /saveStoreAlertsToFirebase/, 'App.jsx must save dynamic store alerts')
+  assert.match(content, /storeAlertsList/, 'App.jsx must manage store alerts list')
+
+  const fbPath = path.resolve('src/services/firebaseService.js')
+  const fbContent = fs.readFileSync(fbPath, 'utf-8')
+  assert.match(fbContent, /subscribeToStoreAlerts/, 'firebaseService must export subscribeToStoreAlerts')
+})
+
+test('Staff Performance & Punctuality tab renders Weekly & Monthly Tardiness & Clean Record Audit table matching screenshot', () => {
+  const appPath = path.resolve('src/App.jsx')
+  const content = fs.readFileSync(appPath, 'utf-8')
+  assert.match(content, /Weekly & Monthly Tardiness & Clean Record Audit/, 'Must render audit card title')
+  assert.match(content, /Filter and inspect who has 0 late records vs how many times each staff member arrived late/, 'Must render audit card subtitle')
+  assert.match(content, /auditPeriod/, 'Must maintain auditPeriod state for Weekly and Monthly toggle')
+  assert.match(content, /auditStaffFilter/, 'Must maintain auditStaffFilter state')
+  assert.match(content, /<th>Barista \/ Staff<\/th>/, 'Must have Barista / Staff table header')
+  assert.match(content, /<th>Branch<\/th>/, 'Must have Branch table header')
+  assert.match(content, /<th>On-Time Count<\/th>/, 'Must have On-Time Count table header')
+  assert.match(content, /<th>Late Count<\/th>/, 'Must have Late Count table header')
+  assert.match(content, /<th>Status Classification<\/th>/, 'Must have Status Classification table header')
+  assert.match(content, /<th[^>]*>Punctuality Grade<\/th>/, 'Must have Punctuality Grade table header')
+  assert.match(content, /Never Late \(0\)/, 'Must render Never Late (0) badge')
+  assert.match(content, /Late Record\(s\)/, 'Must render Late Record(s) badge')
+
+  const cssPath = path.resolve('src/App.css')
+  const css = fs.readFileSync(cssPath, 'utf-8')
+  assert.match(css, /\.audit-panel-card/, 'App.css must define audit-panel-card')
+  assert.match(css, /\.audit-badge-clean/, 'App.css must define audit-badge-clean')
+  assert.match(css, /\.audit-badge-late/, 'App.css must define audit-badge-late')
 })
 
 test('Time display uses 12-hour format with AM/PM across formatTime and clocks', () => {
@@ -226,4 +294,13 @@ test('Camera Memory/Hardware Leak fix: stopCamera explicitly stops all video tra
   assert.match(staffScannerContent, /track\.stop\(\)/, 'StaffCameraScanner must call track.stop()')
   assert.match(staffScannerContent, /track\.enabled = false/, 'StaffCameraScanner must disable track before stopping')
   assert.match(staffScannerContent, /cameraSessionIdRef/, 'StaffCameraScanner must use session tracking to prevent orphaned camera streams')
+})
+
+test('Staff Performance & Punctuality table uses real staff data without demo or placeholder staff', () => {
+  const appPath = path.resolve('src/App.jsx')
+  const content = fs.readFileSync(appPath, 'utf-8')
+  assert.doesNotMatch(content, /baselineAuditStaff/, 'Must not contain baselineAuditStaff demo data')
+  assert.doesNotMatch(content, /Mateo Rossi/, 'Must not contain Mateo Rossi demo staff')
+  assert.doesNotMatch(content, /Kenji Sato/, 'Must not contain Kenji Sato demo staff')
+  assert.match(content, /\(staffList \|\| \[\]\)\.map\(stf =>/, 'auditRows must strictly derive from registered staffList')
 })

@@ -24,6 +24,7 @@ import {
 import { Skeleton } from './Skeleton'
 import ProfileView from './ProfileView'
 import ScanSuccessModal from './ScanSuccessModal'
+import { useLanguage } from '../context/LanguageContext'
 import {
   getCheckinsFromFirebase,
   getStaffDayoffsFromFirebase,
@@ -33,7 +34,8 @@ import {
   updateStaffInFirebase,
   isTodayRecord,
   subscribeToBranches,
-  subscribeToStaff
+  subscribeToStaff,
+  subscribeToStoreAlerts,
 } from '../services/firebaseService'
 import {
   verifyRealtimeLocationForStaff,
@@ -67,6 +69,7 @@ export default function StaffPortal({
   onLogout,
   showToast,
 }) {
+  const { lang, t } = useLanguage()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [activeCheckin, setActiveCheckin] = useState(null)
   const [recentLogs, setRecentLogs] = useState([])
@@ -82,6 +85,19 @@ export default function StaffPortal({
   const [searchQuery, setSearchQuery] = useState('')
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [activeModal, setActiveModal] = useState(null) // null | 'performance' | 'station' | 'alerts' | 'profile' | 'support'
+
+  // Dynamic Store Alerts
+  const [storeAlerts, setStoreAlerts] = useState([])
+  useEffect(() => {
+    const unsub = subscribeToStoreAlerts((alerts) => {
+      if (Array.isArray(alerts)) {
+        setStoreAlerts(alerts.filter(a => a.isActive !== false))
+      }
+    })
+    return () => {
+      if (unsub) unsub()
+    }
+  }, [])
 
   // Action Modal State (Popup modal asking Check In or Check Out)
   const [showActionModal, setShowActionModal] = useState(false)
@@ -658,16 +674,16 @@ export default function StaffPortal({
 
   // Hub items matching 3x3 grid
   const hubItems = useMemo(() => [
-    { id: 'roster', title: 'Shift Roster', icon: <IconCalendar size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
-    { id: 'dayoff', title: 'Day Off', icon: <span style={{ fontSize: '24px', lineHeight: 1 }}>🌴</span>, action: () => setActiveTab('schedule') },
-    { id: 'perf', title: 'Performance', icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
-    { id: 'logs', title: 'Shift Logs', icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('history') },
-    { id: 'station', title: 'Station', icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
-    { id: 'badge', title: 'ID Badge', icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('badge') },
-    { id: 'alerts', title: 'Store Alerts', icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
-    { id: 'profile', title: 'My Profile', icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
-    { id: 'support', title: 'Support', icon: <IconPhone size={24} color="#ffffff" />, action: () => setActiveModal('support') },
-  ], [])
+    { id: 'roster', title: t('shiftRoster', 'Shift Roster'), icon: <IconCalendar size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
+    { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <span style={{ fontSize: '24px', lineHeight: 1 }}>🌴</span>, action: () => setActiveTab('schedule') },
+    { id: 'perf', title: t('performance', 'Performance'), icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
+    { id: 'logs', title: t('shiftLogs', 'Shift Logs'), icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('history') },
+    { id: 'station', title: t('station', 'Station'), icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
+    { id: 'badge', title: t('idBadge', 'ID Badge'), icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('badge') },
+    { id: 'alerts', title: t('storeAlerts', 'Store Alerts'), icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
+    { id: 'profile', title: t('myProfile', 'My Profile'), icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
+    { id: 'support', title: t('support', 'Support'), icon: <IconPhone size={24} color="#ffffff" />, action: () => setActiveModal('support') },
+  ], [t])
 
   const filteredHubItems = useMemo(() => {
     if (!searchQuery.trim()) return hubItems
@@ -698,7 +714,7 @@ export default function StaffPortal({
             <IconMenu size={22} color="#ffffff" />
           </button>
           <div className="mobile-header-brand-title">
-            Chafé • Staff Workspace
+            {t('staffWorkspace', 'Chafé • Staff Workspace')}
           </div>
         </div>
 
@@ -709,7 +725,7 @@ export default function StaffPortal({
           <input
             type="text"
             className="mobile-header-search-input"
-            placeholder="Search here"
+            placeholder={t('searchPlaceholder', 'Search staff, station, tools...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -719,7 +735,7 @@ export default function StaffPortal({
           type="button"
           className="mobile-header-bell-btn"
           onClick={() => setActiveModal('alerts')}
-          title="Store Alerts & Notifications"
+          title={t('storeAlerts', 'Store Alerts & Notifications')}
           aria-label="View Alerts"
         >
           <IconBell size={20} color="#ffffff" />
@@ -835,9 +851,9 @@ export default function StaffPortal({
                   <div className="mobile-action-icon">
                     <IconDoorIn size={36} color={isOnShift ? '#94a3b8' : '#f59e0b'} />
                   </div>
-                  <div className="mobile-action-label" style={isOnShift ? { color: '#64748b' } : {}}>Check - In</div>
+                  <div className="mobile-action-label" style={isOnShift ? { color: '#64748b' } : {}}>{t('clockIn', 'Check - In')}</div>
                   <div className="mobile-action-sublabel">
-                    {!isOnShift ? 'Ready to Start' : 'Already on Shift'}
+                    {!isOnShift ? t('readyToStart', 'Ready to Start') : t('alreadyOnShift', 'Already on Shift')}
                   </div>
                 </button>
 
@@ -851,9 +867,9 @@ export default function StaffPortal({
                   <div className="mobile-action-icon">
                     <IconDoorOut size={36} color="#f59e0b" />
                   </div>
-                  <div className="mobile-action-label">Check - Out</div>
+                  <div className="mobile-action-label">{t('clockOut', 'Check - Out')}</div>
                   <div className="mobile-action-sublabel">
-                    {isOnShift ? 'Complete Shift' : 'No Active Shift'}
+                    {isOnShift ? t('completeShift', 'Complete Shift') : t('noShift', 'No Active Shift')}
                   </div>
                 </button>
               </div>
@@ -887,12 +903,12 @@ export default function StaffPortal({
             <div className="responsive-right-column">
               {/* 3. SECTION HEADING: TYPE OF VISIT / WORK HUB */}
               <div className="mobile-section-heading">
-                <span>Type of Visit</span>
+                <span>{t('typeOfVisit', 'Type of Visit')}</span>
                 <span
                   className="mobile-section-heading-sub"
                   onClick={() => setActiveTab('history')}
                 >
-                  Recent Logs ({recentLogs.length}) →
+                  {t('todayLogs', 'Recent Logs')} ({recentLogs.length}) →
                 </span>
               </div>
 
@@ -919,18 +935,18 @@ export default function StaffPortal({
               {/* Desktop Recent Shift Activity Card */}
               <div className="desktop-recent-shifts-card">
                 <div className="desktop-recent-header">
-                  <span>RECENT SHIFT ACTIVITY</span>
+                  <span>{t('recentShiftActivity', 'RECENT SHIFT ACTIVITY')}</span>
                   <button
                     type="button"
                     className="pro-link-btn"
                     onClick={() => setActiveTab('history')}
                   >
-                    View All Timesheets →
+                    {t('viewAllTimesheets', 'View All Timesheets →')}
                   </button>
                 </div>
                 {recentLogs.slice(0, 3).length === 0 ? (
                   <div style={{ color: '#94a3b8', fontSize: '12px', padding: '8px 0' }}>
-                    No recent shift logs recorded yet.
+                    {t('noRecentLogs', 'No recent shift logs recorded yet.')}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1352,7 +1368,7 @@ export default function StaffPortal({
             <div className="mobile-tab-icon">
               <IconHome size={22} />
             </div>
-            <span>Home</span>
+            <span>{t('home', 'Home')}</span>
           </button>
 
           {/* Item 2: Schedule */}
@@ -1364,7 +1380,7 @@ export default function StaffPortal({
             <div className="mobile-tab-icon">
               <IconCalendar size={22} />
             </div>
-            <span>Schedule</span>
+            <span>{t('schedule', 'Schedule')}</span>
           </button>
 
           {/* Item 3: Profile */}
@@ -1376,7 +1392,7 @@ export default function StaffPortal({
             <div className="mobile-tab-icon">
               <IconUserCircle size={22} />
             </div>
-            <span>Profile</span>
+            <span>{t('profile', 'Profile')}</span>
           </button>
         </div>
       </nav>
@@ -1583,19 +1599,38 @@ export default function StaffPortal({
               {/* Alerts Modal */}
               {activeModal === 'alerts' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '12px', fontSize: '12.5px' }}>
-                    <div style={{ fontWeight: 800, color: '#1e40af', marginBottom: '4px' }}>☕ Bean Hopper Rotation Notice</div>
-                    <div style={{ color: '#3b82f6', lineHeight: 1.4 }}>
-                      Please ensure Colombian single origin beans are refilled before noon peak.
+                  {storeAlerts.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '20px 0', color: '#64748b', fontSize: '13px' }}>
+                      {t('noAlerts', 'No active announcements at this time.')}
                     </div>
-                  </div>
-
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '12px', fontSize: '12.5px' }}>
-                    <div style={{ fontWeight: 800, color: '#166534', marginBottom: '4px' }}>📅 Upcoming Roster Published</div>
-                    <div style={{ color: '#15803d', lineHeight: 1.4 }}>
-                      New weekly shift schedules have been updated. View your days off in the Schedule tab.
-                    </div>
-                  </div>
+                  ) : (
+                    storeAlerts.map(alert => (
+                      <div
+                        key={alert.id}
+                        style={{
+                          background: alert.priority === 'high' ? '#eff6ff' : '#f0fdf4',
+                          border: `1px solid ${alert.priority === 'high' ? '#bfdbfe' : '#bbf7d0'}`,
+                          borderRadius: '12px',
+                          padding: '12px',
+                          fontSize: '12.5px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534' }}>
+                            🔔 {alert.title}
+                          </div>
+                          {alert.priority === 'high' && (
+                            <span style={{ fontSize: '10px', fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px' }}>
+                              {t('priorityHigh', 'High Priority')}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ color: alert.priority === 'high' ? '#2563eb' : '#15803d', lineHeight: 1.4 }}>
+                          {alert.message}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
 

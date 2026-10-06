@@ -42,6 +42,7 @@ import {
   SkeletonTable,
   SkeletonWidget
 } from './components/Skeleton'
+import { useLanguage } from './context/LanguageContext'
 import {
   initFirebaseDatabase,
   getStatsFromFirebase,
@@ -63,7 +64,13 @@ import {
   saveBranchesToFirebase,
   subscribeToBranches,
   subscribeToStaff,
-  syncStaffCheckinsBranchInFirebase
+  syncStaffCheckinsBranchInFirebase,
+  getCustomRolesFromFirebase,
+  saveCustomRolesToFirebase,
+  DEFAULT_ROLES,
+  getStoreAlertsFromFirebase,
+  saveStoreAlertsToFirebase,
+  DEFAULT_STORE_ALERTS,
 } from './services/firebaseService'
 import {
   getStoreLocation,
@@ -75,7 +82,115 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
+// 12-Hour Select Time Picker Component (No 24-Hour)
+function TimePicker12Hour({ value, onChange, disabled }) {
+  const parseVal = (val) => {
+    let hour = '08'
+    let minute = '00'
+    let ampm = 'AM'
+
+    if (val && typeof val === 'string') {
+      const v = val.trim()
+      const match12 = v.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+      if (match12) {
+        hour = String(match12[1]).padStart(2, '0')
+        minute = String(match12[2]).padStart(2, '0')
+        ampm = match12[3].toUpperCase()
+      } else {
+        const match24 = v.match(/^(\d{1,2}):(\d{2})/)
+        if (match24) {
+          let h = parseInt(match24[1], 10)
+          minute = String(match24[2]).padStart(2, '0')
+          ampm = h >= 12 ? 'PM' : 'AM'
+          h = h % 12 || 12
+          hour = String(h).padStart(2, '0')
+        }
+      }
+    }
+    return { hour, minute, ampm }
+  }
+
+  const { hour, minute, ampm } = parseVal(value)
+
+  const handleHourChange = (newH) => {
+    onChange(`${newH}:${minute} ${ampm}`)
+  }
+
+  const handleMinChange = (newM) => {
+    onChange(`${hour}:${newM} ${ampm}`)
+  }
+
+  const handleAmpmChange = (newAp) => {
+    onChange(`${hour}:${minute} ${newAp}`)
+  }
+
+  const hourOptions = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
+  const minuteOptions = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']
+
+  return (
+    <div className="time-picker-12h">
+      <select
+        className="time-picker-select"
+        value={hour}
+        disabled={disabled}
+        onChange={(e) => handleHourChange(e.target.value)}
+        aria-label="Hour (12-hour)"
+        style={{ flex: 1 }}
+      >
+        {hourOptions.map(h => (
+          <option key={h} value={h}>{h}</option>
+        ))}
+      </select>
+      <span style={{ fontWeight: 800, color: '#64748b' }}>:</span>
+      <select
+        className="time-picker-select"
+        value={minute}
+        disabled={disabled}
+        onChange={(e) => handleMinChange(e.target.value)}
+        aria-label="Minute"
+        style={{ flex: 1 }}
+      >
+        {minuteOptions.map(m => (
+          <option key={m} value={m}>{m}</option>
+        ))}
+      </select>
+      <select
+        className="time-picker-select"
+        value={ampm}
+        disabled={disabled}
+        onChange={(e) => handleAmpmChange(e.target.value)}
+        aria-label="AM/PM"
+        style={{
+          width: '75px',
+          fontWeight: 800,
+          background: ampm === 'AM' ? '#f0fdf4' : '#fffbeb',
+          color: ampm === 'AM' ? '#166534' : '#b45309',
+          borderColor: ampm === 'AM' ? '#bbf7d0' : '#fde68a'
+        }}
+      >
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+  )
+}
+
+function getPaginationItems(currentPage, totalPages) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1)
+  }
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, '...', totalPages]
+  }
+  if (currentPage >= totalPages - 3) {
+    return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+  }
+  return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages]
+}
+
 export default function App() {
+  const { lang, setLang, t } = useLanguage()
+
   // Navigation State with URL Hash Support (#user, #staff, #overview, #dayoffs, etc.)
   const getInitialTab = () => {
     const params = new URLSearchParams(window.location.search)
@@ -200,6 +315,10 @@ export default function App() {
   const [advancedFilter, setAdvancedFilter] = useState('all') // 'all' | 'late' | 'on_time' | 'staff' | 'guest'
   const [tablePage, setTablePage] = useState(1) // Tasks & Notifications pager: 0 = All records, 1..10 = Pages
 
+  // Weekly & Monthly Tardiness & Clean Record Audit State
+  const [auditPeriod, setAuditPeriod] = useState('weekly') // 'weekly' | 'monthly'
+  const [auditStaffFilter, setAuditStaffFilter] = useState('all') // 'all' | 'clean' | 'late' | staff_id
+
   // Header Menus & Modals
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false)
   const [isMessagesOpen, setIsMessagesOpen] = useState(false)
@@ -249,12 +368,96 @@ export default function App() {
       role: 'Barista',
       branch_id: initialBranches[0]?.id || 'branch_2',
       branch_name: initialBranches[0]?.name || 'Chafé • Kohke',
-      shift_start: '07:30',
-      shift_end: '16:00',
+      shift_start: '07:30 AM',
+      shift_end: '04:00 PM',
       hourly_rate: 20.00,
     }
   })
   const [staffSubmitting, setStaffSubmitting] = useState(false)
+
+  // Dynamic Roles (Custom roles created by Admin)
+  const [customRoles, setCustomRoles] = useState(DEFAULT_ROLES)
+  const [isAddingRoleInline, setIsAddingRoleInline] = useState(false)
+  const [newRoleInput, setNewRoleInput] = useState('')
+
+  useEffect(() => {
+    getCustomRolesFromFirebase().then(roles => {
+      if (Array.isArray(roles) && roles.length > 0) setCustomRoles(roles)
+    })
+  }, [])
+
+  const handleCreateCustomRole = async (roleName) => {
+    const trimmed = (roleName || '').trim()
+    if (!trimmed) return null
+    if (!customRoles.includes(trimmed)) {
+      const nextRoles = [...customRoles, trimmed]
+      setCustomRoles(nextRoles)
+      await saveCustomRolesToFirebase(nextRoles)
+      showToast(`Role "${trimmed}" created!`)
+    }
+    return trimmed
+  }
+
+  const handleDeleteCustomRole = async (roleToDelete) => {
+    if (customRoles.length <= 1) {
+      showToast('At least one role must remain.', 'error')
+      return
+    }
+    const nextRoles = customRoles.filter(r => r !== roleToDelete)
+    setCustomRoles(nextRoles)
+    await saveCustomRolesToFirebase(nextRoles)
+    showToast(`Role "${roleToDelete}" deleted.`)
+  }
+
+  // Dynamic Store Alerts & Notices (Admin managed)
+  const [storeAlertsList, setStoreAlertsList] = useState(DEFAULT_STORE_ALERTS)
+  const [newAlertForm, setNewAlertForm] = useState({ title: '', message: '', priority: 'normal' })
+  const [editingAlertId, setEditingAlertId] = useState(null)
+  const [editAlertForm, setEditAlertForm] = useState({ title: '', message: '', priority: 'normal' })
+
+  useEffect(() => {
+    getStoreAlertsFromFirebase().then(alerts => {
+      if (Array.isArray(alerts) && alerts.length > 0) setStoreAlertsList(alerts)
+    })
+  }, [])
+
+  const handleSaveStoreAlert = async (e) => {
+    if (e) e.preventDefault()
+    if (!newAlertForm.title.trim() || !newAlertForm.message.trim()) return
+    const created = {
+      id: `alert_${Date.now()}`,
+      title: newAlertForm.title.trim(),
+      message: newAlertForm.message.trim(),
+      priority: newAlertForm.priority || 'normal',
+      created_at: new Date().toISOString()
+    }
+    const updated = [created, ...storeAlertsList]
+    setStoreAlertsList(updated)
+    await saveStoreAlertsToFirebase(updated)
+    setNewAlertForm({ title: '', message: '', priority: 'normal' })
+    showToast('Store notice published!')
+  }
+
+  const handleUpdateStoreAlert = async (alertId) => {
+    if (!editAlertForm.title.trim() || !editAlertForm.message.trim()) return
+    const updated = storeAlertsList.map(a => a.id === alertId ? {
+      ...a,
+      title: editAlertForm.title.trim(),
+      message: editAlertForm.message.trim(),
+      priority: editAlertForm.priority || 'normal'
+    } : a)
+    setStoreAlertsList(updated)
+    await saveStoreAlertsToFirebase(updated)
+    setEditingAlertId(null)
+    showToast('Store notice updated!')
+  }
+
+  const handleDeleteStoreAlert = async (alertId) => {
+    const updated = storeAlertsList.filter(a => a.id !== alertId)
+    setStoreAlertsList(updated)
+    await saveStoreAlertsToFirebase(updated)
+    showToast('Store notice removed.')
+  }
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type })
@@ -713,17 +916,16 @@ export default function App() {
     })
   }, [checkins, activeTableFilter, advancedFilter, tableSearch, selectedBranchFilter, staffList, branches, tableSort])
 
-  // Paginated Rows for Tasks & Notifications (Filter short: <- 0 1 2 3 ... 10 ->)
-  // When tablePage is 0: Show all records unfiltered by page
-  // When tablePage is 1..10: Show that page (10 records per page)
+  // Paginated Rows for Tasks & Notifications (Bottom Table Pagination)
+  const totalTablePages = Math.max(1, Math.ceil(filteredRows.length / 10))
+
   const paginatedRows = useMemo(() => {
     if (tablePage === 0) return filteredRows
     const pageSize = 10
-    const startIndex = (tablePage - 1) * pageSize
+    const safePage = Math.min(Math.max(1, tablePage), totalTablePages)
+    const startIndex = (safePage - 1) * pageSize
     return filteredRows.slice(startIndex, startIndex + pageSize)
-  }, [filteredRows, tablePage])
-
-  const totalTablePages = Math.max(1, Math.ceil(filteredRows.length / 10))
+  }, [filteredRows, tablePage, totalTablePages])
 
   useEffect(() => {
     if (tablePage !== 0 && tablePage > totalTablePages) {
@@ -743,6 +945,56 @@ export default function App() {
       return false
     })
   }, [staffList, selectedBranchFilter, branches])
+
+  // Audit Rows for Weekly & Monthly Tardiness & Clean Record Audit
+  const auditRows = useMemo(() => {
+    const now = new Date()
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    const periodStart = auditPeriod === 'weekly' ? oneWeekAgo : oneMonthAgo
+
+    // Process strictly real registered staff in the database (no demo data)
+    const list = (staffList || []).map(stf => {
+      const stfCheckins = (checkins || []).filter(c => {
+        if (c.type !== 'employee') return false
+        if (String(c.staff_id) !== String(stf.id) && c.email !== stf.email) return false
+        const cDate = new Date(c.check_in_at || c.created_at)
+        return cDate >= periodStart
+      })
+
+      const totalShifts = stfCheckins.length
+      const lateCount = stfCheckins.filter(c => c.punctuality_status === 'late').length
+      const onTimeCount = Math.max(0, totalShifts - lateCount)
+      const grade = totalShifts > 0 ? Math.round((onTimeCount / totalShifts) * 100) : 100
+
+      const matchedBranch = (branches || []).find(b => b.id === stf.branch_id)
+      const branchDisplay = stf.branch_name || matchedBranch?.name || (branches?.[0]?.name || 'Chafé • Main Store')
+
+      return {
+        id: stf.id,
+        name: stf.name,
+        role: stf.role || 'Staff',
+        branch: branchDisplay,
+        avatar: stf.photo_url || '',
+        totalShifts,
+        onTimeCount,
+        lateCount,
+        grade
+      }
+    })
+
+    // Filter by auditStaffFilter
+    let filtered = list
+    if (auditStaffFilter === 'clean') {
+      filtered = filtered.filter(r => r.lateCount === 0)
+    } else if (auditStaffFilter === 'late') {
+      filtered = filtered.filter(r => r.lateCount > 0)
+    } else if (auditStaffFilter !== 'all') {
+      filtered = filtered.filter(r => String(r.id) === String(auditStaffFilter) || r.name === auditStaffFilter)
+    }
+
+    return filtered
+  }, [staffList, checkins, auditPeriod, auditStaffFilter, branches])
 
   // 12-Hour Time Formatter (e.g. "8:30 AM", "1:15 PM")
   const formatTime = (timeStr) => {
@@ -1542,54 +1794,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* Tasks & Notifications Quick Page & Short Filter Navigator (<- 0 1 2 3 ... 10 ->) */}
-                <div className="table-quick-nav-bar">
-                  <div className="quick-nav-left">
-                    <span className="quick-nav-tag">FILTER / PAGER</span>
-                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
-                      Quick Navigator:
-                    </span>
-                  </div>
-                  <div className="quick-nav-buttons">
-                    <button
-                      type="button"
-                      className="quick-nav-arrow-btn"
-                      title="Previous Page"
-                      disabled={tablePage === 0}
-                      onClick={() => setTablePage(p => (p > 1 ? p - 1 : 0))}
-                    >
-                      <span>&lt;-</span>
-                    </button>
-                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                      <button
-                        key={num}
-                        type="button"
-                        className={`quick-nav-num-btn ${tablePage === num ? 'active' : ''}`}
-                        onClick={() => setTablePage(num)}
-                        title={num === 0 ? '0: Show All Records (Unfiltered Paging)' : `Page ${num} (10 records/page)`}
-                      >
-                        {num}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="quick-nav-arrow-btn"
-                      title="Next Page"
-                      disabled={tablePage === 10}
-                      onClick={() => setTablePage(p => (p === 0 ? 1 : Math.min(10, p + 1)))}
-                    >
-                      <span>-&gt;</span>
-                    </button>
-                  </div>
-                  <div className="quick-nav-summary">
-                    {tablePage === 0 ? (
-                      <span>Showing All <strong>{filteredRows.length}</strong> records</span>
-                    ) : (
-                      <span>Page <strong>{tablePage}</strong> of <strong>{totalTablePages}</strong> • Showing <strong>{paginatedRows.length}</strong> of {filteredRows.length} records</span>
-                    )}
-                  </div>
-                </div>
-
                 {/* Corporate Table */}
                 <div className="table-responsive">
                   <table className="data-table">
@@ -1775,55 +1979,62 @@ export default function App() {
                   </table>
                 </div>
 
-                {/* Table Footer Pagination & Quick Navigator */}
-                <div className="table-quick-nav-bar footer-nav">
-                  <div className="quick-nav-left">
-                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
-                      {tablePage === 0 ? `Displaying all ${filteredRows.length} entries` : `Showing page ${tablePage} of ${totalTablePages}`}
-                    </span>
+                {/* Table Footer Pagination (Only one pager at bottom table) */}
+                <div className="table-pagination-footer">
+                  <div className="table-pagination-info">
+                    {lang === 'kh' ? 'សរុប' : 'Total'}: {filteredRows.length} | {lang === 'kh' ? 'ទំព័រ' : 'Page'} {tablePage}/{totalTablePages}
                   </div>
-                  <div className="quick-nav-buttons">
+                  <div className="table-pagination-controls">
                     <button
                       type="button"
-                      className="quick-nav-arrow-btn"
-                      title="Previous Page"
-                      disabled={tablePage === 0}
-                      onClick={() => setTablePage(p => (p > 1 ? p - 1 : 0))}
+                      className="pager-nav-btn"
+                      disabled={tablePage <= 1}
+                      onClick={() => setTablePage(1)}
+                      title={lang === 'kh' ? 'ទំព័រដំបូង' : 'First Page'}
                     >
-                      <span>&lt;-</span>
+                      «
                     </button>
-                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                      <button
-                        key={num}
-                        type="button"
-                        className={`quick-nav-num-btn ${tablePage === num ? 'active' : ''}`}
-                        onClick={() => setTablePage(num)}
-                        title={num === 0 ? '0: All Records' : `Page ${num}`}
-                      >
-                        {num}
-                      </button>
+                    <button
+                      type="button"
+                      className="pager-nav-btn"
+                      disabled={tablePage <= 1}
+                      onClick={() => setTablePage(p => Math.max(1, p - 1))}
+                      title={lang === 'kh' ? 'ទំព័រមុន' : 'Previous Page'}
+                    >
+                      ‹
+                    </button>
+                    {getPaginationItems(tablePage, totalTablePages).map((item, idx) => (
+                      item === '...' ? (
+                        <span key={`dots-${idx}`} className="pager-ellipsis">...</span>
+                      ) : (
+                        <button
+                          key={item}
+                          type="button"
+                          className={`pager-num-btn ${tablePage === item ? 'active' : ''}`}
+                          onClick={() => setTablePage(item)}
+                        >
+                          {item}
+                        </button>
+                      )
                     ))}
                     <button
                       type="button"
-                      className="quick-nav-arrow-btn"
-                      title="Next Page"
-                      disabled={tablePage === 10}
-                      onClick={() => setTablePage(p => (p === 0 ? 1 : Math.min(10, p + 1)))}
+                      className="pager-nav-btn"
+                      disabled={tablePage >= totalTablePages}
+                      onClick={() => setTablePage(p => Math.min(totalTablePages, p + 1))}
+                      title={lang === 'kh' ? 'ទំព័របន្ទាប់' : 'Next Page'}
                     >
-                      <span>-&gt;</span>
+                      ›
                     </button>
-                  </div>
-                  <div className="quick-nav-summary">
-                    {tablePage !== 0 && (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        style={{ fontSize: '11px', padding: '3px 8px' }}
-                        onClick={() => setTablePage(0)}
-                      >
-                        Show All ({filteredRows.length})
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="pager-nav-btn"
+                      disabled={tablePage >= totalTablePages}
+                      onClick={() => setTablePage(totalTablePages)}
+                      title={lang === 'kh' ? 'ទំព័រចុងក្រោយ' : 'Last Page'}
+                    >
+                      »
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1944,103 +2155,156 @@ export default function App() {
           {/* ============================================================== */}
           {/* TAB 2: PERFORMANCE (Good staff performance, check in late or good) */}
           {/* ============================================================== */}
+          {/* ============================================================== */}
+          {/* TAB 2: PERFORMANCE (Weekly & Monthly Tardiness & Clean Record Audit) */}
+          {/* ============================================================== */}
           {navTab === 'performance' && (
             <div>
-              <div className="content-panel">
-                <div className="panel-header-bar">
-                  <div className="panel-heading-title">STAFF ATTENDANCE & PUNCTUALITY PERFORMANCE</div>
-                  <button className="panel-gear-btn">
-                    <IconGear size={16} />
-                  </button>
+              <div className="audit-panel-card">
+                {/* Header Row matching screenshot */}
+                <div className="audit-header-row">
+                  <div className="audit-title-block">
+                    <span className="audit-title-icon">👥</span>
+                    <div>
+                      <h3 className="audit-title-main">
+                        Weekly & Monthly Tardiness & Clean Record Audit
+                      </h3>
+                      <p className="audit-title-subtitle">
+                        Filter and inspect who has 0 late records vs how many times each staff member arrived late
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="audit-controls-row">
+                    {/* Weekly / Monthly Toggle */}
+                    <div className="audit-toggle-pill">
+                      <button
+                        type="button"
+                        className={`audit-toggle-btn ${auditPeriod === 'weekly' ? 'active' : ''}`}
+                        onClick={() => setAuditPeriod('weekly')}
+                      >
+                        Weekly
+                      </button>
+                      <button
+                        type="button"
+                        className={`audit-toggle-btn ${auditPeriod === 'monthly' ? 'active' : ''}`}
+                        onClick={() => setAuditPeriod('monthly')}
+                      >
+                        Monthly
+                      </button>
+                    </div>
+
+                    {/* Filter Dropdown */}
+                    <select
+                      className="audit-filter-select"
+                      value={auditStaffFilter}
+                      onChange={(e) => setAuditStaffFilter(e.target.value)}
+                    >
+                      <option value="all">All Staff Members</option>
+                      <option value="clean">Never Late (0) Only</option>
+                      <option value="late">Tardy Records Only</option>
+                      {(staffList || []).map(r => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                <div className="table-responsive">
-                  <table className="data-table">
+                {/* Audit Table */}
+                <div className="audit-table-wrap">
+                  <table className="audit-table">
                     <thead>
                       <tr>
-                        <th>Staff Member</th>
-                        <th>Role</th>
-                        <th>Scheduled Shift</th>
-                        <th>Punctuality Score</th>
-                        <th>Status Check (Good vs Late)</th>
-                        <th>Total Hours</th>
+                        <th>Barista / Staff</th>
+                        <th>Branch</th>
+                        <th>Total Shifts ({auditPeriod === 'weekly' ? 'Weekly' : 'Monthly'})</th>
+                        <th>On-Time Count</th>
+                        <th>Late Count</th>
+                        <th>Status Classification</th>
+                        <th style={{ textAlign: 'right' }}>Punctuality Grade</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(performanceData.staff_performance || []).length === 0 ? (
+                      {auditRows.length === 0 ? (
                         <tr>
-                          <td colSpan="6" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
-                            No staff attendance records logged. Shifts and punctuality tracking will appear as staff check in.
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                            {(staffList || []).length === 0 
+                              ? 'No staff members registered yet. Add staff to begin tracking attendance.' 
+                              : 'No staff records match the selected filter.'}
                           </td>
                         </tr>
                       ) : (
-                        (performanceData.staff_performance || []).map((staff) => {
-                          const isGood = staff.punctuality_score >= 90
-                          const matchedStaff = staffList.find(s => s.id === staff.staff_id || s.name === staff.name)
-                          const photo = staff.photo_url || matchedStaff?.photo_url || ''
+                        auditRows.map((staff) => {
+                          const isNeverLate = staff.lateCount === 0
+                          const initials = (staff.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
 
                           return (
-                            <tr key={staff.staff_id}>
+                            <tr key={staff.id}>
                               <td>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                  <div className="table-staff-avatar-wrap">
-                                    {photo ? (
-                                      <img
-                                        src={photo}
-                                        alt={staff.name}
-                                        className="table-staff-avatar-img"
-                                        onError={(e) => {
-                                          e.currentTarget.style.display = 'none'
-                                          const fb = e.currentTarget.nextElementSibling
-                                          if (fb) fb.style.display = 'flex'
-                                        }}
-                                      />
-                                    ) : null}
-                                    <div
-                                      className="table-staff-avatar-initials"
-                                      style={{ display: photo ? 'none' : 'flex' }}
-                                    >
-                                      {(staff.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
-                                    </div>
+                                <div className="audit-staff-cell">
+                                  {staff.avatar ? (
+                                    <img
+                                      src={staff.avatar}
+                                      alt={staff.name}
+                                      className="audit-staff-avatar"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none'
+                                        if (e.currentTarget.nextElementSibling) {
+                                          e.currentTarget.nextElementSibling.style.display = 'flex'
+                                        }
+                                      }}
+                                    />
+                                  ) : null}
+                                  <div
+                                    className="audit-staff-avatar"
+                                    style={{ display: staff.avatar ? 'none' : 'flex' }}
+                                  >
+                                    {initials}
                                   </div>
                                   <div>
-                                    <div className="task-name-text">{staff.name}</div>
-                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>{staff.email}</div>
+                                    <div className="audit-staff-name">{staff.name}</div>
+                                    <div className="audit-staff-role">{staff.role}</div>
                                   </div>
                                 </div>
                               </td>
 
                               <td>
-                                <span className="badge-tag-pill blue">{staff.role}</span>
+                                <span className="audit-branch-text">{staff.branch}</span>
                               </td>
 
                               <td>
-                                <strong>{staff.shift_start} - {staff.shift_end}</strong>
+                                <span className="audit-shifts-text">{staff.totalShifts} Shifts</span>
                               </td>
 
                               <td>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <div className="progress-bar-container" style={{ width: '90px', height: '14px' }}>
-                                    <div
-                                      className="progress-bar-inner"
-                                      style={{
-                                        width: `${staff.punctuality_score}%`,
-                                        backgroundColor: isGood ? '#10b981' : '#ef4444',
-                                      }}
-                                    ></div>
-                                  </div>
-                                  <span style={{ fontWeight: 700 }}>{staff.punctuality_score}%</span>
-                                </div>
+                                <span className="audit-ontime-text">{staff.onTimeCount} Shifts</span>
                               </td>
 
                               <td>
-                                <span className={`badge-status-pill ${isGood ? 'green' : 'red'}`}>
-                                  {isGood ? '✓ Punctual (Good Standing)' : `Late by ${staff.total_late_minutes || 0}m`}
+                                {isNeverLate ? (
+                                  <span className="audit-late-zero">0 Times</span>
+                                ) : (
+                                  <span className="audit-late-flagged">{staff.lateCount} Times</span>
+                                )}
+                              </td>
+
+                              <td>
+                                {isNeverLate ? (
+                                  <span className="audit-badge-clean">Never Late (0)</span>
+                                ) : (
+                                  <span className="audit-badge-late">⚠️ {staff.lateCount} Late Record(s)</span>
+                                )}
+                              </td>
+
+                              <td>
+                                <span className={`audit-grade-text ${
+                                  staff.grade === 100 ? 'audit-grade-100' :
+                                  staff.grade >= 95 ? 'audit-grade-95' :
+                                  staff.grade >= 90 ? 'audit-grade-90' :
+                                  'audit-grade-sub90'
+                                }`}>
+                                  {staff.grade}%
                                 </span>
-                              </td>
-
-                              <td>
-                                <strong>{staff.hours_worked} hrs</strong>
                               </td>
                             </tr>
                           )
@@ -2630,6 +2894,247 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Section: Custom Staff Roles (Admin Created & Managed) */}
+                <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{ marginBottom: '14px' }}>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>👤</span> Custom Roles & Role Assignment (តួនាទីបុគ្គលិក)
+                    </h4>
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                      Admin can create custom roles and assign them to staff members. Changes save live to the system.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
+                    {customRoles.map(r => (
+                      <div
+                        key={r}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          padding: '5px 12px',
+                          borderRadius: '20px',
+                          fontSize: '12.5px',
+                          fontWeight: 600,
+                          color: '#1e293b'
+                        }}
+                      >
+                        <span>{r}</span>
+                        {customRoles.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustomRole(r)}
+                            title="Delete this role"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#94a3b8',
+                              cursor: 'pointer',
+                              fontWeight: 800,
+                              fontSize: '12px',
+                              padding: '0 2px'
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', maxWidth: '400px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Lead Barista, Cashier..."
+                      value={newRoleInput}
+                      onChange={(e) => setNewRoleInput(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ whiteSpace: 'nowrap', padding: '6px 14px' }}
+                      onClick={async () => {
+                        if (newRoleInput.trim()) {
+                          await handleCreateCustomRole(newRoleInput.trim())
+                          setNewRoleInput('')
+                        }
+                      }}
+                    >
+                      + Add Role
+                    </button>
+                  </div>
+                </div>
+
+                {/* Section: Store Alerts & Notices (Admin Managed, Real-time to Staff) */}
+                <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{ marginBottom: '14px' }}>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>📢</span> Store Alerts & Notices (ការជូនដំណឹង & សេចក្តីប្រកាសហាង)
+                    </h4>
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                      Dynamic announcements broadcast live to the staff workspace hub. Staff see these instantly.
+                    </p>
+                  </div>
+
+                  {/* List of current notices */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+                    {storeAlertsList.length === 0 ? (
+                      <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>No store alerts published yet.</p>
+                    ) : (
+                      storeAlertsList.map(alert => (
+                        <div
+                          key={alert.id}
+                          style={{
+                            background: alert.priority === 'high' ? '#eff6ff' : '#f8fafc',
+                            border: `1px solid ${alert.priority === 'high' ? '#bfdbfe' : '#e2e8f0'}`,
+                            borderRadius: '10px',
+                            padding: '12px 14px',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            justifyContent: 'space-between',
+                            gap: '12px'
+                          }}
+                        >
+                          {editingAlertId === alert.id ? (
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={editAlertForm.title}
+                                onChange={(e) => setEditAlertForm({ ...editAlertForm, title: e.target.value })}
+                                placeholder="Alert Title"
+                              />
+                              <textarea
+                                className="form-input"
+                                rows={2}
+                                value={editAlertForm.message}
+                                onChange={(e) => setEditAlertForm({ ...editAlertForm, message: e.target.value })}
+                                placeholder="Alert Message"
+                              />
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <select
+                                  className="form-select"
+                                  value={editAlertForm.priority}
+                                  onChange={(e) => setEditAlertForm({ ...editAlertForm, priority: e.target.value })}
+                                  style={{ width: '130px' }}
+                                >
+                                  <option value="normal">Normal</option>
+                                  <option value="high">High Priority</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  className="btn-primary"
+                                  style={{ padding: '4px 10px', fontSize: '12px' }}
+                                  onClick={() => handleUpdateStoreAlert(alert.id)}
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{ padding: '4px 10px', fontSize: '12px' }}
+                                  onClick={() => setEditingAlertId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                  <strong style={{ fontSize: '13px', color: '#0f172a' }}>{alert.title}</strong>
+                                  <span
+                                    style={{
+                                      fontSize: '10px',
+                                      fontWeight: 700,
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      background: alert.priority === 'high' ? '#dbeafe' : '#e2e8f0',
+                                      color: alert.priority === 'high' ? '#1d4ed8' : '#475569'
+                                    }}
+                                  >
+                                    {alert.priority === 'high' ? 'High Priority' : 'Normal'}
+                                  </span>
+                                </div>
+                                <p style={{ fontSize: '12px', color: '#475569', margin: 0, lineHeight: 1.4 }}>
+                                  {alert.message}
+                                </p>
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{ padding: '3px 8px', fontSize: '11px' }}
+                                  onClick={() => {
+                                    setEditingAlertId(alert.id)
+                                    setEditAlertForm({ title: alert.title, message: alert.message, priority: alert.priority || 'normal' })
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  style={{ background: '#fee2e2', border: 'none', color: '#dc2626', borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+                                  onClick={() => handleDeleteStoreAlert(alert.id)}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Add New Notice Form */}
+                  <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <h5 style={{ margin: '0 0 10px', fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>
+                      + Publish New Store Notice
+                    </h5>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Notice Title (e.g. Health Inspection Scheduled, New Espresso Beans)"
+                        value={newAlertForm.title}
+                        onChange={(e) => setNewAlertForm({ ...newAlertForm, title: e.target.value })}
+                      />
+                      <textarea
+                        className="form-input"
+                        rows={2}
+                        placeholder="Notice description & details for staff..."
+                        value={newAlertForm.message}
+                        onChange={(e) => setNewAlertForm({ ...newAlertForm, message: e.target.value })}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <select
+                          className="form-select"
+                          value={newAlertForm.priority}
+                          onChange={(e) => setNewAlertForm({ ...newAlertForm, priority: e.target.value })}
+                          style={{ width: '140px', fontSize: '12px' }}
+                        >
+                          <option value="normal">Normal Priority</option>
+                          <option value="high">High Priority</option>
+                        </select>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ fontSize: '12px', padding: '6px 14px' }}
+                          onClick={handleSaveStoreAlert}
+                        >
+                          Publish Notice
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                   <button type="submit" className="btn-primary" disabled={settingsSaving}>
                     {settingsSaving ? 'Saving...' : 'Save Settings'}
@@ -2835,40 +3340,77 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Assign Role</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="form-label" style={{ margin: 0 }}>Assign Role (កំណត់តួនាទី) *</label>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '11px', padding: '2px 8px' }}
+                      onClick={() => setIsAddingRoleInline(!isAddingRoleInline)}
+                    >
+                      {isAddingRoleInline ? 'Cancel' : '+ Create Role'}
+                    </button>
+                  </div>
+
+                  {isAddingRoleInline && (
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Enter new custom role title..."
+                        value={newRoleInput}
+                        onChange={(e) => setNewRoleInput(e.target.value)}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                        onClick={async () => {
+                          const created = await handleCreateCustomRole(newRoleInput)
+                          if (created) {
+                            setStaffForm(prev => ({ ...prev, role: created }))
+                            setNewRoleInput('')
+                            setIsAddingRoleInline(false)
+                          }
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
+
                   <select
                     className="form-select"
                     value={staffForm.role}
-                    onChange={(e) => setStaffForm({ ...staffForm, role: e.target.value })}
+                    onChange={(e) => {
+                      if (e.target.value === '__add_new__') {
+                        setIsAddingRoleInline(true)
+                      } else {
+                        setStaffForm({ ...staffForm, role: e.target.value })
+                      }
+                    }}
                   >
-                    <option value="Head Barista">Head Barista</option>
-                    <option value="Senior Latte Artist">Senior Latte Artist</option>
-                    <option value="Barista">Barista</option>
-                    <option value="Artisan Pastry Chef">Artisan Pastry Chef</option>
-                    <option value="Front Counter & Cashier">Front Counter & Cashier</option>
-                    <option value="Shift Supervisor">Shift Supervisor</option>
+                    {customRoles.map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                    <option value="__add_new__">+ Create New Role (Admin)...</option>
                   </select>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
-                    <label className="form-label">Shift Start Time</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="07:00"
+                    <label className="form-label">Shift Start (12-Hour Select Only) *</label>
+                    <TimePicker12Hour
                       value={staffForm.shift_start}
-                      onChange={(e) => setStaffForm({ ...staffForm, shift_start: e.target.value })}
+                      onChange={(val) => setStaffForm({ ...staffForm, shift_start: val })}
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Shift End Time</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="15:30"
+                    <label className="form-label">Shift End (12-Hour Select Only) *</label>
+                    <TimePicker12Hour
                       value={staffForm.shift_end}
-                      onChange={(e) => setStaffForm({ ...staffForm, shift_end: e.target.value })}
+                      onChange={(val) => setStaffForm({ ...staffForm, shift_end: val })}
                     />
                   </div>
                 </div>
@@ -3061,38 +3603,77 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Assign Role</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="form-label" style={{ margin: 0 }}>Assign Role (កំណត់តួនាទី) *</label>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: '11px', padding: '2px 8px' }}
+                      onClick={() => setIsAddingRoleInline(!isAddingRoleInline)}
+                    >
+                      {isAddingRoleInline ? 'Cancel' : '+ Create Role'}
+                    </button>
+                  </div>
+
+                  {isAddingRoleInline && (
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Enter new custom role title..."
+                        value={newRoleInput}
+                        onChange={(e) => setNewRoleInput(e.target.value)}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                        onClick={async () => {
+                          const created = await handleCreateCustomRole(newRoleInput)
+                          if (created) {
+                            setEditingStaff(prev => ({ ...prev, role: created }))
+                            setNewRoleInput('')
+                            setIsAddingRoleInline(false)
+                          }
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
+
                   <select
                     className="form-select"
-                    value={editingStaff.role || 'Barista'}
-                    onChange={(e) => setEditingStaff({ ...editingStaff, role: e.target.value })}
+                    value={editingStaff.role || customRoles[0] || 'Barista'}
+                    onChange={(e) => {
+                      if (e.target.value === '__add_new__') {
+                        setIsAddingRoleInline(true)
+                      } else {
+                        setEditingStaff({ ...editingStaff, role: e.target.value })
+                      }
+                    }}
                   >
-                    <option value="Head Barista">Head Barista</option>
-                    <option value="Senior Latte Artist">Senior Latte Artist</option>
-                    <option value="Barista">Barista</option>
-                    <option value="Artisan Pastry Chef">Artisan Pastry Chef</option>
-                    <option value="Front Counter & Cashier">Front Counter & Cashier</option>
-                    <option value="Shift Supervisor">Shift Supervisor</option>
+                    {customRoles.map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                    <option value="__add_new__">+ Create New Role (Admin)...</option>
                   </select>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group">
-                    <label className="form-label">Shift Start</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={editingStaff.shift_start || '07:30'}
-                      onChange={(e) => setEditingStaff({ ...editingStaff, shift_start: e.target.value })}
+                    <label className="form-label">Shift Start (12-Hour Select Only) *</label>
+                    <TimePicker12Hour
+                      value={editingStaff.shift_start || '07:30 AM'}
+                      onChange={(val) => setEditingStaff({ ...editingStaff, shift_start: val })}
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Shift End</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={editingStaff.shift_end || '16:00'}
-                      onChange={(e) => setEditingStaff({ ...editingStaff, shift_end: e.target.value })}
+                    <label className="form-label">Shift End (12-Hour Select Only) *</label>
+                    <TimePicker12Hour
+                      value={editingStaff.shift_end || '04:00 PM'}
+                      onChange={(val) => setEditingStaff({ ...editingStaff, shift_end: val })}
                     />
                   </div>
                 </div>

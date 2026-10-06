@@ -513,7 +513,15 @@ export async function createCheckinInFirebase(data) {
     const staffList = await getStaffFromFirebase()
     const stf = staffList.find(s => s.id === data.staff_id)
     if (stf && stf.shift_start) {
-      const [sh, sm] = stf.shift_start.split(':').map(Number)
+      let sh = 8, sm = 0
+      const sStr = String(stf.shift_start).trim()
+      const isPM = /pm/i.test(sStr)
+      const isAM = /am/i.test(sStr)
+      const numParts = sStr.replace(/[^0-9:]/g, '').split(':').map(Number)
+      if (!isNaN(numParts[0])) sh = numParts[0]
+      if (!isNaN(numParts[1])) sm = numParts[1]
+      if (isPM && sh < 12) sh += 12
+      if (isAM && sh === 12) sh = 0
       const shiftDate = new Date(now)
       shiftDate.setHours(sh, sm, 0, 0)
       if (now > shiftDate) {
@@ -942,4 +950,169 @@ export async function saveBranchesToFirebase(branchesList) {
   } catch {}
   return branchesList
 }
+
+export const DEFAULT_STORE_ALERTS = [
+  {
+    id: 'alert_1',
+    title: 'Single Origin Bean Refill',
+    message: 'Please replenish Colombian hopper before midday peak.',
+    priority: 'high',
+    target_branch: 'all',
+    isActive: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'alert_2',
+    title: 'Weekly Roster Published',
+    message: 'New schedule is available in your profile. Review your days off in Schedule.',
+    priority: 'normal',
+    target_branch: 'all',
+    isActive: true,
+    created_at: new Date().toISOString()
+  }
+]
+
+export async function getStoreAlertsFromFirebase() {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'store_alerts'))
+    if (snap.exists()) {
+      const data = snap.data()
+      if (Array.isArray(data.list)) {
+        setLocal('store_alerts', data.list)
+        return data.list
+      }
+    }
+  } catch {}
+  const local = getLocal('store_alerts', null)
+  if (local && Array.isArray(local)) return local
+  try {
+    const raw = localStorage.getItem('chafe_store_alerts')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch {}
+  return DEFAULT_STORE_ALERTS
+}
+
+export async function saveStoreAlertsToFirebase(alerts) {
+  try {
+    await setDoc(doc(db, 'settings', 'store_alerts'), { list: alerts, updated_at: new Date().toISOString() }, { merge: true })
+  } catch {}
+  setLocal('store_alerts', alerts)
+  try {
+    localStorage.setItem('chafe_store_alerts', JSON.stringify(alerts))
+  } catch {}
+  return alerts
+}
+
+export function subscribeToStoreAlerts(callback) {
+  try {
+    return onSnapshot(doc(db, 'settings', 'store_alerts'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data()
+        if (Array.isArray(data.list)) {
+          setLocal('store_alerts', data.list)
+          try {
+            localStorage.setItem('chafe_store_alerts', JSON.stringify(data.list))
+          } catch {}
+          callback(data.list)
+          return
+        }
+      }
+      callback(getLocal('store_alerts', DEFAULT_STORE_ALERTS))
+    }, () => {
+      callback(getLocal('store_alerts', DEFAULT_STORE_ALERTS))
+    })
+  } catch {
+    callback(getLocal('store_alerts', DEFAULT_STORE_ALERTS))
+    return () => {}
+  }
+}
+
+export const DEFAULT_ROLES = [
+  'Head Barista',
+  'Senior Latte Artist',
+  'Barista',
+  'Artisan Pastry Chef',
+  'Front Counter & Cashier',
+  'Shift Supervisor'
+]
+
+export async function getCustomRolesFromFirebase() {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'roles'))
+    if (snap.exists()) {
+      const data = snap.data()
+      if (Array.isArray(data.list) && data.list.length > 0) {
+        setLocal('roles', data.list)
+        return data.list
+      }
+    }
+  } catch {}
+  const local = getLocal('roles', null)
+  if (local && Array.isArray(local) && local.length > 0) return local
+  try {
+    const raw = localStorage.getItem('chafe_custom_roles')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch {}
+  return DEFAULT_ROLES
+}
+
+export async function saveCustomRolesToFirebase(roles) {
+  try {
+    await setDoc(doc(db, 'settings', 'roles'), { list: roles, updated_at: new Date().toISOString() }, { merge: true })
+  } catch {}
+  setLocal('roles', roles)
+  try {
+    localStorage.setItem('chafe_custom_roles', JSON.stringify(roles))
+  } catch {}
+  return roles
+}
+
+export const DEFAULT_LEAVE_TYPES = [
+  { id: 'day_off', label: 'Regular Day Off', icon: '🌴', color: '#0284c7', bg: '#e0f2fe', border: '#bae6fd' },
+  { id: 'annual_leave', label: 'Annual Leave / Vacation', icon: '🏖️', color: '#059669', bg: '#d1fae5', border: '#a7f3d0' },
+  { id: 'sick_leave', label: 'Medical / Sick Leave', icon: '🏥', color: '#dc2626', bg: '#fee2e2', border: '#fecaca' },
+  { id: 'personal', label: 'Personal Leave', icon: '📋', color: '#7c3aed', bg: '#ede9fe', border: '#ddd6fe' },
+  { id: 'holiday', label: 'Public Holiday Off', icon: '🌟', color: '#d97706', bg: '#fef3c7', border: '#fde68a' },
+]
+
+export async function getLeaveTypesFromFirebase() {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'leave_types'))
+    if (snap.exists()) {
+      const data = snap.data()
+      if (Array.isArray(data.list) && data.list.length > 0) {
+        setLocal('leave_types', data.list)
+        return data.list
+      }
+    }
+  } catch {}
+  const local = getLocal('leave_types', null)
+  if (local && Array.isArray(local) && local.length > 0) return local
+  try {
+    const raw = localStorage.getItem('chafe_leave_types')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch {}
+  return DEFAULT_LEAVE_TYPES
+}
+
+export async function saveLeaveTypesToFirebase(leaveTypes) {
+  try {
+    await setDoc(doc(db, 'settings', 'leave_types'), { list: leaveTypes, updated_at: new Date().toISOString() }, { merge: true })
+  } catch {}
+  setLocal('leave_types', leaveTypes)
+  try {
+    localStorage.setItem('chafe_leave_types', JSON.stringify(leaveTypes))
+  } catch {}
+  return leaveTypes
+}
+
 

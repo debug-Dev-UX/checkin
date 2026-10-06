@@ -946,6 +946,107 @@ body {
   border-radius: 0 0 12px 12px;
 }
 
+/* Bottom Table Pagination - Matching Screenshots (សរុប: X | ទំព័រ Y/Z  « ‹ 1 2 3 ... 49 › ») */
+.table-pagination-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 18px;
+  padding: 12px 20px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0 0 12px 12px;
+  flex-wrap: wrap;
+}
+
+.table-pagination-info {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+.table-pagination-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pager-nav-btn,
+.pager-num-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.pager-nav-btn {
+  color: #64748b;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pager-nav-btn:hover:not(:disabled),
+.pager-num-btn:hover:not(.active) {
+  background: #e2e8f0;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.pager-num-btn.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-color: #1d4ed8 !important;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+}
+
+.pager-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: #f8fafc;
+  border-color: #f1f5f9;
+  color: #94a3b8;
+}
+
+.pager-ellipsis {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #94a3b8;
+  user-select: none;
+}
+
+/* 12-Hour Select Time Picker */
+.time-picker-12h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.time-picker-select {
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 8px 10px;
+}
+
 .quick-nav-left {
   display: flex;
   align-items: center;
@@ -7672,5 +7773,254 @@ body {
 .scan-success-done-btn:active {
   transform: translateY(0);
 }
+
+/* ============================================================== */
+/* WEEKLY & MONTHLY TARDINESS & CLEAN RECORD AUDIT (EXACT SCREENSHOT) */
+/* ============================================================== */
+.audit-panel-card {
+  background: #0b1120;
+  border: 1px solid #1e293b;
+  border-radius: 16px;
+  padding: 24px 28px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  color: #f8fafc;
+  margin-bottom: 24px;
+}
+
+.audit-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.audit-title-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.audit-title-icon {
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.audit-title-main {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: -0.3px;
+}
+
+.audit-title-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.audit-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.audit-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 9999px;
+  padding: 3px;
+}
+
+.audit-toggle-btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+  background: transparent;
+  color: #94a3b8;
+}
+
+.audit-toggle-btn.active {
+  background: #f59e0b;
+  color: #0f172a;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+}
+
+.audit-filter-select {
+  background: #020617;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 9999px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.audit-filter-select:focus {
+  border-color: #f59e0b;
+}
+
+.audit-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.audit-table th {
+  padding: 14px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  border-bottom: 1px solid #1e293b;
+  white-space: nowrap;
+}
+
+.audit-table td {
+  padding: 16px;
+  vertical-align: middle;
+  border-bottom: 1px solid #1e293b;
+  font-size: 13.5px;
+}
+
+.audit-table tr:hover td {
+  background: rgba(30, 41, 59, 0.4);
+}
+
+.audit-table tr:last-child td {
+  border-bottom: none;
+}
+
+.audit-staff-cell {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.audit-staff-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid #334155;
+  background: #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  flex-shrink: 0;
+}
+
+.audit-staff-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.25;
+}
+
+.audit-staff-role {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 3px;
+}
+
+.audit-branch-text {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.audit-shifts-text {
+  color: #f1f5f9;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.audit-ontime-text {
+  color: #10b981;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.audit-late-zero {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.audit-late-flagged {
+  color: #f43f5e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.audit-badge-clean {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 14px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(6, 78, 59, 0.7);
+  color: #34d399;
+  border: 1px solid #065f46;
+}
+
+.audit-badge-late {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 14px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(69, 10, 10, 0.7);
+  color: #f87171;
+  border: 1px solid #7f1d1d;
+}
+
+.audit-grade-text {
+  font-size: 16px;
+  font-weight: 800;
+  text-align: right;
+  display: block;
+}
+
+.audit-grade-100 {
+  color: #10b981;
+}
+
+.audit-grade-95 {
+  color: #34d399;
+}
+
+.audit-grade-90 {
+  color: #facc15;
+}
+
+.audit-grade-sub90 {
+  color: #fb923c;
+}
+
 
 
