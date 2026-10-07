@@ -447,3 +447,36 @@ test('Admin Settings Suite Category Navigation & Loading Page Holographic Orb', 
   assert.match(loadingContent, /loading\.\.\./, 'LoadingPage must display lowercase loading... text at bottom')
 })
 
+test('Staff Mobile Phone Sanitization and Staff Password Change', async () => {
+  const profileViewPath = path.resolve('src/components/ProfileView.jsx')
+  const profileViewContent = fs.readFileSync(profileViewPath, 'utf-8')
+
+  // Import parsePhoneAndCountry function directly from phoneService
+  const { parsePhoneAndCountry } = await import('../src/services/phoneService.js')
+
+  // Verify corrupt multi-concatenated string is correctly sanitized
+  const corruptInput = '+855 +855 +855 +855 +855 123456'
+  const cleaned = parsePhoneAndCountry(corruptInput)
+  assert.strictEqual(cleaned.code, '+855', 'Country code must be +855')
+  assert.strictEqual(cleaned.number, '123456', 'Corrupt phone string must be cleaned down to 123456')
+
+  // Verify normal formatted phone number
+  const normalInput = '+855 012 345 678'
+  const normalParsed = parsePhoneAndCountry(normalInput)
+  assert.strictEqual(normalParsed.code, '+855', 'Country code must be +855')
+  assert.strictEqual(normalParsed.number, '012 345 678', 'Normal phone digits preserved')
+
+  // Verify other country codes
+  const usInput = '+1 555 123 4567'
+  const usParsed = parsePhoneAndCountry(usInput)
+  assert.strictEqual(usParsed.code, '+1', 'Country code must be +1')
+  assert.strictEqual(usParsed.number, '555 123 4567', 'US phone digits preserved')
+
+  // Verify password change features exist in ProfileView
+  assert.match(profileViewContent, /newPassword/, 'ProfileView must manage newPassword state')
+  assert.match(profileViewContent, /confirmPassword/, 'ProfileView must manage confirmPassword state')
+  assert.match(profileViewContent, /handleSaveModalPassword/, 'ProfileView must have handleSaveModalPassword for modal updates')
+  assert.match(profileViewContent, /edit-password-section/, 'ProfileView must render edit-password-section in Edit Profile')
+})
+
+

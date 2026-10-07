@@ -28,6 +28,9 @@ import { getBranches } from '../services/locationService'
 import { useLanguage } from '../context/LanguageContext'
 import { updateStaffInFirebase } from '../services/firebaseService'
 import { getAccountPermissions, saveAccountPermissions } from '../services/cookieService'
+import { parsePhoneAndCountry, formatCleanPhone } from '../services/phoneService'
+
+export { parsePhoneAndCountry, formatCleanPhone }
 
 export default function ProfileView({
   user,
@@ -63,13 +66,48 @@ export default function ProfileView({
   const [isEditing, setIsEditing] = useState(false)
   const [firstName, setFirstName] = useState(initialFirst)
   const [lastName, setLastName] = useState(initialLast)
-  const [countryCode, setCountryCode] = useState('+855')
-  const [phone, setPhone] = useState(user?.phone || '')
+
+  // Phone parsing & sanitization to avoid duplicate country codes
+  const initialParsedPhone = parsePhoneAndCountry(user?.phone)
+  const [countryCode, setCountryCode] = useState(initialParsedPhone.code)
+  const [phone, setPhone] = useState(initialParsedPhone.number)
+
+  useEffect(() => {
+    if (user?.phone !== undefined) {
+      const parsed = parsePhoneAndCountry(user.phone)
+      setCountryCode(parsed.code)
+      setPhone(parsed.number)
+    }
+  }, [user?.phone])
+
+  const handlePhoneChange = (e) => {
+    const val = e.target.value
+    const parsed = parsePhoneAndCountry(val)
+    if (parsed.number !== val && parsed.code) {
+      setCountryCode(parsed.code)
+      setPhone(parsed.number)
+    } else {
+      setPhone(val.replace(/[^\d\s-]/g, ''))
+    }
+  }
+
   const [email, setEmail] = useState(user?.email || '')
   const [gender, setGender] = useState(user?.gender || 'Male')
   const [avatarUrl, setAvatarUrl] = useState(
     user?.photo_url || localStorage.getItem('chafe_profile_avatar') || ''
   )
+
+  // Password change states in Edit Profile form
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+
+  // Password change states in dedicated Password Modal
+  const [modalNewPassword, setModalNewPassword] = useState('')
+  const [modalConfirmPassword, setModalConfirmPassword] = useState('')
+  const [showModalNewPassword, setShowModalNewPassword] = useState(false)
+  const [showModalConfirmPassword, setShowModalConfirmPassword] = useState(false)
 
   // Interactive menu modals: 'language' | 'location' | 'display' | 'feed' | 'settings' | 'alerts' | 'password' | null
   const [activeModal, setActiveModal] = useState(initialModal)
@@ -236,7 +274,11 @@ export default function ProfileView({
       setLastName(parts.slice(1).join(' ') || '')
     }
     if (user?.email) setEmail(user.email)
-    if (user?.phone) setPhone(user.phone)
+    if (user?.phone) {
+      const parsed = parsePhoneAndCountry(user.phone)
+      setCountryCode(parsed.code)
+      setPhone(parsed.number)
+    }
     if (user?.photo_url) setAvatarUrl(user.photo_url)
     if (user?.gender) setGender(user.gender)
   }, [user])
@@ -276,12 +318,33 @@ export default function ProfileView({
 
   // Save profile changes
   const handleSaveProfile = () => {
+    // Validate password if user entered one
+    if (newPassword.trim() || confirmPassword.trim()) {
+      if (newPassword.trim().length < 4) {
+        showToast?.(
+          appLang === 'kh' ? 'ពាក្យសម្ងាត់ត្រូវមានយ៉ាងហោចណាស់ ៤ តួអក្សរ។' : 'Password must be at least 4 characters.',
+          'error'
+        )
+        return
+      }
+      if (newPassword.trim() !== confirmPassword.trim()) {
+        showToast?.(
+          appLang === 'kh' ? 'ពាក្យសម្ងាត់ទាំងពីរមិនដូចគ្នាទេ។' : 'Passwords do not match.',
+          'error'
+        )
+        return
+      }
+    }
+
     const combinedName = `${firstName.trim()} ${lastName.trim()}`.trim() || user?.name || 'Staff Member'
+    const cleanNumber = parsePhoneAndCountry(phone).number.trim()
+    const finalFormattedPhone = cleanNumber ? `${countryCode} ${cleanNumber}` : ''
+
     const updatedUser = {
       ...(user || {}),
       name: combinedName,
       email: email.trim(),
-      phone: phone.trim() ? `${countryCode} ${phone.trim()}` : '',
+      phone: finalFormattedPhone,
       gender,
       photo_url: avatarUrl,
       // Strictly maintain admin-assigned branch & location (cannot be changed by staff)
@@ -291,8 +354,68 @@ export default function ProfileView({
       location: user?.location || user?.branch_name || 'Chafé • Kohke',
     }
 
+    if (newPassword.trim()) {
+      updatedUser.password = newPassword.trim()
+    }
+
     if (onUpdateUser) {
       onUpdateUser(updatedUser)
+    }
+
+    if (user?.id && newPassword.trim()) {
+      updateStaffInFirebase(user.id, { password: newPassword.trim() }).catch(() => {})
+    }
+
+    try {
+      localStorage.setItem('chafe_custom_staff_profile', JSON.stringify(updatedUser))
+    } catch {
+      // quiet catch
+    }
+
+    const successMsg = newPassword.trim()
+      ? (appLang === 'kh' ? 'បានរក្សាទុកព័ត៌មាន និងពាក្យសម្ងាត់ថ្មីរួចរាល់!' : 'Profile & new password saved successfully!')
+      : (appLang === 'kh' ? 'បានរក្សាទុកព័ត៌មានរួចរាល់!' : 'Profile saved successfully!')
+    showToast?.(successMsg, 'success')
+    setNewPassword('')
+    setConfirmPassword('')
+    setIsEditing(false)
+  }
+
+  // Handle password update directly from Password Modal
+  const handleSaveModalPassword = async () => {
+    if (!modalNewPassword.trim()) {
+      showToast?.(
+        appLang === 'kh' ? 'សូមបញ្ចូលពាក្យសម្ងាត់ថ្មី' : 'Please enter a new password.',
+        'error'
+      )
+      return
+    }
+    if (modalNewPassword.trim().length < 4) {
+      showToast?.(
+        appLang === 'kh' ? 'ពាក្យសម្ងាត់ត្រូវមានយ៉ាងហោចណាស់ ៤ តួអក្សរ។' : 'Password must be at least 4 characters.',
+        'error'
+      )
+      return
+    }
+    if (modalNewPassword.trim() !== modalConfirmPassword.trim()) {
+      showToast?.(
+        appLang === 'kh' ? 'ពាក្យសម្ងាត់ទាំងពីរមិនដូចគ្នាទេ។' : 'Passwords do not match.',
+        'error'
+      )
+      return
+    }
+
+    const updatedUser = {
+      ...(user || {}),
+      password: modalNewPassword.trim(),
+    }
+
+    if (onUpdateUser) {
+      await onUpdateUser(updatedUser)
+    }
+
+    if (user?.id) {
+      await updateStaffInFirebase(user.id, { password: modalNewPassword.trim() })
     }
 
     try {
@@ -302,10 +425,12 @@ export default function ProfileView({
     }
 
     showToast?.(
-      appLang === 'kh' ? 'បានរក្សាទុកព័ត៌មានរួចរាល់!' : 'Profile saved successfully!',
+      appLang === 'kh' ? 'បានប្តូរពាក្យសម្ងាត់បានជោគជ័យ!' : 'Password changed successfully!',
       'success'
     )
-    setIsEditing(false)
+    setModalNewPassword('')
+    setModalConfirmPassword('')
+    setActiveModal(null)
   }
 
   const handleSelectLanguage = (langCode) => {
@@ -637,7 +762,7 @@ export default function ProfileView({
 
                 <div className="mobile-row-divider" />
 
-                {/* Password Managed by Admin */}
+                {/* Account Password */}
                 <button
                   type="button"
                   className="profile-menu-item mobile-item-row"
@@ -652,8 +777,8 @@ export default function ProfileView({
                     </span>
                   </div>
                   <div className="profile-menu-right">
-                    <span className="mobile-pill-badge badge-amber">
-                      Admin Managed
+                    <span className="mobile-pill-badge badge-blue">
+                      {appLang === 'kh' ? 'ប្តូរពាក្យសម្ងាត់' : 'Change Password'}
                     </span>
                     <span className="profile-menu-chevron">
                       <IconChevronRight size={17} />
@@ -802,7 +927,7 @@ export default function ProfileView({
                     type="tel"
                     className="edit-input-field phone-field"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={handlePhoneChange}
                     placeholder="12 345 678"
                   />
                 </div>
@@ -839,6 +964,117 @@ export default function ProfileView({
                     {appLang === 'kh' ? 'មិនបញ្ជាក់' : 'Prefer not to say'}
                   </option>
                 </select>
+              </div>
+
+              {/* 6. Change Password (Optional) */}
+              <div className="edit-password-section" style={{
+                background: 'rgba(2, 132, 199, 0.04)',
+                border: '1.5px solid rgba(2, 132, 199, 0.22)',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                marginBottom: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '8px',
+                      background: 'rgba(2, 132, 199, 0.15)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#0284c7'
+                    }}>
+                      <IconLock size={15} color="#0284c7" />
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: '13px', color: 'inherit', display: 'block' }}>
+                        {appLang === 'kh' ? 'ប្តូរពាក្យសម្ងាត់' : 'Change Password'}
+                      </strong>
+                      <span style={{ fontSize: '10.5px', color: '#64748b' }}>
+                        {appLang === 'kh' ? 'ទុកទទេប្រសិនបើមិនចង់ប្តូរ' : 'Leave empty to keep current password'}
+                      </span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#0284c7', background: 'rgba(2, 132, 199, 0.1)', padding: '2px 8px', borderRadius: '6px' }}>
+                    {appLang === 'kh' ? 'ស្រេចចិត្ត' : 'Optional'}
+                  </span>
+                </div>
+
+                {/* New Password Field */}
+                <div className="edit-input-group" style={{ marginBottom: '8px' }}>
+                  <label className="edit-input-label">
+                    {appLang === 'kh' ? 'ពាក្យសម្ងាត់ថ្មី (យ៉ាងហោច ៤ តួ)' : 'New Password (min. 4 chars)'}
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      className="edit-input-field"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder={appLang === 'kh' ? 'បញ្ចូលពាក្យសម្ងាត់ថ្មី' : 'Enter new password'}
+                      style={{ paddingRight: '36px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '4px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#64748b',
+                        padding: '4px',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                      title={showNewPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showNewPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm Password Field */}
+                <div className="edit-input-group" style={{ marginBottom: '2px' }}>
+                  <label className="edit-input-label">
+                    {appLang === 'kh' ? 'បញ្ជាក់ពាក្យសម្ងាត់ថ្មី' : 'Confirm New Password'}
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      className="edit-input-field"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder={appLang === 'kh' ? 'បញ្ចូលពាក្យសម្ងាត់ថ្មីម្តងទៀត' : 'Re-enter new password'}
+                      style={{ paddingRight: '36px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '4px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#64748b',
+                        padding: '4px',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                      title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showConfirmPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* 6. Store Branch (Assigned by Admin - Locked) */}
@@ -1408,40 +1644,130 @@ export default function ProfileView({
                 </div>
               )}
 
-              {/* PASSWORD MODAL (Locked: Staff cannot change password) */}
+              {/* PASSWORD MODAL (Interactive Staff Password Change) */}
               {activeModal === 'password' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'center', padding: '10px 4px' }}>
-                  <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fff7ed', border: '2px solid #fed7aa', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}>
-                    <IconLock size={26} color="#ea580c" />
-                  </div>
-                  <div>
-                    <h4 style={{ margin: '0 0 6px', fontSize: '15px', color: '#0f172a', fontWeight: 800 }}>
-                      {appLang === 'kh' ? 'ពាក្យសម្ងាត់គ្រប់គ្រងដោយ Admin' : 'Password Managed by Admin'}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '6px 2px' }}>
+                  <div style={{ textAlign: 'center', marginBottom: '2px' }}>
+                    <div style={{
+                      width: '52px',
+                      height: '52px',
+                      borderRadius: '50%',
+                      background: 'rgba(2, 132, 199, 0.12)',
+                      border: '1.5px solid rgba(2, 132, 199, 0.25)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 8px',
+                      color: '#0284c7'
+                    }}>
+                      <IconLock size={24} color="#0284c7" />
+                    </div>
+                    <h4 style={{ margin: '0 0 4px', fontSize: '16px', color: 'inherit', fontWeight: 800 }}>
+                      {appLang === 'kh' ? 'ប្តូរពាក្យសម្ងាត់គណនី' : 'Change Account Password'}
                     </h4>
-                    <p style={{ margin: 0, fontSize: '12.5px', color: '#64748b', lineHeight: 1.5 }}>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
                       {appLang === 'kh'
-                        ? 'ដើម្បីសុវត្ថិភាពនិងការគ្រប់គ្រងប្រព័ន្ធ បុគ្គលិកមិនអាចផ្លាស់ប្តូរពាក្យសម្ងាត់ដោយខ្លួនឯងបានទេ។ ប្រសិនបើលោកអ្នកត្រូវការផ្លាស់ប្តូរ ឬភ្លេចពាក្យសម្ងាត់ សូមទាក់ទង Admin ឬអ្នកគ្រប់គ្រងហាងផ្ទាល់។'
-                        : 'For security and system compliance, staff cannot change account passwords directly. All credentials are administered by store management. Please contact your manager or admin to request a credential update.'}
+                        ? 'បញ្ចូលពាក្យសម្ងាត់ថ្មីយ៉ាងហោច ៤ តួអក្សរ'
+                        : 'Enter your new password below (min. 4 characters)'}
                     </p>
                   </div>
-                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', fontSize: '12px', color: '#334155', textAlign: 'left' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ color: '#64748b' }}>Account:</span>
-                      <strong>{user?.name || 'Staff Member'}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#64748b' }}>Role:</span>
-                      <strong style={{ color: '#059669' }}>{user?.role || 'Barista'}</strong>
+
+                  {/* New Password input */}
+                  <div className="edit-input-group" style={{ marginBottom: '6px' }}>
+                    <label className="edit-input-label">
+                      {appLang === 'kh' ? 'ពាក្យសម្ងាត់ថ្មី' : 'New Password'}
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showModalNewPassword ? 'text' : 'password'}
+                        className="edit-input-field"
+                        value={modalNewPassword}
+                        onChange={(e) => setModalNewPassword(e.target.value)}
+                        placeholder={appLang === 'kh' ? 'បញ្ចូលពាក្យសម្ងាត់ថ្មី (យ៉ាងហោច ៤ តួ)' : 'Enter new password'}
+                        style={{ paddingRight: '36px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowModalNewPassword(!showModalNewPassword)}
+                        style={{
+                          position: 'absolute',
+                          right: '4px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#64748b',
+                          padding: '4px',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                        title={showModalNewPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showModalNewPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                      </button>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="edit-submit-btn"
-                    onClick={() => setActiveModal(null)}
-                    style={{ width: '100%', padding: '10px', borderRadius: '10px' }}
-                  >
-                    {appLang === 'kh' ? 'យល់ព្រម' : 'Understood'}
-                  </button>
+
+                  {/* Confirm Password input */}
+                  <div className="edit-input-group" style={{ marginBottom: '4px' }}>
+                    <label className="edit-input-label">
+                      {appLang === 'kh' ? 'បញ្ជាក់ពាក្យសម្ងាត់ថ្មី' : 'Confirm New Password'}
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showModalConfirmPassword ? 'text' : 'password'}
+                        className="edit-input-field"
+                        value={modalConfirmPassword}
+                        onChange={(e) => setModalConfirmPassword(e.target.value)}
+                        placeholder={appLang === 'kh' ? 'បញ្ចូលពាក្យសម្ងាត់ថ្មីម្តងទៀត' : 'Re-enter new password'}
+                        style={{ paddingRight: '36px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowModalConfirmPassword(!showModalConfirmPassword)}
+                        style={{
+                          position: 'absolute',
+                          right: '4px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#64748b',
+                          padding: '4px',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                        title={showModalConfirmPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showModalConfirmPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                    <button
+                      type="button"
+                      className="edit-submit-btn"
+                      style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', flex: 1, padding: '10px' }}
+                      onClick={() => {
+                        setModalNewPassword('')
+                        setModalConfirmPassword('')
+                        setActiveModal(null)
+                      }}
+                    >
+                      {appLang === 'kh' ? 'បោះបង់' : 'Cancel'}
+                    </button>
+                    <button
+                      type="button"
+                      className="edit-submit-btn"
+                      style={{ flex: 1.6, padding: '10px' }}
+                      onClick={handleSaveModalPassword}
+                    >
+                      {appLang === 'kh' ? 'រក្សាទុកពាក្យសម្ងាត់' : 'Update Password'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
