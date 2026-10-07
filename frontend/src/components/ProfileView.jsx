@@ -477,26 +477,15 @@ export default function ProfileView({
                   onClick={() => setActiveModal('alerts')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#ec4899', background: '#fdf2f8', padding: '6px', borderRadius: '10px' }}>
-                      <IconBell size={18} color="#ec4899" />
+                    <span className="profile-menu-icon mobile-icon-chip icon-rose">
+                      <IconBell size={18} />
                     </span>
                     <span className="profile-menu-label">
                       {appLang === 'kh' ? 'សេចក្តីប្រកាសហាង' : 'Store Alerts & Notices'}
                     </span>
                   </div>
                   <div className="profile-menu-right">
-                    <span style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: (activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? '#ea580c' : '#10b981',
-                      background: (activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? '#fff7ed' : '#ecfdf5',
-                      border: `1px solid ${(activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? '#ffedd5' : '#a7f3d0'}`,
-                      padding: '2px 8px',
-                      borderRadius: '6px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}>
+                    <span className={`mobile-pill-badge ${(activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? 'badge-orange' : 'badge-emerald'}`}>
                       <IconBell size={11} />
                       <span>{(activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? `${activeAdminNotifs.length + activeStoreAlerts.length} Active` : 'All Clear'}</span>
                     </span>
@@ -520,8 +509,8 @@ export default function ProfileView({
                   onClick={() => setActiveModal('language')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#0284c7', background: '#eff6ff', padding: '6px', borderRadius: '10px' }}>
-                      <IconGlobe size={18} color="#0284c7" />
+                    <span className="profile-menu-icon mobile-icon-chip icon-blue">
+                      <IconGlobe size={18} />
                     </span>
                     <span className="profile-menu-label">
                       {appLang === 'kh' ? 'ភាសា' : 'Language'}
@@ -546,8 +535,8 @@ export default function ProfileView({
                   onClick={() => setActiveModal('display')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#8b5cf6', background: '#f5f3ff', padding: '6px', borderRadius: '10px' }}>
-                      <IconDeviceMobile size={18} color="#8b5cf6" />
+                    <span className="profile-menu-icon mobile-icon-chip icon-purple">
+                      <IconDeviceMobile size={18} />
                     </span>
                     <span className="profile-menu-label">
                       {appLang === 'kh' ? 'ការបង្ហាញ' : 'Display Theme'}
@@ -572,8 +561,8 @@ export default function ProfileView({
                   onClick={() => setActiveModal('feed')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#f59e0b', background: '#fffbeb', padding: '6px', borderRadius: '10px' }}>
-                      <IconBell size={18} color="#f59e0b" />
+                    <span className="profile-menu-icon mobile-icon-chip icon-amber">
+                      <IconBell size={18} />
                     </span>
                     <span className="profile-menu-label">
                       {appLang === 'kh' ? 'ចំណូលចិត្តការជូនដំណឹង' : 'Notification Feeds'}
@@ -598,21 +587,21 @@ export default function ProfileView({
                   onClick={() => setActiveModal('settings')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#10b981', background: '#ecfdf5', padding: '6px', borderRadius: '10px' }}>
-                      <IconShield size={18} color="#10b981" />
+                    <span className="profile-menu-icon mobile-icon-chip icon-emerald">
+                      <IconShield size={18} />
                     </span>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                       <span className="profile-menu-label">
                         {appLang === 'kh' ? 'កាមេរ៉ា & ទីតាំង (Don\'t Ask)' : 'Camera, GPS & Don\'t Ask'}
                       </span>
-                      <span style={{ fontSize: '10.5px', color: '#64748b' }}>
+                      <span className="mobile-sublabel-text">
                         {accountPerms.dontAskAgain ? '✓ Don\'t Ask Staff Again Active' : 'Persistent 365-Day Cookie'}
                       </span>
                     </div>
                   </div>
                   <div className="profile-menu-right">
-                    <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#059669', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '2px 8px', borderRadius: '6px' }}>
-                      {accountPerms.dontAskAgain ? 'Don\'t Ask' : 'Configured'}
+                    <span className={`mobile-pill-badge ${accountPerms.dontAskAgain ? 'badge-emerald' : 'badge-blue'}`}>
+                      {accountPerms.dontAskAgain ? "Don't Ask" : 'Configured'}
                     </span>
                     <span className="profile-menu-chevron">
                       <IconChevronRight size={17} />
@@ -629,8 +618,8 @@ export default function ProfileView({
                   onClick={() => setActiveModal('location')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#06b6d4', background: '#ecfeff', padding: '6px', borderRadius: '10px' }}>
-                      <IconMapPin size={18} color="#06b6d4" />
+                    <span className="profile-menu-icon mobile-icon-chip icon-cyan">
+                      <IconMapPin size={18} />
                     </span>
                     <span className="profile-menu-label">
                       {appLang === 'kh' ? 'សាខាហាង' : 'Store Branch Location'}
@@ -655,15 +644,15 @@ export default function ProfileView({
                   onClick={() => setActiveModal('password')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#ea580c', background: '#fff7ed', padding: '6px', borderRadius: '10px' }}>
-                      <IconLock size={18} color="#ea580c" />
+                    <span className="profile-menu-icon mobile-icon-chip icon-orange">
+                      <IconLock size={18} />
                     </span>
                     <span className="profile-menu-label">
                       {appLang === 'kh' ? 'ពាក្យសម្ងាត់គណនី' : 'Account Password'}
                     </span>
                   </div>
                   <div className="profile-menu-right">
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#ea580c', background: '#fff7ed', border: '1px solid #ffedd5', padding: '2px 8px', borderRadius: '6px' }}>
+                    <span className="mobile-pill-badge badge-amber">
                       Admin Managed
                     </span>
                     <span className="profile-menu-chevron">
@@ -681,8 +670,8 @@ export default function ProfileView({
                   onClick={onLogout}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon text-red" style={{ background: '#fef2f2', padding: '6px', borderRadius: '10px' }}>
-                      <IconDoorOut size={18} color="#ef4444" />
+                    <span className="profile-menu-icon mobile-icon-chip icon-red">
+                      <IconDoorOut size={18} />
                     </span>
                     <span className="profile-menu-label text-red">
                       {appLang === 'kh' ? 'ចាកចេញពីគណនី' : 'Sign Out of Account'}

@@ -1179,8 +1179,8 @@ export default function StaffPortal({
           </div>
         )}
 
-        {/* Scheduled Day Off Banner (if applicable today) */}
-        {todayDayoff && (
+        {/* Scheduled Day Off Banner (if applicable today, displayed on home dashboard) */}
+        {todayDayoff && activeTab === 'clock' && (
           <div className="pro-dayoff-alert-banner" style={{ margin: '14px 18px 0' }}>
             <div className="pro-dayoff-icon"><IconSun size={28} color="#0284c7" /></div>
             <div className="pro-dayoff-info">
