@@ -353,3 +353,36 @@ test('Telegram Alert Integration: Service, config, and admin customizable featur
   assert.match(staffPortalContent, /notifyTelegramCheckout/, 'StaffPortal must dispatch notifyTelegramCheckout')
   assert.match(staffPortalContent, /notifyTelegramStaffMessage/, 'StaffPortal must dispatch notifyTelegramStaffMessage')
 })
+
+test('Admin Custom Message Alert & Template Customization: Formats, placeholders, and broadcast are supported', async () => {
+  const {
+    DEFAULT_TELEGRAM_CONFIG,
+    renderTemplate,
+    notifyTelegramCustomAlert,
+  } = await import('../src/services/telegramService.js')
+
+  // Verify template placeholders in default config
+  assert.ok(DEFAULT_TELEGRAM_CONFIG.template_checkin.includes('{name}'))
+  assert.ok(DEFAULT_TELEGRAM_CONFIG.template_checkin.includes('{branch}'))
+  assert.ok(DEFAULT_TELEGRAM_CONFIG.template_checkout.includes('{duration}'))
+  assert.ok(DEFAULT_TELEGRAM_CONFIG.template_late.includes('{late_minutes}'))
+  assert.ok(DEFAULT_TELEGRAM_CONFIG.template_leave.includes('{reason}'))
+  assert.ok(DEFAULT_TELEGRAM_CONFIG.template_custom.includes('{message}'))
+
+  // Verify renderTemplate correctly substitutes placeholders
+  const rendered = renderTemplate('Hello {name} from {branch}!', { name: 'Sophea', branch: 'Kohke' })
+  assert.strictEqual(rendered, 'Hello Sophea from Kohke!')
+
+  // Verify notifyTelegramCustomAlert handles disabled mode gracefully
+  const customAlertRes = await notifyTelegramCustomAlert({ title: 'Test Alert', message: 'Hello' })
+  assert.strictEqual(customAlertRes.success, false)
+
+  // Verify App.jsx includes custom alert broadcaster and template editor
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
+  assert.match(appContent, /customTelegramAlertForm/, 'App.jsx must manage customTelegramAlertForm')
+  assert.match(appContent, /handleSendCustomTelegramAlert/, 'App.jsx must have custom alert sender')
+  assert.match(appContent, /handleResetTelegramTemplates/, 'App.jsx must have template reset handler')
+  assert.match(appContent, /Broadcast Custom Alert to Telegram/, 'App.jsx must render broadcast custom alert UI')
+  assert.match(appContent, /Customizable Alert Message Templates/, 'App.jsx must render template customization UI')
+})

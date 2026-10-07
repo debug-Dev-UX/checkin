@@ -15,11 +15,68 @@ export const DEFAULT_TELEGRAM_CONFIG = {
   notify_broadcast: true,
   branch_filter: 'all', // 'all' or branch id
   bot_name: 'Chafé Alert Bot',
+  custom_footer: '☕ Chafé Multi-Branch HR System',
+  // Customizable Message Templates
+  template_checkin: `🟢 <b>STAFF CLOCK-IN</b> (ចុះវត្តមានចូល)
+───────────────────────
+👤 <b>Staff:</b> {name}
+💼 <b>Role:</b> {role}
+🏢 <b>Branch:</b> {branch}
+⏰ <b>Time:</b> {time} | {date}
+📍 <b>Location:</b> {location}
+📊 <b>Status:</b> {status}
+───────────────────────
+<i>{footer}</i>`,
+  template_checkout: `🔴 <b>STAFF CLOCK-OUT</b> (ចុះវត្តមានចេញ)
+───────────────────────
+👤 <b>Staff:</b> {name}
+💼 <b>Role:</b> {role}
+🏢 <b>Branch:</b> {branch}
+⏰ <b>Clock Out:</b> {time} | {date}
+⏱ <b>Shift Duration:</b> {duration}
+📋 <b>Status:</b> Shift finalized on cloud timesheet
+───────────────────────
+<i>{footer}</i>`,
+  template_late: `🚨 <b>ATTENDANCE WARNING: LATE ARRIVAL</b>
+───────────────────────
+⚠️ <b>Staff Member:</b> {name}
+🏢 <b>Branch:</b> {branch}
+⏰ <b>Arrival Time:</b> {time}
+⏳ <b>Tardiness:</b> Late by <b>{late_minutes} minutes</b>
+💼 <b>Designated Shift:</b> {shift}
+───────────────────────
+<i>Immediate review recommended by Management</i>`,
+  template_leave: `☀️ <b>STAFF LEAVE / DAY OFF SCHEDULED</b>
+───────────────────────
+👤 <b>Staff:</b> {name}
+🏢 <b>Branch:</b> {branch}
+📅 <b>Date:</b> {date}
+🏷 <b>Leave Category:</b> {type}
+📝 <b>Reason / Note:</b> {reason}
+───────────────────────
+<i>{footer}</i>`,
+  template_custom: `📢 <b>{badge}</b>
+───────────────────────
+📌 <b>{title}</b>
+⏰ <b>Time:</b> {time} ({date})
+🏢 <b>Branch:</b> {branch}
+📝 <b>Message:</b>
+{message}
+───────────────────────
+<i>{footer}</i>`,
 }
 
 /**
- * Get Telegram Config from localStorage or defaults
+ * Replace placeholders like {name}, {time}, {branch} in templates
  */
+export function renderTemplate(template, vars = {}) {
+  if (!template) return ''
+  let text = template
+  for (const [k, v] of Object.entries(vars)) {
+    text = text.replaceAll(`{${k}}`, v ?? '')
+  }
+  return text
+}
 export function getLocalTelegramConfig() {
   try {
     const raw = localStorage.getItem(TELEGRAM_STORAGE_KEY)
@@ -192,16 +249,17 @@ export async function notifyTelegramCheckin(record, branchName = 'Store') {
     ? `⚠️ <b>LATE ARRIVAL</b> (+${record.late_minutes || 0} min)`
     : '✅ <b>On-Time</b> (Good Standing)'
 
-  const text = `🟢 <b>STAFF CLOCK-IN</b> (ចុះវត្តមានចូល)
-───────────────────────
-👤 <b>Staff:</b> ${record.name}
-💼 <b>Role:</b> ${record.department || record.role || 'Barista'}
-🏢 <b>Branch:</b> ${branchName || record.branch_name || record.location || 'Store'}
-⏰ <b>Time:</b> ${time} | ${date}
-📍 <b>Location:</b> ${record.distance ? `${record.distance}m from store` : 'GPS Verified'}
-📊 <b>Status:</b> ${punctualityText}
-───────────────────────
-☕ <i>Chafé Attendance System</i>`
+  const template = config.template_checkin || DEFAULT_TELEGRAM_CONFIG.template_checkin
+  const text = renderTemplate(template, {
+    name: record.name || 'Staff Member',
+    role: record.department || record.role || 'Barista',
+    branch: branchName || record.branch_name || record.location || 'Store',
+    time,
+    date,
+    location: record.distance ? `${record.distance}m from store` : 'GPS Verified',
+    status: punctualityText,
+    footer: config.custom_footer || DEFAULT_TELEGRAM_CONFIG.custom_footer,
+  })
 
   sendTelegramMessage(text).catch(() => {})
 
@@ -228,16 +286,16 @@ export async function notifyTelegramCheckout(record, branchName = 'Store', sessi
   const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
   const date = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
 
-  const text = `🔴 <b>STAFF CLOCK-OUT</b> (ចុះវត្តមានចេញ)
-───────────────────────
-👤 <b>Staff:</b> ${record.name}
-💼 <b>Role:</b> ${record.department || record.role || 'Barista'}
-🏢 <b>Branch:</b> ${branchName || record.branch_name || record.location || 'Store'}
-⏰ <b>Clock Out:</b> ${time} | ${date}
-⏱ <b>Shift Duration:</b> ${sessionDuration || 'Logged'}
-📋 <b>Status:</b> Shift finalized on cloud timesheet
-───────────────────────
-☕ <i>Chafé Attendance System</i>`
+  const template = config.template_checkout || DEFAULT_TELEGRAM_CONFIG.template_checkout
+  const text = renderTemplate(template, {
+    name: record.name || 'Staff Member',
+    role: record.department || record.role || 'Barista',
+    branch: branchName || record.branch_name || record.location || 'Store',
+    time,
+    date,
+    duration: sessionDuration || 'Logged',
+    footer: config.custom_footer || DEFAULT_TELEGRAM_CONFIG.custom_footer,
+  })
 
   sendTelegramMessage(text).catch(() => {})
 }
@@ -252,15 +310,15 @@ export async function notifyTelegramLate(record, branchName = 'Store', lateMinut
   const now = new Date()
   const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
 
-  const text = `🚨 <b>ATTENDANCE WARNING: LATE ARRIVAL</b>
-───────────────────────
-⚠️ <b>Staff Member:</b> ${record.name}
-🏢 <b>Branch:</b> ${branchName || record.branch_name || 'Store'}
-⏰ <b>Arrival Time:</b> ${time}
-⏳ <b>Tardiness:</b> Late by <b>${lateMinutes} minutes</b>
-💼 <b>Designated Shift:</b> ${record.shift_start || '07:30'} - ${record.shift_end || '16:00'}
-───────────────────────
-<i>Immediate review recommended by Management</i>`
+  const template = config.template_late || DEFAULT_TELEGRAM_CONFIG.template_late
+  const text = renderTemplate(template, {
+    name: record.name || 'Staff Member',
+    branch: branchName || record.branch_name || 'Store',
+    time,
+    late_minutes: lateMinutes,
+    shift: `${record.shift_start || '07:30'} - ${record.shift_end || '16:00'}`,
+    footer: config.custom_footer || DEFAULT_TELEGRAM_CONFIG.custom_footer,
+  })
 
   sendTelegramMessage(text).catch(() => {})
 }
@@ -273,15 +331,15 @@ export async function notifyTelegramLeave(leaveData) {
   if (!config.enabled || !config.notify_leave) return
 
   const typeFormatted = (leaveData.type || 'day_off').replace('_', ' ').toUpperCase()
-  const text = `☀️ <b>STAFF LEAVE / DAY OFF SCHEDULED</b>
-───────────────────────
-👤 <b>Staff:</b> ${leaveData.staff_name || leaveData.name || 'Staff Member'}
-🏢 <b>Branch:</b> ${leaveData.branch_name || 'All Branches'}
-📅 <b>Date:</b> ${leaveData.date}
-🏷 <b>Leave Category:</b> ${typeFormatted}
-📝 <b>Reason / Note:</b> ${leaveData.reason || 'Rest & Recharge'}
-───────────────────────
-☕ <i>Chafé Roster Management</i>`
+  const template = config.template_leave || DEFAULT_TELEGRAM_CONFIG.template_leave
+  const text = renderTemplate(template, {
+    name: leaveData.staff_name || leaveData.name || 'Staff Member',
+    branch: leaveData.branch_name || 'All Branches',
+    date: leaveData.date || '',
+    type: typeFormatted,
+    reason: leaveData.reason || 'Rest & Recharge',
+    footer: config.custom_footer || DEFAULT_TELEGRAM_CONFIG.custom_footer,
+  })
 
   sendTelegramMessage(text).catch(() => {})
 }
@@ -326,4 +384,32 @@ ${alertData.message}
 ☕ <i>Broadcast live to staff portals across all branches</i>`
 
   sendTelegramMessage(text).catch(() => {})
+}
+
+/**
+ * Trigger: Admin Custom Message Alert Broadcast
+ */
+export async function notifyTelegramCustomAlert(customData, overrideConfig = null) {
+  const config = overrideConfig || getLocalTelegramConfig()
+  if (!config.enabled && !overrideConfig) {
+    return { success: false, error: 'Telegram alerts are disabled.' }
+  }
+
+  const now = new Date()
+  const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  const date = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  const priorityBadge = customData.priority === 'urgent' ? '🚨 URGENT NOTICE' : '📢 MANAGEMENT BROADCAST'
+  const template = config.template_custom || DEFAULT_TELEGRAM_CONFIG.template_custom
+
+  const text = renderTemplate(template, {
+    badge: priorityBadge,
+    title: customData.title || 'Management Notice',
+    time,
+    date,
+    branch: customData.branch_name || 'All Branches',
+    message: customData.message || '',
+    footer: config.custom_footer || DEFAULT_TELEGRAM_CONFIG.custom_footer,
+  })
+
+  return await sendTelegramMessage(text, 'HTML', overrideConfig)
 }

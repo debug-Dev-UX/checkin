@@ -122,6 +122,8 @@ import {
   sendTelegramTestNotification,
   notifyTelegramCheckin,
   notifyTelegramStoreAlert,
+  notifyTelegramCustomAlert,
+  DEFAULT_TELEGRAM_CONFIG,
 } from './services/telegramService'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
@@ -575,6 +577,65 @@ export default function App() {
     } finally {
       setIsTelegramTesting(false)
     }
+  }
+
+  // Custom Telegram Alert Message Form & Template Customizer State
+  const [customTelegramAlertForm, setCustomTelegramAlertForm] = useState({
+    title: '',
+    message: '',
+    priority: 'normal',
+    branch_id: 'all',
+  })
+  const [isSendingCustomAlert, setIsSendingCustomAlert] = useState(false)
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false)
+  const [activeTemplateTab, setActiveTemplateTab] = useState('checkin')
+
+  const handleSendCustomTelegramAlert = async (e) => {
+    if (e) e.preventDefault()
+    if (!telegramConfig.bot_token?.trim() || !telegramConfig.chat_id?.trim()) {
+      showToast('Please configure Bot Token and Chat ID first.', 'error')
+      return
+    }
+    if (!customTelegramAlertForm.title.trim() && !customTelegramAlertForm.message.trim()) {
+      showToast('Please enter a title or message for the custom alert.', 'error')
+      return
+    }
+
+    setIsSendingCustomAlert(true)
+    try {
+      const selectedBranch = branches.find(b => b.id === customTelegramAlertForm.branch_id)
+      const branchName = customTelegramAlertForm.branch_id === 'all' ? 'All Branches' : (selectedBranch?.name || 'Store')
+      const res = await notifyTelegramCustomAlert({
+        title: customTelegramAlertForm.title.trim() || 'Custom Announcement',
+        message: customTelegramAlertForm.message.trim(),
+        priority: customTelegramAlertForm.priority,
+        branch_name: branchName,
+      }, telegramConfig)
+
+      if (res.success) {
+        showToast('Custom alert message broadcasted to Telegram!', 'success')
+        setCustomTelegramAlertForm({ title: '', message: '', priority: 'normal', branch_id: 'all' })
+      } else {
+        showToast('Failed to send alert: ' + (res.error || 'Check Bot permissions'), 'error')
+      }
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error')
+    } finally {
+      setIsSendingCustomAlert(false)
+    }
+  }
+
+  const handleResetTelegramTemplates = () => {
+    setTelegramConfig(prev => ({
+      ...prev,
+      template_checkin: DEFAULT_TELEGRAM_CONFIG.template_checkin,
+      template_checkout: DEFAULT_TELEGRAM_CONFIG.template_checkout,
+      template_late: DEFAULT_TELEGRAM_CONFIG.template_late,
+      template_leave: DEFAULT_TELEGRAM_CONFIG.template_leave,
+      template_custom: DEFAULT_TELEGRAM_CONFIG.template_custom,
+      custom_footer: DEFAULT_TELEGRAM_CONFIG.custom_footer,
+    }))
+    showToast('All alert message templates restored to default!', 'info')
   }
 
   // Staff Messages & Support Desk State
@@ -4201,6 +4262,261 @@ export default function App() {
                           <span>📢 Store Announcements</span>
                         </label>
                       </div>
+                    </div>
+
+                    {/* ============================================================== */}
+                    {/* CUSTOM ALERT MESSAGE BROADCASTER (ADMIN AD-HOC ALERT) */}
+                    {/* ============================================================== */}
+                    <div style={{
+                      background: 'var(--card-bg, #ffffff)',
+                      padding: '16px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--border-color, #e2e8f0)',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                        <div>
+                          <h5 style={{ margin: 0, fontSize: '13px', fontWeight: 800, color: 'var(--text-dark, #0f172a)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>📢</span> Broadcast Custom Alert to Telegram (ផ្ញើសារជូនដំណឹងផ្ទាល់ខ្លួន)
+                          </h5>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)' }}>
+                            Instantly compose and dispatch an urgent message or announcement directly to your staff Telegram channel.
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="Alert Title (e.g. Urgent Team Meeting / Rain Delay Notice)"
+                            value={customTelegramAlertForm.title}
+                            onChange={(e) => setCustomTelegramAlertForm(prev => ({ ...prev, title: e.target.value }))}
+                            style={{ fontSize: '12px' }}
+                          />
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <select
+                              className="form-select"
+                              value={customTelegramAlertForm.priority}
+                              onChange={(e) => setCustomTelegramAlertForm(prev => ({ ...prev, priority: e.target.value }))}
+                              style={{ fontSize: '12px', flex: 1 }}
+                            >
+                              <option value="normal">📢 Normal Broadcast</option>
+                              <option value="urgent">🚨 Urgent Priority</option>
+                            </select>
+                            <select
+                              className="form-select"
+                              value={customTelegramAlertForm.branch_id}
+                              onChange={(e) => setCustomTelegramAlertForm(prev => ({ ...prev, branch_id: e.target.value }))}
+                              style={{ fontSize: '12px', flex: 1 }}
+                            >
+                              <option value="all">All Branches</option>
+                              {branches.map(b => (
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <textarea
+                          className="form-input"
+                          rows={2}
+                          placeholder="Type your custom alert message content here..."
+                          value={customTelegramAlertForm.message}
+                          onChange={(e) => setCustomTelegramAlertForm(prev => ({ ...prev, message: e.target.value }))}
+                          style={{ fontSize: '12px' }}
+                        />
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={handleSendCustomTelegramAlert}
+                            disabled={isSendingCustomAlert}
+                            style={{
+                              fontSize: '12px',
+                              padding: '6px 16px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              background: customTelegramAlertForm.priority === 'urgent'
+                                ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                                : 'linear-gradient(135deg, #0088cc 0%, #0077b5 100%)',
+                              borderColor: customTelegramAlertForm.priority === 'urgent' ? '#dc2626' : '#0077b5'
+                            }}
+                          >
+                            <IconSend size={13} color="#ffffff" />
+                            <span>{isSendingCustomAlert ? 'Broadcasting...' : 'Broadcast Alert to Telegram'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ============================================================== */}
+                    {/* CUSTOMIZABLE MESSAGE TEMPLATES (ADMIN EDITABLE FORMATS) */}
+                    {/* ============================================================== */}
+                    <div style={{
+                      background: 'var(--card-bg, #ffffff)',
+                      padding: '16px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--border-color, #e2e8f0)',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <div>
+                          <h5 style={{ margin: 0, fontSize: '13px', fontWeight: 800, color: 'var(--text-dark, #0f172a)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>✏️</span> Customizable Alert Message Templates (កែសម្រួលទម្រង់សារ)
+                          </h5>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)' }}>
+                            Customize the exact message structure and variables sent to Telegram for each event.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => setShowTemplateEditor(prev => !prev)}
+                          style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px' }}
+                        >
+                          {showTemplateEditor ? 'Hide Template Editor ▲' : 'Edit Alert Templates ▼'}
+                        </button>
+                      </div>
+
+                      {showTemplateEditor && (
+                        <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
+                          {/* Tabs for Template Categories */}
+                          <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                            {[
+                              { id: 'checkin', label: '🟢 Clock-In' },
+                              { id: 'checkout', label: '🔴 Clock-Out' },
+                              { id: 'late', label: '🚨 Late Arrival' },
+                              { id: 'leave', label: '☀️ Day Off' },
+                              { id: 'custom', label: '📢 Custom Alert' },
+                            ].map(tab => (
+                              <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setActiveTemplateTab(tab.id)}
+                                style={{
+                                  padding: '5px 12px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  borderRadius: '6px',
+                                  border: '1px solid',
+                                  cursor: 'pointer',
+                                  background: activeTemplateTab === tab.id ? '#0088cc' : 'var(--bg-secondary, #f8fafc)',
+                                  color: activeTemplateTab === tab.id ? '#ffffff' : 'var(--text-dark, #334155)',
+                                  borderColor: activeTemplateTab === tab.id ? '#0088cc' : 'var(--border-color, #cbd5e1)',
+                                }}
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Variable Chips Guidance */}
+                          <div style={{ marginBottom: '10px', padding: '8px 12px', background: 'var(--bg-secondary, #f8fafc)', borderRadius: '6px', fontSize: '11px' }}>
+                            <span style={{ fontWeight: 700, color: 'var(--text-muted, #64748b)' }}>Available Dynamic Placeholders: </span>
+                            {activeTemplateTab === 'checkin' && (
+                              <span style={{ color: '#0088cc', fontFamily: 'monospace' }}>
+                                {'{name}'}, {'{role}'}, {'{branch}'}, {'{time}'}, {'{date}'}, {'{location}'}, {'{status}'}, {'{footer}'}
+                              </span>
+                            )}
+                            {activeTemplateTab === 'checkout' && (
+                              <span style={{ color: '#0088cc', fontFamily: 'monospace' }}>
+                                {'{name}'}, {'{role}'}, {'{branch}'}, {'{time}'}, {'{date}'}, {'{duration}'}, {'{footer}'}
+                              </span>
+                            )}
+                            {activeTemplateTab === 'late' && (
+                              <span style={{ color: '#0088cc', fontFamily: 'monospace' }}>
+                                {'{name}'}, {'{branch}'}, {'{time}'}, {'{late_minutes}'}, {'{shift}'}, {'{footer}'}
+                              </span>
+                            )}
+                            {activeTemplateTab === 'leave' && (
+                              <span style={{ color: '#0088cc', fontFamily: 'monospace' }}>
+                                {'{name}'}, {'{branch}'}, {'{date}'}, {'{type}'}, {'{reason}'}, {'{footer}'}
+                              </span>
+                            )}
+                            {activeTemplateTab === 'custom' && (
+                              <span style={{ color: '#0088cc', fontFamily: 'monospace' }}>
+                                {'{badge}'}, {'{title}'}, {'{message}'}, {'{time}'}, {'{date}'}, {'{branch}'}, {'{footer}'}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Textarea for Active Template */}
+                          {activeTemplateTab === 'checkin' && (
+                            <textarea
+                              className="form-input"
+                              rows={7}
+                              value={telegramConfig.template_checkin !== undefined ? telegramConfig.template_checkin : DEFAULT_TELEGRAM_CONFIG.template_checkin}
+                              onChange={(e) => setTelegramConfig(prev => ({ ...prev, template_checkin: e.target.value }))}
+                              style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                          )}
+                          {activeTemplateTab === 'checkout' && (
+                            <textarea
+                              className="form-input"
+                              rows={7}
+                              value={telegramConfig.template_checkout !== undefined ? telegramConfig.template_checkout : DEFAULT_TELEGRAM_CONFIG.template_checkout}
+                              onChange={(e) => setTelegramConfig(prev => ({ ...prev, template_checkout: e.target.value }))}
+                              style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                          )}
+                          {activeTemplateTab === 'late' && (
+                            <textarea
+                              className="form-input"
+                              rows={7}
+                              value={telegramConfig.template_late !== undefined ? telegramConfig.template_late : DEFAULT_TELEGRAM_CONFIG.template_late}
+                              onChange={(e) => setTelegramConfig(prev => ({ ...prev, template_late: e.target.value }))}
+                              style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                          )}
+                          {activeTemplateTab === 'leave' && (
+                            <textarea
+                              className="form-input"
+                              rows={7}
+                              value={telegramConfig.template_leave !== undefined ? telegramConfig.template_leave : DEFAULT_TELEGRAM_CONFIG.template_leave}
+                              onChange={(e) => setTelegramConfig(prev => ({ ...prev, template_leave: e.target.value }))}
+                              style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                          )}
+                          {activeTemplateTab === 'custom' && (
+                            <textarea
+                              className="form-input"
+                              rows={7}
+                              value={telegramConfig.template_custom !== undefined ? telegramConfig.template_custom : DEFAULT_TELEGRAM_CONFIG.template_custom}
+                              onChange={(e) => setTelegramConfig(prev => ({ ...prev, template_custom: e.target.value }))}
+                              style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                          )}
+
+                          {/* Custom Footer and Reset Row */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '220px' }}>
+                              <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-dark, #0f172a)', whiteSpace: 'nowrap' }}>
+                                Custom Footer:
+                              </label>
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={telegramConfig.custom_footer !== undefined ? telegramConfig.custom_footer : DEFAULT_TELEGRAM_CONFIG.custom_footer}
+                                onChange={(e) => setTelegramConfig(prev => ({ ...prev, custom_footer: e.target.value }))}
+                                placeholder="e.g. ☕ Chafé Multi-Branch HR System"
+                                style={{ fontSize: '11px', padding: '4px 8px' }}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={handleResetTelegramTemplates}
+                              style={{ fontSize: '11px', padding: '4px 10px', color: '#64748b' }}
+                            >
+                              Reset Templates to Default
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Test Status Banner */}
