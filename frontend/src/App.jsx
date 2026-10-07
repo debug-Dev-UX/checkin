@@ -54,7 +54,8 @@ import {
   IconDoorOut,
   IconUser,
   IconBell,
-  IconPhone
+  IconPhone,
+  IconSend,
 } from './Icons'
 import UserDashboard from './components/UserDashboard'
 import LoginForm from './components/LoginForm'
@@ -96,6 +97,15 @@ import {
   getStoreAlertsFromFirebase,
   saveStoreAlertsToFirebase,
   DEFAULT_STORE_ALERTS,
+  subscribeToStoreAlerts,
+  getStaffMessagesFromFirebase,
+  createStaffMessageInFirebase,
+  replyToStaffMessageInFirebase,
+  updateStaffMessageStatus,
+  subscribeToStaffMessages,
+  sendAdminNotificationToFirebase,
+  subscribeToAdminNotifications,
+  deleteAdminNotificationFromFirebase,
 } from './services/firebaseService'
 import {
   getStoreLocation,
@@ -222,7 +232,7 @@ export default function App() {
     const tabParam = params.get('tab') || params.get('mode')
     const hash = window.location.hash.replace('#', '').toLowerCase()
     const target = tabParam || hash
-    if (['overview', 'performance', 'staff', 'dayoffs', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(target)) {
+    if (['overview', 'performance', 'staff', 'messages', 'dayoffs', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(target)) {
       return target
     }
     return 'overview'
@@ -241,7 +251,7 @@ export default function App() {
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase()
-      if (['overview', 'performance', 'staff', 'dayoffs', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(hash)) {
+      if (['overview', 'performance', 'staff', 'messages', 'dayoffs', 'control', 'settings', 'user', 'staff-scan', 'staff-portal'].includes(hash)) {
         setNavTabState(hash)
       }
     }
@@ -483,6 +493,223 @@ export default function App() {
     setStoreAlertsList(updated)
     await saveStoreAlertsToFirebase(updated)
     showToast('Store notice removed.')
+  }
+
+  // Staff Messages & Support Desk State
+  const [staffMessagesList, setStaffMessagesList] = useState([])
+  const [staffMessagesFilter, setStaffMessagesFilter] = useState('all') // 'all' | 'pending' | 'replied'
+  const [staffMessagesSearch, setStaffMessagesSearch] = useState('')
+  const [replyingMsgId, setReplyingMsgId] = useState(null)
+  const [replyText, setReplyText] = useState('')
+  const [replySubmitting, setReplySubmitting] = useState(false)
+
+  // Real-time subscriptions for Staff Messages & Store Alerts
+  useEffect(() => {
+    const unsubMessages = subscribeToStaffMessages((list) => {
+      if (Array.isArray(list)) {
+        setStaffMessagesList(list)
+      }
+    })
+    const unsubAlerts = subscribeToStoreAlerts((list) => {
+      if (Array.isArray(list) && list.length > 0) {
+        setStoreAlertsList(list)
+      }
+    })
+    return () => {
+      if (unsubMessages) unsubMessages()
+      if (unsubAlerts) unsubAlerts()
+    }
+  }, [])
+
+  const unreadStaffMsgsCount = useMemo(() => {
+    return staffMessagesList.filter(m => m.status === 'pending' || !m.status).length
+  }, [staffMessagesList])
+
+  const filteredStaffMessages = useMemo(() => {
+    return staffMessagesList.filter(msg => {
+      if (staffMessagesFilter === 'pending' && msg.status === 'replied') return false
+      if (staffMessagesFilter === 'replied' && msg.status !== 'replied') return false
+      if (staffMessagesSearch.trim()) {
+        const q = staffMessagesSearch.toLowerCase()
+        const sName = (msg.staff_name || '').toLowerCase()
+        const sSub = (msg.subject || '').toLowerCase()
+        const sMsg = (msg.message || '').toLowerCase()
+        const sBranch = (msg.branch_name || '').toLowerCase()
+        if (!sName.includes(q) && !sSub.includes(q) && !sMsg.includes(q) && !sBranch.includes(q)) return false
+      }
+      return true
+    })
+  }, [staffMessagesList, staffMessagesFilter, staffMessagesSearch])
+
+  const handleReplyStaffMessage = async (msgId) => {
+    if (!replyText.trim()) {
+      showToast('Please type a reply message for the staff member.', 'error')
+      return
+    }
+    setReplySubmitting(true)
+    try {
+      await replyToStaffMessageInFirebase(msgId, replyText.trim())
+      setStaffMessagesList(prev => prev.map(m => m.id === msgId ? {
+        ...m,
+        status: 'replied',
+        reply: replyText.trim(),
+        replied_at: new Date().toISOString()
+      } : m))
+      setReplyingMsgId(null)
+      setReplyText('')
+      showToast('Reply dispatched to staff member successfully!', 'success')
+    } catch {
+      showToast('Failed to send reply to staff member', 'error')
+    } finally {
+      setReplySubmitting(false)
+    }
+  }
+
+  const handleUpdateMessageStatus = async (msgId, status) => {
+    try {
+      await updateStaffMessageStatus(msgId, status)
+      setStaffMessagesList(prev => prev.map(m => m.id === msgId ? { ...m, status } : m))
+      showToast(`Inquiry marked as ${status}!`, 'info')
+    } catch {}
+  }
+
+  // Admin → Staff Notification / Broadcast State
+  const [adminNotifList, setAdminNotifList] = useState([])
+  const [adminNotifForm, setAdminNotifForm] = useState({
+    target_staff_id: 'all',
+    target_staff_name: 'All Staff',
+    title: '',
+    message: '',
+    priority: 'normal',
+  })
+  const [adminNotifSending, setAdminNotifSending] = useState(false)
+
+  useEffect(() => {
+    const unsub = subscribeToAdminNotifications((list) => {
+      if (Array.isArray(list)) setAdminNotifList(list)
+    })
+    return () => { if (unsub) unsub() }
+  }, [])
+
+  const handleSendAdminNotification = async (e) => {
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    const title = (adminNotifForm.title || '').trim()
+    const message = (adminNotifForm.message || '').trim()
+    if (!title || !message) {
+      showToast('Please enter both a title and a message for the notification.', 'error')
+      return
+    }
+    setAdminNotifSending(true)
+    try {
+      const selectedStaff = staffList.find(s => String(s.id) === String(adminNotifForm.target_staff_id))
+      const targetName = adminNotifForm.target_staff_id === 'all'
+        ? 'All Staff'
+        : (selectedStaff?.name || adminNotifForm.target_staff_name || 'Staff Member')
+
+      const record = await sendAdminNotificationToFirebase({
+        target_staff_id: adminNotifForm.target_staff_id || 'all',
+        target_staff_name: targetName,
+        title: title,
+        message: message,
+        priority: adminNotifForm.priority || 'normal',
+      })
+      if (record) {
+        setAdminNotifList(prev => [record, ...prev.filter(n => n.id !== record.id)])
+      }
+      setAdminNotifForm({ target_staff_id: 'all', target_staff_name: 'All Staff', title: '', message: '', priority: 'normal' })
+      showToast('Notification sent to staff successfully!', 'success')
+    } catch (err) {
+      console.error('Failed to send notification:', err)
+      showToast('Failed to send notification: ' + (err?.message || ''), 'error')
+    } finally {
+      setAdminNotifSending(false)
+    }
+  }
+
+  const handleDeleteAdminNotif = async (notifId) => {
+    try {
+      await deleteAdminNotificationFromFirebase(notifId)
+      showToast('Notification removed.', 'info')
+    } catch {
+      showToast('Failed to remove notification', 'error')
+    }
+  }
+
+  // Export Staff with Name, Username and Password to Excel (.xls format)
+  const handleExportStaffToExcel = () => {
+    try {
+      const targetList = staffList && staffList.length > 0 ? staffList : []
+      if (targetList.length === 0) {
+        showToast('No staff records available to export.', 'info')
+        return
+      }
+      const headers = [
+        'Staff Name',
+        'Username / Login ID',
+        'Password',
+        'Branch (សាខា)',
+        'Assigned Role',
+        'Shift Start Time',
+        'Shift End Time',
+        'Hourly Rate ($)',
+        'Current Shift Status'
+      ]
+
+      // Generate formatted Excel HTML document that opens directly in Microsoft Excel & Google Sheets
+      const tableHtml = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8"/>
+          <style>
+            th { background-color: #0f172a; color: #ffffff; font-weight: bold; padding: 10px; border: 1px solid #cbd5e1; }
+            td { padding: 8px 10px; border: 1px solid #e2e8f0; font-family: sans-serif; font-size: 13px; }
+            .pwd { font-weight: bold; color: #ea580c; background-color: #fff7ed; }
+          </style>
+        </head>
+        <body>
+          <h2 style="font-family: sans-serif; color: #0f172a;">CHAFÉ • STAFF CREDENTIALS EXPORT</h2>
+          <table border="1">
+            <thead>
+              <tr>
+                ${headers.map(h => `<th>${h}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${targetList.map(s => `
+                <tr>
+                  <td>${s.name || ''}</td>
+                  <td>${s.username || s.email || ''}</td>
+                  <td class="pwd">${s.password || '123456'}</td>
+                  <td>${s.branch_name || branches.find(b => b.id === s.branch_id)?.name || 'Chafé • Kohke'}</td>
+                  <td>${s.role || 'Barista'}</td>
+                  <td>${s.shift_start || '07:30 AM'}</td>
+                  <td>${s.shift_end || '04:00 PM'}</td>
+                  <td>$${s.hourly_rate || 20}</td>
+                  <td>${s.is_on_shift ? 'On Shift' : 'Off Duty'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `
+      const blob = new Blob([tableHtml], { type: 'application/vnd.ms-excel;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const timestamp = new Date().toISOString().slice(0, 10)
+      link.setAttribute('href', url)
+      link.setAttribute('download', `chafe_staff_credentials_${timestamp}.xls`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      showToast('Exported staff credentials (Name, Username, Password) to Excel successfully!', 'success')
+    } catch {
+      showToast('Failed to export staff list to Excel', 'error')
+    }
   }
 
   const showToast = (message, type = 'success') => {
@@ -1361,6 +1588,20 @@ export default function App() {
               <span>Staff Roster</span>
             </button>
             <button
+              className={`sidebar-nav-item ${navTab === 'messages' ? 'active' : ''}`}
+              onClick={() => setNavTab('messages')}
+            >
+              <span className="nav-item-icon">
+                <IconEnvelope size={16} />
+              </span>
+              <span>Staff Messages</span>
+              {unreadStaffMsgsCount > 0 && (
+                <span className="badge-count" style={{ marginLeft: 'auto', background: '#ea580c', color: '#ffffff' }}>
+                  {unreadStaffMsgsCount}
+                </span>
+              )}
+            </button>
+            <button
               className={`sidebar-nav-item ${navTab === 'dayoffs' ? 'active' : ''}`}
               onClick={() => setNavTab('dayoffs')}
             >
@@ -1539,6 +1780,7 @@ export default function App() {
               {navTab === 'overview' && 'Dashboard'}
               {navTab === 'performance' && 'Staff Performance & Punctuality'}
               {navTab === 'staff' && 'Staff Directory & Credentials'}
+              {navTab === 'messages' && 'Staff Messages & Support Desk'}
               {navTab === 'dayoffs' && 'Staff Day Off & Schedule Calendar'}
               {navTab === 'control' && 'Control Room & QR Terminal'}
               {navTab === 'settings' && 'System Settings'}
@@ -2401,6 +2643,15 @@ export default function App() {
                       </select>
                     </div>
                     <button
+                      className="btn-secondary"
+                      style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#059669', color: '#ffffff', borderColor: '#047857', fontWeight: 700 }}
+                      onClick={handleExportStaffToExcel}
+                      title="Export Staff Credentials (Name, Username, Password) to Excel/CSV"
+                    >
+                      <IconFileText size={14} color="#ffffff" />
+                      <span>Export Excel</span>
+                    </button>
+                    <button
                       className="btn-primary"
                       style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                       onClick={() => setIsCreateStaffModalOpen(true)}
@@ -2550,8 +2801,297 @@ export default function App() {
             </div>
           )}
 
+
           {/* ============================================================== */}
-          {/* TAB 3.5: DAY OFF & SCHEDULE CALENDAR */}
+          {/* TAB 3.5: STAFF MESSAGES & NOTIFICATIONS CONTROL */}
+          {/* ============================================================== */}
+          {navTab === 'messages' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+              {/* === SEND NOTIFICATION PANEL (Admin → Staff) === */}
+              <div className="content-panel">
+                <div className="panel-header-bar" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <IconBell size={18} color="#ea580c" />
+                  <div className="panel-heading-title">SEND NOTIFICATION TO STAFF</div>
+                </div>
+                <form onSubmit={handleSendAdminNotification} style={{ padding: '16px 0 0', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>TARGET RECIPIENT</label>
+                      <select
+                        value={adminNotifForm.target_staff_id}
+                        onChange={(e) => setAdminNotifForm(f => ({ ...f, target_staff_id: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 600 }}
+                      >
+                        <option value="all">📢 Broadcast to All Staff</option>
+                        {staffList.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.role || 'Staff'})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>NOTIFICATION TITLE</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Schedule Update, Urgent Notice..."
+                        value={adminNotifForm.title}
+                        onChange={(e) => setAdminNotifForm(f => ({ ...f, title: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 600, boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>PRIORITY LEVEL</label>
+                      <select
+                        value={adminNotifForm.priority}
+                        onChange={(e) => setAdminNotifForm(f => ({ ...f, priority: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 600 }}
+                      >
+                        <option value="normal">🔔 Normal</option>
+                        <option value="info">ℹ️ Info</option>
+                        <option value="urgent">🚨 Urgent</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>MESSAGE CONTENT</label>
+                    <textarea
+                      placeholder="Type your message to staff here..."
+                      value={adminNotifForm.message}
+                      onChange={(e) => setAdminNotifForm(f => ({ ...f, message: e.target.value }))}
+                      rows={3}
+                      style={{ width: '100%', padding: '10px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="submit"
+                      disabled={adminNotifSending}
+                      style={{
+                        padding: '10px 24px',
+                        background: adminNotifSending ? '#94a3b8' : '#0f172a',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '10px',
+                        fontWeight: 800,
+                        fontSize: '13px',
+                        cursor: adminNotifSending ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <IconSend size={14} color="#ffffff" />
+                      {adminNotifSending ? 'Sending...' : 'Send Notification'}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Recent Notifications Log */}
+                {adminNotifList.length > 0 && (
+                  <div style={{ marginTop: '16px', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginBottom: '10px' }}>SENT NOTIFICATIONS HISTORY</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto' }}>
+                      {adminNotifList.map(notif => (
+                        <div key={notif.id} style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          background: notif.priority === 'urgent' ? '#fff7ed' : notif.priority === 'info' ? '#eff6ff' : '#f8fafc',
+                          border: `1px solid ${notif.priority === 'urgent' ? '#fed7aa' : notif.priority === 'info' ? '#bfdbfe' : '#e2e8f0'}`,
+                        }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {notif.priority === 'urgent' ? '🚨' : notif.priority === 'info' ? 'ℹ️' : '🔔'}
+                              {notif.title}
+                              <span style={{ fontSize: '11px', background: '#0f172a', color: '#fff', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                                → {notif.is_broadcast ? 'All Staff' : notif.target_staff_name}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#475569', marginTop: '3px' }}>{notif.message}</div>
+                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '3px' }}>
+                              {new Date(notif.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteAdminNotif(notif.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px', marginLeft: '10px' }}
+                            title="Delete notification"
+                          >
+                            <IconX size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* === STAFF INQUIRIES INBOX (Staff → Admin) === */}
+              <div className="content-panel">
+                <div className="panel-header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <IconEnvelope size={18} color="#0284c7" />
+                    <div className="panel-heading-title">STAFF INQUIRIES INBOX</div>
+                    {unreadStaffMsgsCount > 0 && (
+                      <span style={{ background: '#ea580c', color: '#fff', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '10px' }}>
+                        {unreadStaffMsgsCount} NEW
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="Search by name, subject, branch..."
+                      value={staffMessagesSearch}
+                      onChange={(e) => setStaffMessagesSearch(e.target.value)}
+                      style={{ padding: '7px 12px', fontSize: '12px', border: '1.5px solid #cbd5e1', borderRadius: '20px', outline: 'none', width: '220px' }}
+                    />
+                    {['all', 'pending', 'replied'].map(f => (
+                      <button
+                        key={f}
+                        onClick={() => setStaffMessagesFilter(f)}
+                        style={{
+                          padding: '6px 14px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          borderRadius: '20px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: staffMessagesFilter === f ? '#0f172a' : '#f1f5f9',
+                          color: staffMessagesFilter === f ? '#ffffff' : '#64748b',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {filteredStaffMessages.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '32px', marginBottom: '8px' }}>📭</div>
+                    <div style={{ fontWeight: 700, color: '#64748b' }}>No staff inquiries {staffMessagesFilter !== 'all' ? `(${staffMessagesFilter})` : ''}</div>
+                    <div style={{ fontSize: '12px', marginTop: '4px' }}>When staff send a message via the support form, it appears here.</div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+                    {filteredStaffMessages.map(msg => (
+                      <div key={msg.id} style={{
+                        border: `1.5px solid ${msg.status === 'replied' ? '#bbf7d0' : msg.priority === 'urgent' ? '#fed7aa' : '#e2e8f0'}`,
+                        borderRadius: '12px',
+                        padding: '14px 16px',
+                        background: msg.status === 'replied' ? '#f0fdf4' : msg.priority === 'urgent' ? '#fff7ed' : '#ffffff',
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a' }}>
+                                {msg.staff_name || 'Staff Member'}
+                              </span>
+                              <span style={{ fontSize: '11px', color: '#64748b' }}>• {msg.branch_name || 'Store'}</span>
+                              {msg.email && <span style={{ fontSize: '11px', color: '#94a3b8' }}>• {msg.email}</span>}
+                              <span style={{
+                                fontSize: '10px', fontWeight: 700, padding: '1px 7px', borderRadius: '6px',
+                                background: msg.status === 'replied' ? '#059669' : msg.priority === 'urgent' ? '#ea580c' : '#0284c7',
+                                color: '#ffffff',
+                              }}>
+                                {msg.status === 'replied' ? '✓ REPLIED' : msg.status === 'read' ? 'READ' : msg.priority === 'urgent' ? '🚨 URGENT' : 'PENDING'}
+                              </span>
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: '13px', color: '#334155', marginTop: '6px' }}>
+                              {msg.subject || 'Staff Inquiry'}
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#475569', marginTop: '4px', lineHeight: '1.5' }}>
+                              {msg.message}
+                            </div>
+                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>
+                              {new Date(msg.created_at || 0).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+
+                            {/* Admin Reply Display */}
+                            {msg.status === 'replied' && msg.reply && (
+                              <div style={{ marginTop: '10px', padding: '10px 12px', background: '#dcfce7', borderRadius: '8px', borderLeft: '3px solid #16a34a' }}>
+                                <div style={{ fontSize: '10px', fontWeight: 700, color: '#16a34a', marginBottom: '4px' }}>ADMIN REPLY</div>
+                                <div style={{ fontSize: '12px', color: '#166534' }}>{msg.reply}</div>
+                                {msg.replied_at && (
+                                  <div style={{ fontSize: '10px', color: '#4ade80', marginTop: '3px' }}>
+                                    {new Date(msg.replied_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Reply Form */}
+                            {replyingMsgId === msg.id && (
+                              <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                                <textarea
+                                  placeholder="Type your reply to this staff member..."
+                                  value={replyText}
+                                  onChange={(e) => setReplyText(e.target.value)}
+                                  rows={2}
+                                  style={{ flex: 1, padding: '8px 12px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid #0284c7', resize: 'none', fontFamily: 'inherit' }}
+                                  autoFocus
+                                />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <button
+                                    onClick={() => handleReplyStaffMessage(msg.id)}
+                                    disabled={replySubmitting}
+                                    style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
+                                  >
+                                    {replySubmitting ? '...' : 'Send'}
+                                  </button>
+                                  <button
+                                    onClick={() => { setReplyingMsgId(null); setReplyText('') }}
+                                    style={{ padding: '8px 16px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '100px' }}>
+                            {msg.status !== 'replied' && replyingMsgId !== msg.id && (
+                              <button
+                                onClick={() => { setReplyingMsgId(msg.id); setReplyText('') }}
+                                style={{ padding: '7px 12px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+                              >
+                                <IconSend size={11} /> Reply
+                              </button>
+                            )}
+                            {msg.status === 'replied' && replyingMsgId !== msg.id && (
+                              <button
+                                onClick={() => { setReplyingMsgId(msg.id); setReplyText(msg.reply || '') }}
+                                style={{ padding: '7px 12px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', textAlign: 'center' }}
+                              >
+                                Edit Reply
+                              </button>
+                            )}
+                            {msg.status !== 'read' && msg.status !== 'replied' && (
+                              <button
+                                onClick={() => handleUpdateMessageStatus(msg.id, 'read')}
+                                style={{ padding: '7px 12px', background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', textAlign: 'center' }}
+                              >
+                                Mark Read
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* TAB 3.6: DAY OFF & SCHEDULE CALENDAR */}
           {/* ============================================================== */}
           {navTab === 'dayoffs' && (
             <DayoffCalendar
@@ -2560,6 +3100,7 @@ export default function App() {
               showToast={showToast}
             />
           )}
+
 
           {/* ============================================================== */}
           {/* TAB 4: CONTROL (Create QR check in/out, short only today) */}

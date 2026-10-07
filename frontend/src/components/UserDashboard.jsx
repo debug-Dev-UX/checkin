@@ -541,13 +541,44 @@ export default function UserDashboard({
     }
   }, [cameraActive, isProcessing, lastScannedCode, staffList, currentStaff, isCheckedIn])
 
+  // TOP Staff Leaderboard Rankings
+  const topRankings = useMemo(() => {
+    const list = (staffList && staffList.length > 0) ? staffList : (currentStaff ? [currentStaff] : [])
+    const ranked = list.map(stf => {
+      const stfLogs = (todayStaffLogs || []).filter(c => (
+        String(c.staff_id) === String(stf.id) ||
+        (c.email && c.email.toLowerCase() === (stf.email || '').toLowerCase()) ||
+        (c.name && c.name.toLowerCase() === (stf.name || '').toLowerCase())
+      ))
+      const total = stfLogs.length
+      const late = stfLogs.filter(c => c.punctuality_status === 'late').length
+      const onTime = Math.max(0, total - late)
+      const rate = total > 0 ? Math.round((onTime / total) * 100) : 100
+      return {
+        id: stf.id,
+        name: stf.name || 'Staff Member',
+        role: stf.role || 'Barista',
+        branch: stf.branch_name || 'Store',
+        total,
+        onTime,
+        late,
+        rate
+      }
+    })
+    ranked.sort((a, b) => {
+      if (b.onTime !== a.onTime) return b.onTime - a.onTime
+      return b.rate - a.rate
+    })
+    return ranked
+  }, [staffList, todayStaffLogs, currentStaff])
+
   // Hub items matching 3x3 grid
   const hubItems = useMemo(() => [
     { id: 'roster', title: t('shiftRoster', 'Shift Roster'), icon: <IconCalendar size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
     { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <IconSun size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
     { id: 'perf', title: t('performance', 'Performance'), icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
     { id: 'logs', title: t('shiftLogs', 'Shift Logs'), icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
-    { id: 'station', title: t('station', 'Station'), icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
+    { id: 'top', title: t('topStaff', 'TOP'), icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('top') },
     { id: 'badge', title: t('idBadge', 'ID Badge'), icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('badge') },
     { id: 'alerts', title: t('storeAlerts', 'Store Alerts'), icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
     { id: 'profile', title: t('myProfile', 'My Profile'), icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
@@ -1142,10 +1173,10 @@ export default function UserDashboard({
               <button
                 type="button"
                 className="drawer-nav-item"
-                onClick={() => { setActiveModal('station'); setIsDrawerOpen(false) }}
+                onClick={() => { setActiveModal('top'); setIsDrawerOpen(false) }}
               >
-                <IconCoffee size={18} color="#d97706" />
-                <span>Station Assignment</span>
+                <IconTrophy size={18} color="#eab308" />
+                <span>TOP Staff Leaderboard</span>
               </button>
 
               <button
@@ -1177,7 +1208,7 @@ export default function UserDashboard({
       )}
 
       {/* ============================================================== */}
-      {/* 7. FEATURE MODALS (PERFORMANCE, STATION, ALERTS, PROFILE, SUPPORT) */}
+      {/* 7. FEATURE MODALS (PERFORMANCE, TOP, ALERTS, PROFILE, SUPPORT) */}
       {/* ============================================================== */}
       {activeModal && activeModal !== 'action_confirm' && (
         <div className="mobile-feature-modal-backdrop" onClick={() => setActiveModal(null)}>
@@ -1185,7 +1216,7 @@ export default function UserDashboard({
             <div className="mobile-feature-modal-header">
               <h3 className="mobile-feature-modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {activeModal === 'performance' && <><IconAward size={18} color="#eab308" /> <span>Staff Performance Review</span></>}
-                {activeModal === 'station' && <><IconCoffee size={18} color="#d97706" /> <span>Assigned Counter Station</span></>}
+                {activeModal === 'top' && <><IconTrophy size={18} color="#eab308" /> <span>TOP Staff Leaderboard</span></>}
                 {activeModal === 'alerts' && <><IconBell size={18} color="#0284c7" /> <span>Store Announcements</span></>}
                 {activeModal === 'profile' && <><IconUserCircle size={18} color="#7c3aed" /> <span>Staff Profile</span></>}
                 {activeModal === 'support' && <><IconPhone size={18} color="#059669" /> <span>Store Support</span></>}
@@ -1212,19 +1243,83 @@ export default function UserDashboard({
                 </div>
               )}
 
-              {activeModal === 'station' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b' }}>Assigned Bar Station:</span>
-                    <strong style={{ color: '#0f172a' }}>Main Espresso Bar #1</strong>
+              {activeModal === 'top' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
+                    Real-time attendance & punctuality leaderboard across all store locations.
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b' }}>Espresso Machine:</span>
-                    <strong style={{ color: '#0f172a' }}>La Marzocco Linea PB (Ready)</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Sanitization:</span>
-                    <strong style={{ color: '#10b981' }}>Complete & Temperature Set (65°C)</strong>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto' }}>
+                    {topRankings.map((stf, idx) => {
+                      const isTop1 = idx === 0
+                      const isTop2 = idx === 1
+                      const isTop3 = idx === 2
+                      const isMe = currentStaff && (String(stf.id) === String(currentStaff.id) || (stf.email && stf.email.toLowerCase() === (currentStaff.email || '').toLowerCase()))
+
+                      return (
+                        <div
+                          key={stf.id || idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '12px 14px',
+                            borderRadius: '12px',
+                            background: isTop1 ? 'linear-gradient(135deg, #fefce8, #fef9c3)' : isMe ? '#f0fdf4' : '#ffffff',
+                            border: `1px solid ${isTop1 ? '#fde047' : isTop2 ? '#cbd5e1' : isTop3 ? '#fcd34d' : isMe ? '#86efac' : '#e2e8f0'}`,
+                            boxShadow: isTop1 ? '0 2px 8px rgba(234, 179, 8, 0.15)' : '0 1px 3px rgba(0,0,0,0.03)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {/* Ranks 1, 2, 3 have badge icons. Rank 4+ have NO badge icon */}
+                            <div style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '10px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 900,
+                              background: isTop1 ? '#fef08a' : isTop2 ? '#f1f5f9' : isTop3 ? '#ffedd5' : '#f8fafc',
+                              color: isTop1 ? '#854d0e' : isTop2 ? '#334155' : isTop3 ? '#9a3412' : '#64748b'
+                            }}>
+                              {isTop1 ? (
+                                <IconTrophy size={16} color="#ca8a04" />
+                              ) : isTop2 ? (
+                                <IconAward size={16} color="#64748b" />
+                              ) : isTop3 ? (
+                                <IconAward size={16} color="#c2410c" />
+                              ) : null}
+                              <span style={{ fontSize: (isTop1 || isTop2 || isTop3) ? '10px' : '13px', lineHeight: 1 }}>#{idx + 1}</span>
+                            </div>
+
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontWeight: 800, fontSize: '13.5px', color: '#0f172a' }}>{stf.name}</span>
+                                {isMe && (
+                                  <span style={{ fontSize: '10px', fontWeight: 700, background: '#10b981', color: '#ffffff', padding: '1px 6px', borderRadius: '4px' }}>
+                                    YOU
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                {stf.role} • {stf.branch}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 900, fontSize: '14px', color: stf.rate >= 90 ? '#10b981' : stf.rate >= 75 ? '#0284c7' : '#f59e0b' }}>
+                              {stf.rate}%
+                            </div>
+                            <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                              {stf.onTime} on-time ({stf.total} shifts)
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}

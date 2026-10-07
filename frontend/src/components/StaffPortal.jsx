@@ -32,6 +32,8 @@ import {
   IconFileText,
   IconCheckCircle,
   IconXCircle,
+  IconSend,
+  IconStar,
 } from '../Icons'
 import { Skeleton } from './Skeleton'
 import ProfileView from './ProfileView'
@@ -40,6 +42,8 @@ import { useLanguage } from '../context/LanguageContext'
 import {
   getCheckinsFromFirebase,
   getStaffDayoffsFromFirebase,
+  getDayoffsFromFirebase,
+  subscribeToDayoffs,
   createCheckinInFirebase,
   checkoutInFirebase,
   subscribeToLiveCheckins,
@@ -48,6 +52,10 @@ import {
   subscribeToBranches,
   subscribeToStaff,
   subscribeToStoreAlerts,
+  getStaffMessagesFromFirebase,
+  createStaffMessageInFirebase,
+  subscribeToStaffMessages,
+  subscribeToAdminNotifications,
 } from '../services/firebaseService'
 import {
   verifyRealtimeLocationForStaff,
@@ -92,11 +100,48 @@ export default function StaffPortal({
   const [scanSuccessModal, setScanSuccessModal] = useState(null)
   const [activeTab, setActiveTab] = useState('clock') // 'clock' | 'schedule' | 'scan' | 'history' | 'badge'
   const [dayoffFilter, setDayoffFilter] = useState('all') // 'all' | 'upcoming' | 'past'
+  const [scheduleMode, setScheduleMode] = useState('own') // 'own' (My Day Offs) | 'all' (Shift Roster - All Staff)
+  const [allDayoffs, setAllDayoffs] = useState([])
+  const [rosterSearch, setRosterSearch] = useState('')
+  const [allStaffList, setAllStaffList] = useState([])
+  const [allCheckinsList, setAllCheckinsList] = useState([])
+  const [staffMessages, setStaffMessages] = useState([])
+  const [supportForm, setSupportForm] = useState({ subject: '', message: '', priority: 'normal' })
+  const [supportSending, setSupportSending] = useState(false)
+  const [themeMode, setThemeMode] = useState(() => {
+    try {
+      return localStorage.getItem('chafe_theme_mode') || 'light'
+    } catch {
+      return 'light'
+    }
+  })
+
+  // Theme synchronization effect
+  useEffect(() => {
+    const handleStorageTheme = () => {
+      try {
+        const saved = localStorage.getItem('chafe_theme_mode') || 'light'
+        setThemeMode(saved)
+        if (saved === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark')
+        } else {
+          document.documentElement.removeAttribute('data-theme')
+        }
+      } catch {}
+    }
+    handleStorageTheme()
+    window.addEventListener('storage', handleStorageTheme)
+    window.addEventListener('chafe_theme_updated', handleStorageTheme)
+    return () => {
+      window.removeEventListener('storage', handleStorageTheme)
+      window.removeEventListener('chafe_theme_updated', handleStorageTheme)
+    }
+  }, [])
 
   // Mobile App Interface State
   const [searchQuery, setSearchQuery] = useState('')
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-  const [activeModal, setActiveModal] = useState(null) // null | 'performance' | 'station' | 'alerts' | 'profile' | 'support'
+  const [activeModal, setActiveModal] = useState(null) // null | 'performance' | 'top' | 'alerts' | 'profile' | 'support'
 
   // Dynamic Store Alerts
   const [storeAlerts, setStoreAlerts] = useState([])
@@ -110,6 +155,37 @@ export default function StaffPortal({
       if (unsub) unsub()
     }
   }, [])
+
+  // Admin Notifications (push from admin to staff)
+  const [adminNotifications, setAdminNotifications] = useState([])
+  const [unreadAdminNotifCount, setUnreadAdminNotifCount] = useState(0)
+  useEffect(() => {
+    const readKey = `chafe_read_admin_notifs_${staffUser?.id || 'guest'}`
+    const readIds = (() => {
+      try { return JSON.parse(localStorage.getItem(readKey) || '[]') } catch { return [] }
+    })()
+    const unsub = subscribeToAdminNotifications((list) => {
+      if (!Array.isArray(list)) return
+      const mine = list.filter(n =>
+        n.is_broadcast ||
+        !n.target_staff_id ||
+        n.target_staff_id === 'all' ||
+        (staffUser?.id && String(n.target_staff_id) === String(staffUser?.id)) ||
+        (staffUser?.email && n.target_staff_id && n.target_staff_id.toLowerCase() === staffUser.email.toLowerCase()) ||
+        (staffUser?.name && n.target_staff_name && n.target_staff_name.toLowerCase() === staffUser.name.toLowerCase())
+      )
+      setAdminNotifications(mine)
+      setUnreadAdminNotifCount(mine.filter(n => !readIds.includes(n.id)).length)
+    })
+    return () => { if (unsub) unsub() }
+  }, [staffUser])
+
+  const markAdminNotifsRead = () => {
+    const readKey = `chafe_read_admin_notifs_${staffUser?.id || 'guest'}`
+    const ids = adminNotifications.map(n => n.id)
+    try { localStorage.setItem(readKey, JSON.stringify(ids)) } catch {}
+    setUnreadAdminNotifCount(0)
+  }
 
   // Action Modal State (Popup modal asking Check In or Check Out)
   const [showActionModal, setShowActionModal] = useState(false)
@@ -235,6 +311,7 @@ export default function StaffPortal({
     try {
       // 1. Fetch checkins to find active shift and history
       const allCheckins = await getCheckinsFromFirebase()
+      setAllCheckinsList(allCheckins || [])
       const userRecords = (allCheckins || []).filter(
         c => (
           (staffUser?.id && (c.staff_id === staffUser.id || String(c.staff_id) === String(staffUser.id))) ||
@@ -246,9 +323,21 @@ export default function StaffPortal({
       setActiveCheckin(currentActive || null)
       setRecentLogs(userRecords)
 
-      // 2. Fetch staff's assigned dayoffs
+      // 2. Fetch staff's assigned dayoffs (own account)
       const userDayoffs = await getStaffDayoffsFromFirebase(staffUser.id)
       setDayoffs(userDayoffs || [])
+
+      // 3. Fetch all staff dayoffs (shift roster)
+      const allDayoffsData = await getDayoffsFromFirebase()
+      setAllDayoffs(allDayoffsData || [])
+
+      // 4. Fetch staff messages
+      const msgs = await getStaffMessagesFromFirebase()
+      const myMsgs = (msgs || []).filter(m => (
+        String(m.staff_id) === String(staffUser?.id) ||
+        (m.email && m.email.toLowerCase() === (staffUser?.email || '').toLowerCase())
+      ))
+      setStaffMessages(myMsgs)
     } catch {
       // quiet catch
     } finally {
@@ -264,6 +353,7 @@ export default function StaffPortal({
   useEffect(() => {
     if (!staffUser || !staffUser.id) return
     const unsubscribe = subscribeToLiveCheckins((allCheckins) => {
+      setAllCheckinsList(allCheckins || [])
       const userRecords = (allCheckins || []).filter(
         c => (
           (staffUser?.id && (c.staff_id === staffUser.id || String(c.staff_id) === String(staffUser.id))) ||
@@ -276,6 +366,50 @@ export default function StaffPortal({
       setRecentLogs(userRecords)
     })
     return () => unsubscribe()
+  }, [staffUser])
+
+  // Live subscription to all staff roster
+  useEffect(() => {
+    const unsub = subscribeToStaff((list) => {
+      if (Array.isArray(list) && list.length > 0) {
+        setAllStaffList(list)
+      }
+    })
+    return () => unsub()
+  }, [])
+
+  // Live subscription to staff messages from admin
+  useEffect(() => {
+    if (!staffUser) return
+    const unsub = subscribeToStaffMessages((list) => {
+      const myMsgs = (list || []).filter(m => (
+        String(m.staff_id) === String(staffUser?.id) ||
+        (m.email && m.email.toLowerCase() === (staffUser?.email || '').toLowerCase())
+      ))
+      setStaffMessages(myMsgs)
+    })
+    return () => unsub()
+  }, [staffUser])
+
+  // Live subscription to dayoffs (updates shift roster and own day offs in real-time)
+  useEffect(() => {
+    const unsub = subscribeToDayoffs((list) => {
+      if (Array.isArray(list)) {
+        setAllDayoffs(list)
+        if (staffUser) {
+          const mine = list.filter(item => (
+            (staffUser?.id && String(item.staff_id) === String(staffUser.id)) ||
+            (staffUser?.email && item.staff?.email && item.staff.email.toLowerCase() === staffUser.email.toLowerCase()) ||
+            (staffUser?.name && (
+              (item.staff_name && item.staff_name.toLowerCase() === staffUser.name.toLowerCase()) ||
+              (item.name && item.name.toLowerCase() === staffUser.name.toLowerCase())
+            ))
+          ))
+          setDayoffs(mine)
+        }
+      }
+    })
+    return () => unsub()
   }, [staffUser])
 
   // Current shift status: true if employee has an active checked_in record
@@ -300,16 +434,108 @@ export default function StaffPortal({
     return { rate, onTime, late, total: completed.length }
   }, [recentLogs])
 
-  // Filtered dayoffs
+  // Filtered dayoffs (strictly own account only)
   const filteredDayoffs = useMemo(() => {
     return dayoffs.filter(item => {
+      const isMine =
+        (staffUser?.id && String(item.staff_id) === String(staffUser.id)) ||
+        (staffUser?.email && item.staff?.email && item.staff.email.toLowerCase() === staffUser.email.toLowerCase()) ||
+        (staffUser?.name && (
+          (item.staff_name && item.staff_name.toLowerCase() === staffUser.name.toLowerCase()) ||
+          (item.name && item.name.toLowerCase() === staffUser.name.toLowerCase()) ||
+          (item.staff?.name && item.staff.name.toLowerCase() === staffUser.name.toLowerCase())
+        ))
+      if (!isMine) return false
+
       const isPast = String(item.date).substring(0, 10) < todayStr
       const isUpcoming = String(item.date).substring(0, 10) >= todayStr
       if (dayoffFilter === 'upcoming') return isUpcoming
       if (dayoffFilter === 'past') return isPast
       return true
     })
-  }, [dayoffs, dayoffFilter, todayStr])
+  }, [dayoffs, dayoffFilter, todayStr, staffUser])
+
+  // Filtered team dayoffs for Shift Roster (All Staff Day Offs)
+  const filteredTeamDayoffs = useMemo(() => {
+    return allDayoffs.filter(item => {
+      const isPast = String(item.date).substring(0, 10) < todayStr
+      const isUpcoming = String(item.date).substring(0, 10) >= todayStr
+      if (dayoffFilter === 'upcoming' && !isUpcoming) return false
+      if (dayoffFilter === 'past' && !isPast) return false
+      if (rosterSearch.trim()) {
+        const q = rosterSearch.toLowerCase()
+        const sName = (item.staff_name || item.name || '').toLowerCase()
+        const sBranch = (item.branch_name || '').toLowerCase()
+        const sType = (item.type || '').toLowerCase()
+        const sReason = (item.reason || '').toLowerCase()
+        if (!sName.includes(q) && !sBranch.includes(q) && !sType.includes(q) && !sReason.includes(q)) return false
+      }
+      return true
+    })
+  }, [allDayoffs, dayoffFilter, rosterSearch, todayStr])
+
+  // TOP Staff Leaderboard Rankings
+  const topRankings = useMemo(() => {
+    const list = (allStaffList && allStaffList.length > 0) ? allStaffList : (staffUser ? [staffUser] : [])
+    const ranked = list.map(stf => {
+      const stfCheckins = (allCheckinsList || []).filter(c => (
+        String(c.staff_id) === String(stf.id) ||
+        (c.email && c.email.toLowerCase() === (stf.email || '').toLowerCase()) ||
+        (c.name && c.name.toLowerCase() === (stf.name || '').toLowerCase())
+      ))
+      const total = stfCheckins.length
+      const late = stfCheckins.filter(c => c.punctuality_status === 'late').length
+      const onTime = Math.max(0, total - late)
+      const rate = total > 0 ? Math.round((onTime / total) * 100) : 100
+      return {
+        id: stf.id,
+        name: stf.name || 'Staff Member',
+        role: stf.role || 'Barista',
+        branch: stf.branch_name || 'Store',
+        photo_url: stf.photo_url || '',
+        total,
+        onTime,
+        late,
+        rate
+      }
+    })
+    // Sort primarily by onTime count descending, then by punctuality rate descending
+    ranked.sort((a, b) => {
+      if (b.onTime !== a.onTime) return b.onTime - a.onTime
+      return b.rate - a.rate
+    })
+    return ranked
+  }, [allStaffList, allCheckinsList, staffUser])
+
+  // Send message from Staff to Admin via Support Form
+  const handleSendSupportMessage = async (e) => {
+    if (e) e.preventDefault()
+    if (!supportForm.message.trim()) {
+      showToast?.('Please enter a message for admin management.', 'error')
+      return
+    }
+    setSupportSending(true)
+    try {
+      await createStaffMessageInFirebase({
+        staff_id: staffUser?.id || '',
+        staff_name: staffProfile?.name || staffUser?.name || 'Staff Member',
+        email: staffUser?.email || '',
+        branch_name: staffUser?.branch_name || 'Store',
+        subject: supportForm.subject.trim() || 'Staff Inquiry',
+        message: supportForm.message.trim(),
+        priority: supportForm.priority || 'normal',
+      })
+      setSupportForm({ subject: '', message: '', priority: 'normal' })
+      showToast?.(
+        lang === 'kh' ? 'សារត្រូវបានផ្ញើទៅ Admin រួចរាល់!' : 'Message sent to Admin successfully!',
+        'success'
+      )
+    } catch {
+      showToast?.('Failed to send message', 'error')
+    } finally {
+      setSupportSending(false)
+    }
+  }
 
   // Execute explicit Clock In or Clock Out
   const handleExecuteAttendance = async (actionType) => {
@@ -686,11 +912,11 @@ export default function StaffPortal({
 
   // Hub items matching 3x3 grid
   const hubItems = useMemo(() => [
-    { id: 'roster', title: t('shiftRoster', 'Shift Roster'), icon: <IconCalendar size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
-    { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <IconSun size={26} color="#ffffff" />, action: () => setActiveTab('schedule') },
+    { id: 'roster', title: t('shiftRoster', 'Shift Roster'), icon: <IconCalendar size={26} color="#ffffff" />, action: () => { setScheduleMode('all'); setActiveTab('schedule') } },
+    { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <IconSun size={26} color="#ffffff" />, action: () => { setScheduleMode('own'); setActiveTab('schedule') } },
     { id: 'perf', title: t('performance', 'Performance'), icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('performance') },
     { id: 'logs', title: t('shiftLogs', 'Shift Logs'), icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('history') },
-    { id: 'station', title: t('station', 'Station'), icon: <IconCoffee size={26} color="#ffffff" />, action: () => setActiveModal('station') },
+    { id: 'top', title: t('topStaff', 'TOP'), icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('top') },
     { id: 'badge', title: t('idBadge', 'ID Badge'), icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('badge') },
     { id: 'alerts', title: t('storeAlerts', 'Store Alerts'), icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
     { id: 'profile', title: t('myProfile', 'My Profile'), icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
@@ -710,7 +936,7 @@ export default function StaffPortal({
   }, [currentTime])
 
   return (
-    <div className="mobile-app-layout-wrapper">
+    <div className={`mobile-app-layout-wrapper ${themeMode === 'dark' ? 'dark-theme' : ''}`}>
       {/* ============================================================== */}
       {/* 1. TOP MOBILE APP BAR (MENU, SEARCH, NOTIFICATION BELL)       */}
       {/* ============================================================== */}
@@ -746,17 +972,84 @@ export default function StaffPortal({
         <button
           type="button"
           className="mobile-header-bell-btn"
-          onClick={() => setActiveModal('alerts')}
+          onClick={() => { setActiveModal('alerts'); markAdminNotifsRead() }}
           title={t('storeAlerts', 'Store Alerts & Notifications')}
           aria-label="View Alerts"
         >
           <IconBell size={20} color="#ffffff" />
-          <span className="mobile-bell-badge"></span>
+          {(storeAlerts.length > 0 || unreadAdminNotifCount > 0) && (
+            <span className="mobile-bell-badge" style={unreadAdminNotifCount > 0 ? { background: '#ef4444', color: '#fff', fontSize: '9px', fontWeight: 800, minWidth: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', position: 'absolute', top: '-2px', right: '-2px' } : {}}>
+              {unreadAdminNotifCount > 0 ? unreadAdminNotifCount : ''}
+            </span>
+          )}
         </button>
       </header>
 
       {/* Main Container */}
       <main style={{ flex: 1 }}>
+        {/* Management Announcement Banner (Push from Admin) */}
+        {unreadAdminNotifCount > 0 && adminNotifications.length > 0 && (
+          <div
+            className="pro-admin-notif-banner"
+            onClick={() => { setActiveModal('alerts'); markAdminNotifsRead(); }}
+            style={{
+              margin: '14px 18px 0',
+              padding: '12px 16px',
+              borderRadius: '14px',
+              background: adminNotifications[0]?.priority === 'urgent'
+                ? 'linear-gradient(135deg, #fff7ed, #ffedd5)'
+                : 'linear-gradient(135deg, #f0f9ff, #e0f2fe)',
+              border: `1.5px solid ${adminNotifications[0]?.priority === 'urgent' ? '#fed7aa' : '#bae6fd'}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+              transition: 'transform 0.2s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: adminNotifications[0]?.priority === 'urgent' ? '#ea580c' : '#0284c7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                fontSize: '18px',
+                flexShrink: 0
+              }}>
+                {adminNotifications[0]?.priority === 'urgent' ? '🚨' : '🔔'}
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+                    {adminNotifications[0]?.title || 'Notice from Management'}
+                  </strong>
+                  <span style={{
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    background: adminNotifications[0]?.priority === 'urgent' ? '#ea580c' : '#0284c7',
+                    color: '#ffffff'
+                  }}>
+                    {adminNotifications[0]?.priority === 'urgent' ? 'URGENT' : 'NEW NOTICE'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
+                  {adminNotifications[0]?.message}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#0284c7', whiteSpace: 'nowrap' }}>View Alert →</span>
+            </div>
+          </div>
+        )}
+
         {/* Scheduled Day Off Banner (if applicable today) */}
         {todayDayoff && (
           <div className="pro-dayoff-alert-banner" style={{ margin: '14px 18px 0' }}>
@@ -1133,37 +1426,123 @@ export default function StaffPortal({
         )}
 
         {/* ============================================================== */}
-        {/* 6. TAB 2: MY SCHEDULE & DAYS OFF */}
+        {/* 6. TAB 2: MY SCHEDULE & DAYS OFF / SHIFT ROSTER */}
         {/* ============================================================== */}
         {activeTab === 'schedule' && (
           <div className="pro-card">
+            {/* Mode Toggle Bar: My Day Offs (Own Account) vs Shift Roster (All Staff) */}
+            <div style={{ padding: '16px 20px 0', display: 'flex', gap: '8px', borderBottom: '1px solid #f1f5f9' }}>
+              <button
+                type="button"
+                onClick={() => setScheduleMode('own')}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: '10px 10px 0 0',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: scheduleMode === 'own' ? '#0f172a' : '#f1f5f9',
+                  color: scheduleMode === 'own' ? '#ffffff' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <IconSun size={16} color={scheduleMode === 'own' ? '#38bdf8' : '#94a3b8'} />
+                <span>{t('myDayOffs', 'My Day Offs (Own Account)')}</span>
+                <span style={{ fontSize: '11px', background: scheduleMode === 'own' ? '#334155' : '#e2e8f0', color: scheduleMode === 'own' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: '10px' }}>
+                  {dayoffs.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setScheduleMode('all')}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: '10px 10px 0 0',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: scheduleMode === 'all' ? '#0f172a' : '#f1f5f9',
+                  color: scheduleMode === 'all' ? '#ffffff' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <IconCalendar size={16} color={scheduleMode === 'all' ? '#38bdf8' : '#94a3b8'} />
+                <span>{t('allStaffDayOffs', 'Shift Roster (All Staff Day Offs)')}</span>
+                <span style={{ fontSize: '11px', background: scheduleMode === 'all' ? '#334155' : '#e2e8f0', color: scheduleMode === 'all' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: '10px' }}>
+                  {allDayoffs.length}
+                </span>
+              </button>
+            </div>
+
             <div className="pro-card-header">
               <div>
-                <h2 className="pro-card-title">MY SCHEDULED DAYS OFF & VACATIONS</h2>
-                <p className="pro-card-subtitle">Approved leaves and rest days assigned by management</p>
+                <h2 className="pro-card-title">
+                  {scheduleMode === 'own'
+                    ? t('myDayOffs', 'MY SCHEDULED DAYS OFF (OWN ACCOUNT)')
+                    : t('allStaffDayOffs', 'SHIFT ROSTER — ALL STAFF DAYS OFF')}
+                </h2>
+                <p className="pro-card-subtitle">
+                  {scheduleMode === 'own'
+                    ? 'Approved leaves and rest days assigned to your own account'
+                    : 'Scheduled day offs and leaves across all team members and branches'}
+                </p>
               </div>
-              <div className="pro-filter-pills">
-                <button
-                  type="button"
-                  className={`pro-filter-pill ${dayoffFilter === 'all' ? 'active' : ''}`}
-                  onClick={() => setDayoffFilter('all')}
-                >
-                  All ({dayoffs.length})
-                </button>
-                <button
-                  type="button"
-                  className={`pro-filter-pill ${dayoffFilter === 'upcoming' ? 'active' : ''}`}
-                  onClick={() => setDayoffFilter('upcoming')}
-                >
-                  Upcoming
-                </button>
-                <button
-                  type="button"
-                  className={`pro-filter-pill ${dayoffFilter === 'past' ? 'active' : ''}`}
-                  onClick={() => setDayoffFilter('past')}
-                >
-                  Past
-                </button>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {scheduleMode === 'all' && (
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      placeholder="Search staff, branch, leave..."
+                      value={rosterSearch}
+                      onChange={(e) => setRosterSearch(e.target.value)}
+                      style={{
+                        padding: '6px 12px 6px 30px',
+                        fontSize: '12px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '20px',
+                        outline: 'none',
+                        width: '180px'
+                      }}
+                    />
+                    <span style={{ position: 'absolute', left: '10px', top: '7px', color: '#94a3b8' }}>
+                      <IconSearch size={13} />
+                    </span>
+                  </div>
+                )}
+
+                <div className="pro-filter-pills">
+                  <button
+                    type="button"
+                    className={`pro-filter-pill ${dayoffFilter === 'all' ? 'active' : ''}`}
+                    onClick={() => setDayoffFilter('all')}
+                  >
+                    All ({scheduleMode === 'own' ? dayoffs.length : allDayoffs.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`pro-filter-pill ${dayoffFilter === 'upcoming' ? 'active' : ''}`}
+                    onClick={() => setDayoffFilter('upcoming')}
+                  >
+                    Upcoming
+                  </button>
+                  <button
+                    type="button"
+                    className={`pro-filter-pill ${dayoffFilter === 'past' ? 'active' : ''}`}
+                    onClick={() => setDayoffFilter('past')}
+                  >
+                    Past
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1173,47 +1552,101 @@ export default function StaffPortal({
                   <Skeleton width="100%" height="48px" borderRadius="8px" />
                   <Skeleton width="100%" height="48px" borderRadius="8px" />
                 </div>
-              ) : filteredDayoffs.length === 0 ? (
-                <div className="pro-empty-placeholder">
-                  <div className="empty-icon"><IconSun size={32} color="#0284c7" /></div>
-                  <h3>No Scheduled Days Off Found</h3>
-                  <p>You currently do not have any {dayoffFilter !== 'all' ? dayoffFilter : ''} days off assigned.</p>
-                  <p className="sub">Contact your manager if you need to schedule leave or swap days off.</p>
-                </div>
-              ) : (
-                <div className="pro-dayoffs-grid">
-                  {filteredDayoffs.map((item) => {
-                    const isToday = String(item.date).substring(0, 10) === todayStr
-                    const isPast = String(item.date).substring(0, 10) < todayStr
+              ) : scheduleMode === 'own' ? (
+                // VIEW 1: OWN ACCOUNT DAY OFFS ONLY
+                filteredDayoffs.length === 0 ? (
+                  <div className="pro-empty-placeholder">
+                    <div className="empty-icon"><IconSun size={32} color="#0284c7" /></div>
+                    <h3>No Scheduled Days Off Found</h3>
+                    <p>You currently do not have any {dayoffFilter !== 'all' ? dayoffFilter : ''} days off assigned to your account.</p>
+                    <p className="sub">Contact your manager or use the Support form to request leave or swap days off.</p>
+                  </div>
+                ) : (
+                  <div className="pro-dayoffs-grid">
+                    {filteredDayoffs.map((item) => {
+                      const isToday = String(item.date).substring(0, 10) === todayStr
+                      const isPast = String(item.date).substring(0, 10) < todayStr
 
-                    return (
-                      <div key={item.id} className={`pro-dayoff-card ${isToday ? 'card-today-glow' : ''}`}>
-                        <div className="dayoff-card-top">
-                          <span className="dayoff-type-icon">
-                            {item.type === 'annual_leave' ? <IconSun size={18} color="#0284c7" /> : item.type === 'sick_leave' ? <IconActivity size={18} color="#dc2626" /> : item.type === 'holiday' ? <IconAward size={18} color="#d97706" /> : <IconSun size={18} color="#059669" />}
-                          </span>
-                          <span className={`pro-badge ${isToday ? 'badge-emerald' : isPast ? 'badge-slate' : 'badge-blue'}`}>
-                            {isToday ? 'TODAY' : isPast ? 'COMPLETED' : 'UPCOMING'}
-                          </span>
+                      return (
+                        <div key={item.id} className={`pro-dayoff-card ${isToday ? 'card-today-glow' : ''}`}>
+                          <div className="dayoff-card-top">
+                            <span className="dayoff-type-icon">
+                              {item.type === 'annual_leave' ? <IconSun size={18} color="#0284c7" /> : item.type === 'sick_leave' ? <IconAward size={18} color="#dc2626" /> : item.type === 'holiday' ? <IconAward size={18} color="#d97706" /> : <IconSun size={18} color="#059669" />}
+                            </span>
+                            <span className={`pro-badge ${isToday ? 'badge-emerald' : isPast ? 'badge-slate' : 'badge-blue'}`}>
+                              {isToday ? 'TODAY' : isPast ? 'COMPLETED' : 'UPCOMING'}
+                            </span>
+                          </div>
+                          <div className="dayoff-card-date">
+                            {new Date(item.date + 'T00:00:00').toLocaleDateString([], {
+                              weekday: 'short',
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric'
+                            })}
+                          </div>
+                          <div className="dayoff-card-type-name">
+                            {String(item.type || 'DAY OFF').replace('_', ' ').toUpperCase()}
+                          </div>
+                          <div className="dayoff-card-reason">
+                            {item.reason || 'Scheduled Rest & Recreation'}
+                          </div>
                         </div>
-                        <div className="dayoff-card-date">
-                          {new Date(item.date + 'T00:00:00').toLocaleDateString([], {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                          })}
+                      )
+                    })}
+                  </div>
+                )
+              ) : (
+                // VIEW 2: SHIFT ROSTER - ALL STAFF DAY OFFS
+                filteredTeamDayoffs.length === 0 ? (
+                  <div className="pro-empty-placeholder">
+                    <div className="empty-icon"><IconCalendar size={32} color="#0284c7" /></div>
+                    <h3>No Team Day Offs Found</h3>
+                    <p>No team day-offs match the selected criteria.</p>
+                  </div>
+                ) : (
+                  <div className="pro-dayoffs-grid">
+                    {filteredTeamDayoffs.map((item) => {
+                      const isToday = String(item.date).substring(0, 10) === todayStr
+                      const isPast = String(item.date).substring(0, 10) < todayStr
+                      const isMine = String(item.staff_id) === String(staffUser?.id) || item.name === staffUser?.name
+
+                      return (
+                        <div key={item.id || Math.random()} className={`pro-dayoff-card ${isToday ? 'card-today-glow' : ''}`} style={isMine ? { borderColor: '#38bdf8', background: '#f0f9ff' } : {}}>
+                          <div className="dayoff-card-top">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span className="dayoff-type-icon">
+                                {item.type === 'annual_leave' ? <IconSun size={18} color="#0284c7" /> : <IconAward size={18} color="#d97706" />}
+                              </span>
+                              <div>
+                                <strong style={{ fontSize: '13px', color: '#0f172a' }}>{item.staff_name || item.staff?.name || item.name || 'Team Member'}</strong>
+                                {isMine && <span style={{ marginLeft: '6px', fontSize: '10px', background: '#0284c7', color: '#fff', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>YOU</span>}
+                                {(item.branch_name || item.staff?.branch_name) && <div style={{ fontSize: '10.5px', color: '#64748b' }}>{item.branch_name || item.staff?.branch_name}</div>}
+                              </div>
+                            </div>
+                            <span className={`pro-badge ${isToday ? 'badge-emerald' : isPast ? 'badge-slate' : 'badge-blue'}`}>
+                              {isToday ? 'TODAY' : isPast ? 'COMPLETED' : 'UPCOMING'}
+                            </span>
+                          </div>
+                          <div className="dayoff-card-date" style={{ marginTop: '8px' }}>
+                            {new Date(item.date + 'T00:00:00').toLocaleDateString([], {
+                              weekday: 'short',
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric'
+                            })}
+                          </div>
+                          <div className="dayoff-card-type-name">
+                            {String(item.type || 'DAY OFF').replace('_', ' ').toUpperCase()}
+                          </div>
+                          <div className="dayoff-card-reason">
+                            {item.reason || 'Rest & Recharge'}
+                          </div>
                         </div>
-                        <div className="dayoff-card-type-name">
-                          {item.type.replace('_', ' ').toUpperCase()}
-                        </div>
-                        <div className="dayoff-card-reason">
-                          {item.reason || 'Scheduled Rest & Recreation'}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                      )
+                    })}
+                  </div>
+                )
               )}
             </div>
           </div>
@@ -1439,10 +1872,19 @@ export default function StaffPortal({
               <button
                 type="button"
                 className="drawer-nav-item"
-                onClick={() => { setActiveTab('schedule'); setIsDrawerOpen(false) }}
+                onClick={() => { setScheduleMode('all'); setActiveTab('schedule'); setIsDrawerOpen(false) }}
               >
-                <IconCalendar size={18} color="#10b981" />
-                <span>My Schedule & Leaves</span>
+                <IconCalendar size={18} color="#0284c7" />
+                <span>Shift Roster (All Staff Day Offs)</span>
+              </button>
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setScheduleMode('own'); setActiveTab('schedule'); setIsDrawerOpen(false) }}
+              >
+                <IconSun size={18} color="#f59e0b" />
+                <span>My Day Offs (Own Account)</span>
               </button>
 
               <button
@@ -1495,10 +1937,10 @@ export default function StaffPortal({
               <button
                 type="button"
                 className="drawer-nav-item"
-                onClick={() => { setActiveModal('station'); setIsDrawerOpen(false) }}
+                onClick={() => { setActiveModal('top'); setIsDrawerOpen(false) }}
               >
-                <IconCoffee size={18} color="#d97706" />
-                <span>Counter Station</span>
+                <IconTrophy size={18} color="#eab308" />
+                <span>TOP Staff Leaderboard</span>
               </button>
 
               <button
@@ -1535,7 +1977,7 @@ export default function StaffPortal({
       )}
 
       {/* ============================================================== */}
-      {/* 11. FEATURE MODALS (PERFORMANCE, STATION, ALERTS, PROFILE, SUPPORT) */}
+      {/* 11. FEATURE MODALS (PERFORMANCE, TOP, ALERTS, PROFILE, SUPPORT) */}
       {/* ============================================================== */}
       {activeModal && (
         <div className="mobile-feature-modal-backdrop" onClick={() => setActiveModal(null)}>
@@ -1543,10 +1985,10 @@ export default function StaffPortal({
             <div className="mobile-feature-modal-header">
               <h3 className="mobile-feature-modal-title">
                 {activeModal === 'performance' && <><IconAward size={20} color="#eab308" /> Staff Performance Review</>}
-                {activeModal === 'station' && <><IconCoffee size={20} color="#d97706" /> Assigned Counter Station</>}
+                {activeModal === 'top' && <><IconTrophy size={20} color="#eab308" /> TOP Staff Leaderboard</>}
                 {activeModal === 'alerts' && <><IconBell size={20} color="#ec4899" /> Store Alerts & Notices</>}
                 {activeModal === 'profile' && <><IconUserCircle size={20} color="#10b981" /> Employee Profile</>}
-                {activeModal === 'support' && <><IconPhone size={20} color="#14b8a6" /> Store Support & Contacts</>}
+                {activeModal === 'support' && <><IconPhone size={20} color="#14b8a6" /> Store Support & Admin Inquiries</>}
               </h3>
               <button
                 type="button"
@@ -1581,30 +2023,91 @@ export default function StaffPortal({
                     </div>
                   </div>
 
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px', fontSize: '12.5px', color: '#166534', lineHeight: 1.5 }}>
-                    ⭐ <strong>Good Standing:</strong> Attendance records are verified and synced with cloud timesheets. Keep up the high standard of punctuality!
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px', fontSize: '12.5px', color: '#166534', lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <IconAward size={18} color="#166534" />
+                    <span><strong>Good Standing:</strong> Attendance records are verified and synced with cloud timesheets. Keep up the high standard of punctuality!</span>
                   </div>
                 </div>
               )}
 
-              {/* Station Modal */}
-              {activeModal === 'station' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b' }}>Assigned Bar Station:</span>
-                    <strong style={{ color: '#0f172a' }}>Main Espresso Bar #1</strong>
+              {/* TOP Staff Leaderboard Modal */}
+              {activeModal === 'top' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
+                    Real-time attendance & punctuality leaderboard across all store locations.
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b' }}>Machine:</span>
-                    <strong style={{ color: '#0f172a' }}>La Marzocco Linea PB (Ready)</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b' }}>Recipe Standard:</span>
-                    <strong style={{ color: '#0f172a' }}>18.5g In • 38g Out (27s)</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Milk Steaming Station:</span>
-                    <strong style={{ color: '#10b981' }}>Sanitized & Temperature Set (65°C)</strong>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto' }}>
+                    {topRankings.map((stf, idx) => {
+                      const isTop1 = idx === 0
+                      const isTop2 = idx === 1
+                      const isTop3 = idx === 2
+                      const isMe = String(stf.id) === String(staffUser?.id) || (stf.email && stf.email.toLowerCase() === (staffUser?.email || '').toLowerCase())
+
+                      return (
+                        <div
+                          key={stf.id || idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '12px 14px',
+                            borderRadius: '12px',
+                            background: isTop1 ? 'linear-gradient(135deg, #fefce8, #fef9c3)' : isMe ? '#f0fdf4' : '#ffffff',
+                            border: `1px solid ${isTop1 ? '#fde047' : isTop2 ? '#cbd5e1' : isTop3 ? '#fcd34d' : isMe ? '#86efac' : '#e2e8f0'}`,
+                            boxShadow: isTop1 ? '0 2px 8px rgba(234, 179, 8, 0.15)' : '0 1px 3px rgba(0,0,0,0.03)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {/* Ranks 1, 2, 3 have badge icons. Rank 4+ have NO badge icon */}
+                            <div style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '10px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 900,
+                              background: isTop1 ? '#fef08a' : isTop2 ? '#f1f5f9' : isTop3 ? '#ffedd5' : '#f8fafc',
+                              color: isTop1 ? '#854d0e' : isTop2 ? '#334155' : isTop3 ? '#9a3412' : '#64748b'
+                            }}>
+                              {isTop1 ? (
+                                <IconTrophy size={16} color="#ca8a04" />
+                              ) : isTop2 ? (
+                                <IconAward size={16} color="#64748b" />
+                              ) : isTop3 ? (
+                                <IconAward size={16} color="#c2410c" />
+                              ) : null}
+                              <span style={{ fontSize: (isTop1 || isTop2 || isTop3) ? '10px' : '13px', lineHeight: 1 }}>#{idx + 1}</span>
+                            </div>
+
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontWeight: 800, fontSize: '13.5px', color: '#0f172a' }}>{stf.name}</span>
+                                {isMe && (
+                                  <span style={{ fontSize: '10px', fontWeight: 700, background: '#10b981', color: '#ffffff', padding: '1px 6px', borderRadius: '4px' }}>
+                                    YOU
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                {stf.role} • {stf.branch}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 900, fontSize: '14px', color: stf.rate >= 90 ? '#10b981' : stf.rate >= 75 ? '#0284c7' : '#f59e0b' }}>
+                              {stf.rate}%
+                            </div>
+                            <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                              {stf.onTime} on-time ({stf.total} shifts)
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -1612,41 +2115,93 @@ export default function StaffPortal({
               {/* Alerts Modal */}
               {activeModal === 'alerts' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {storeAlerts.length === 0 ? (
+
+                  {/* Admin Notifications Section */}
+                  {adminNotifications.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <IconBell size={13} color="#ea580c" />
+                        MESSAGES FROM MANAGEMENT
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {adminNotifications.map(notif => (
+                          <div
+                            key={notif.id}
+                            style={{
+                              background: notif.priority === 'urgent' ? '#fff7ed' : notif.priority === 'info' ? '#eff6ff' : '#f8fafc',
+                              border: `1px solid ${notif.priority === 'urgent' ? '#fed7aa' : notif.priority === 'info' ? '#bfdbfe' : '#e2e8f0'}`,
+                              borderRadius: '12px',
+                              padding: '12px',
+                              fontSize: '12.5px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <div style={{ fontWeight: 800, color: notif.priority === 'urgent' ? '#c2410c' : notif.priority === 'info' ? '#1e40af' : '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {notif.priority === 'urgent' ? '🚨' : notif.priority === 'info' ? 'ℹ️' : '🔔'}
+                                <span>{notif.title}</span>
+                              </div>
+                              {notif.priority === 'urgent' && (
+                                <span style={{ fontSize: '10px', fontWeight: 700, background: '#fed7aa', color: '#c2410c', padding: '2px 6px', borderRadius: '4px' }}>URGENT</span>
+                              )}
+                            </div>
+                            <div style={{ color: '#334155', lineHeight: 1.5 }}>{notif.message}</div>
+                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
+                              From Management • {new Date(notif.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Store Notices Section */}
+                  {storeAlerts.length > 0 && (
+                    <div>
+                      {adminNotifications.length > 0 && (
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f172a', marginBottom: '8px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <IconBell size={13} color="#0284c7" />
+                          STORE NOTICES
+                        </div>
+                      )}
+                      {storeAlerts.map(alert => (
+                        <div
+                          key={alert.id}
+                          style={{
+                            background: alert.priority === 'high' ? '#eff6ff' : '#f0fdf4',
+                            border: `1px solid ${alert.priority === 'high' ? '#bfdbfe' : '#bbf7d0'}`,
+                            borderRadius: '12px',
+                            padding: '12px',
+                            fontSize: '12.5px',
+                            marginBottom: '8px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <IconBell size={13} />
+                              <span>{alert.title}</span>
+                            </div>
+                            {alert.priority === 'high' && (
+                              <span style={{ fontSize: '10px', fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px' }}>
+                                {t('priorityHigh', 'High Priority')}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ color: alert.priority === 'high' ? '#2563eb' : '#15803d', lineHeight: 1.4 }}>
+                            {alert.message}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {adminNotifications.length === 0 && storeAlerts.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '20px 0', color: '#64748b', fontSize: '13px' }}>
                       {t('noAlerts', 'No active announcements at this time.')}
                     </div>
-                  ) : (
-                    storeAlerts.map(alert => (
-                      <div
-                        key={alert.id}
-                        style={{
-                          background: alert.priority === 'high' ? '#eff6ff' : '#f0fdf4',
-                          border: `1px solid ${alert.priority === 'high' ? '#bfdbfe' : '#bbf7d0'}`,
-                          borderRadius: '12px',
-                          padding: '12px',
-                          fontSize: '12.5px'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <IconBell size={13} />
-                            <span>{alert.title}</span>
-                          </div>
-                          {alert.priority === 'high' && (
-                            <span style={{ fontSize: '10px', fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px' }}>
-                              {t('priorityHigh', 'High Priority')}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ color: alert.priority === 'high' ? '#2563eb' : '#15803d', lineHeight: 1.4 }}>
-                          {alert.message}
-                        </div>
-                      </div>
-                    ))
                   )}
                 </div>
               )}
+
 
               {/* Profile Modal */}
               {activeModal === 'profile' && (
@@ -1674,25 +2229,174 @@ export default function StaffPortal({
                 </div>
               )}
 
-              {/* Support Modal */}
+              {/* Support & Send Message to Admin Modal */}
               {activeModal === 'support' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
-                  <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '12px' }}>
-                    <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <IconPhone size={14} color="#0284c7" />
-                      <span>Store Manager Hotline</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
+                  {/* Contact Hotlines */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <IconPhone size={14} color="#0284c7" />
+                        <span>Manager Hotline</span>
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: '11px' }}>+1 (555) 234-5678</div>
                     </div>
-                    <div style={{ color: '#64748b' }}>+1 (555) 234-5678 (Call or WhatsApp)</div>
-                  </div>
-                  <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '12px' }}>
-                    <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <IconMail size={14} color="#0284c7" />
-                      <span>Shift Swapping & Inquiries</span>
+                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <IconMail size={14} color="#0284c7" />
+                        <span>Email Desk</span>
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: '11px' }}>support@chafe.internal</div>
                     </div>
-                    <div style={{ color: '#64748b' }}>operations@chafe.internal</div>
                   </div>
-                  <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', padding: '12px', fontSize: '12px', color: '#92400e' }}>
-                    Emergency shifts or sudden sick leaves should be notified at least 2 hours before shift start.
+
+                  {/* Form to Send Message to Admin */}
+                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '14px' }}>
+                    <div style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <IconSend size={15} color="#0284c7" />
+                      <span>Send Inquiry or Request to Admin</span>
+                    </div>
+
+                    <form onSubmit={handleSendSupportMessage} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+                        <div>
+                          <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                            Subject
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Schedule swap, Supply issue..."
+                            value={supportForm.subject}
+                            onChange={(e) => setSupportForm(prev => ({ ...prev, subject: e.target.value }))}
+                            style={{
+                              width: '100%',
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              fontSize: '12px',
+                              outline: 'none',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                            Priority
+                          </label>
+                          <select
+                            value={supportForm.priority}
+                            onChange={(e) => setSupportForm(prev => ({ ...prev, priority: e.target.value }))}
+                            style={{
+                              width: '100%',
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              fontSize: '12px',
+                              outline: 'none',
+                              boxSizing: 'border-box'
+                            }}
+                          >
+                            <option value="normal">Normal</option>
+                            <option value="urgent">Urgent</option>
+                            <option value="leave_request">Leave Request</option>
+                            <option value="emergency">Emergency</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                          Message to Admin *
+                        </label>
+                        <textarea
+                          placeholder="Type your message, issue, or request for management here..."
+                          rows={3}
+                          value={supportForm.message}
+                          onChange={(e) => setSupportForm(prev => ({ ...prev, message: e.target.value }))}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: '1px solid #cbd5e1',
+                            fontSize: '12px',
+                            outline: 'none',
+                            resize: 'vertical',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={supportSending || !supportForm.message.trim()}
+                        style={{
+                          background: supportSending ? '#94a3b8' : '#0284c7',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '10px 14px',
+                          fontWeight: 800,
+                          fontSize: '12.5px',
+                          cursor: supportSending ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          transition: 'background 0.2s ease'
+                        }}
+                      >
+                        <IconSend size={14} color="#ffffff" />
+                        <span>{supportSending ? 'Sending...' : 'Send Message to Admin'}</span>
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Sent Inquiries & Admin Replies History */}
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
+                      My Inquiries & Admin Replies ({staffMessages.length})
+                    </div>
+                    {staffMessages.length === 0 ? (
+                      <div style={{ color: '#94a3b8', fontSize: '11.5px', textAlign: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
+                        You haven't sent any messages to admin yet.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                        {staffMessages.map(msg => (
+                          <div
+                            key={msg.id}
+                            style={{
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '10px',
+                              padding: '10px 12px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <strong style={{ fontSize: '12.5px', color: '#0f172a' }}>{msg.subject || 'Inquiry'}</strong>
+                              <span style={{
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                background: msg.status === 'replied' ? '#dcfce7' : msg.status === 'read' ? '#dbeafe' : '#fef3c7',
+                                color: msg.status === 'replied' ? '#15803d' : msg.status === 'read' ? '#1e40af' : '#b45309'
+                              }}>
+                                {msg.status === 'replied' ? 'Replied' : msg.status === 'read' ? 'Read by Admin' : 'Pending'}
+                              </span>
+                            </div>
+                            <div style={{ color: '#475569', fontSize: '11.5px', lineHeight: 1.4 }}>
+                              {msg.message}
+                            </div>
+                            {(msg.reply || msg.admin_reply) && (
+                              <div style={{ marginTop: '8px', padding: '8px 10px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', fontSize: '11px', color: '#065f46' }}>
+                                <strong>Admin Reply:</strong> {msg.reply || msg.admin_reply}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

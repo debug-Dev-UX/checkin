@@ -394,6 +394,10 @@ export function subscribeToLiveCheckins(callback) {
  * Real-time listener for Staff roster updates
  */
 export function subscribeToStaff(callback) {
+  const initial = getLocal('staff', [])
+  if (Array.isArray(initial) && initial.length > 0 && typeof callback === 'function') {
+    callback(initial)
+  }
   try {
     const colRef = collection(db, 'staff')
     const unsubscribe = onSnapshot(colRef, (snap) => {
@@ -641,11 +645,45 @@ export async function getTodayControlFromFirebase() {
 }
 
 /**
- * Get Specific Staff Member's Dayoffs
+ * Get Specific Staff Member's Dayoffs (Strictly matching own account)
  */
-export async function getStaffDayoffsFromFirebase(staffId) {
+export async function getStaffDayoffsFromFirebase(staffId, staffUser = null) {
   const allDayoffs = await getDayoffsFromFirebase()
-  return allDayoffs.filter(d => String(d.staff_id) === String(staffId))
+  return allDayoffs.filter(d => {
+    if (staffId && String(d.staff_id) === String(staffId)) return true
+    if (staffUser?.id && String(d.staff_id) === String(staffUser.id)) return true
+    if (staffUser?.email && d.staff?.email && d.staff.email.toLowerCase() === staffUser.email.toLowerCase()) return true
+    if (staffUser?.name && (
+      (d.staff_name && d.staff_name.toLowerCase() === staffUser.name.toLowerCase()) ||
+      (d.name && d.name.toLowerCase() === staffUser.name.toLowerCase())
+    )) return true
+    return false
+  })
+}
+
+/**
+ * Real-time subscription to Dayoffs
+ */
+export function subscribeToDayoffs(callback) {
+  // Immediately call with current data
+  getDayoffsFromFirebase().then(list => {
+    if (typeof callback === 'function') callback(list)
+  })
+
+  try {
+    const unsub = onSnapshot(collection(db, 'dayoffs'), () => {
+      getDayoffsFromFirebase().then(list => {
+        if (typeof callback === 'function') callback(list)
+      })
+    }, () => {
+      getDayoffsFromFirebase().then(list => {
+        if (typeof callback === 'function') callback(list)
+      })
+    })
+    return unsub
+  } catch {
+    return () => {}
+  }
 }
 
 /**
@@ -673,7 +711,10 @@ export async function getDayoffsFromFirebase(monthStr = null) {
     const stf = staffList.find(s => String(s.id) === String(item.staff_id))
     return {
       ...item,
-      staff: stf || { name: 'Staff Member', role: 'Team Member', avatar_color: 'amber' }
+      // Set top-level staff_name and branch_name for easy access in roster views
+      staff_name: item.staff_name || stf?.name || 'Staff Member',
+      branch_name: item.branch_name || stf?.branch_name || '',
+      staff: stf || { name: item.staff_name || 'Staff Member', role: 'Team Member', avatar_color: 'amber' }
     }
   })
 
@@ -1003,12 +1044,16 @@ export async function saveStoreAlertsToFirebase(alerts) {
   try {
     localStorage.setItem('chafe_store_alerts', JSON.stringify(alerts))
   } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_store_alerts_updated', { detail: alerts }))
+  }
   return alerts
 }
 
 export function subscribeToStoreAlerts(callback) {
+  let unsubFirestore = () => {}
   try {
-    return onSnapshot(doc(db, 'settings', 'store_alerts'), (snap) => {
+    unsubFirestore = onSnapshot(doc(db, 'settings', 'store_alerts'), (snap) => {
       if (snap.exists()) {
         const data = snap.data()
         if (Array.isArray(data.list)) {
@@ -1026,7 +1071,23 @@ export function subscribeToStoreAlerts(callback) {
     })
   } catch {
     callback(getLocal('store_alerts', DEFAULT_STORE_ALERTS))
-    return () => {}
+  }
+
+  // Also listen for immediate local dispatch
+  const handleLocalUpdate = (e) => {
+    if (e.detail && Array.isArray(e.detail)) {
+      callback(e.detail)
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('chafe_store_alerts_updated', handleLocalUpdate)
+  }
+
+  return () => {
+    unsubFirestore()
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('chafe_store_alerts_updated', handleLocalUpdate)
+    }
   }
 }
 
@@ -1115,4 +1176,283 @@ export async function saveLeaveTypesToFirebase(leaveTypes) {
   return leaveTypes
 }
 
+// ============================================================================
+// STAFF TO ADMIN MESSAGES & SUPPORT INQUIRIES
+// ============================================================================
+export async function getStaffMessagesFromFirebase() {
+  try {
+    const snap = await getDocs(collection(db, 'staff_messages'))
+    let list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+    setLocal('staff_messages', list)
+    try {
+      localStorage.setItem('chafe_staff_messages', JSON.stringify(list))
+    } catch {}
+    return list
+  } catch {
+    const local = getLocal('staff_messages', [])
+    try {
+      const raw = localStorage.getItem('chafe_staff_messages')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed
+      }
+    } catch {}
+    return local
+  }
+}
 
+export async function createStaffMessageInFirebase(data) {
+  const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+  const record = {
+    id: messageId,
+    staff_id: data.staff_id || '',
+    staff_name: data.staff_name || 'Staff Member',
+    email: data.email || '',
+    branch_name: data.branch_name || 'Store',
+    subject: data.subject || 'General Inquiry',
+    message: data.message || '',
+    priority: data.priority || 'normal',
+    status: 'unread', // 'unread' | 'read' | 'replied'
+    reply: '',
+    replied_at: null,
+    created_at: new Date().toISOString()
+  }
+
+  try {
+    await setDoc(doc(db, 'staff_messages', messageId), record)
+  } catch (err) {
+    console.warn('Firebase staff message write failed, using local fallback:', err)
+  }
+
+  const current = getLocal('staff_messages', [])
+  const updated = [record, ...current]
+  setLocal('staff_messages', updated)
+  try {
+    localStorage.setItem('chafe_staff_messages', JSON.stringify(updated))
+  } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_staff_messages_updated', { detail: updated }))
+  }
+  return record
+}
+
+export async function replyToStaffMessageInFirebase(messageId, replyText) {
+  const replyData = {
+    reply: replyText,
+    admin_reply: replyText, // both keys for 100% staff frontend compatibility
+    replied_at: new Date().toISOString(),
+    status: 'replied'
+  }
+
+  try {
+    await updateDoc(doc(db, 'staff_messages', messageId), replyData)
+  } catch (err) {
+    console.warn('Firebase update message failed, saving local:', err)
+  }
+
+  const current = getLocal('staff_messages', [])
+  const updated = current.map(m => m.id === messageId ? { ...m, ...replyData } : m)
+  setLocal('staff_messages', updated)
+  try {
+    localStorage.setItem('chafe_staff_messages', JSON.stringify(updated))
+  } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_staff_messages_updated', { detail: updated }))
+    window.dispatchEvent(new Event('storage'))
+  }
+  return updated
+}
+
+export async function updateStaffMessageStatus(messageId, status) {
+  try {
+    await updateDoc(doc(db, 'staff_messages', messageId), { status })
+  } catch {}
+  const current = getLocal('staff_messages', [])
+  const updated = current.map(m => m.id === messageId ? { ...m, status } : m)
+  setLocal('staff_messages', updated)
+  try {
+    localStorage.setItem('chafe_staff_messages', JSON.stringify(updated))
+  } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_staff_messages_updated', { detail: updated }))
+    window.dispatchEvent(new Event('storage'))
+  }
+  return updated
+}
+
+export function subscribeToStaffMessages(callback) {
+  // Immediate initial callback with cached messages
+  const initial = getLocal('staff_messages', [])
+  if (Array.isArray(initial) && initial.length > 0) {
+    callback(initial)
+  }
+
+  let unsubFirestore = () => {}
+  try {
+    unsubFirestore = onSnapshot(collection(db, 'staff_messages'), (snap) => {
+      let list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      setLocal('staff_messages', list)
+      try {
+        localStorage.setItem('chafe_staff_messages', JSON.stringify(list))
+      } catch {}
+      callback(list)
+    }, () => {
+      callback(getLocal('staff_messages', []))
+    })
+  } catch {
+    callback(getLocal('staff_messages', []))
+  }
+
+  const handleLocalUpdate = (e) => {
+    if (e.detail && Array.isArray(e.detail)) {
+      callback(e.detail)
+    }
+  }
+
+  const handleStorageUpdate = (e) => {
+    if (!e || e.key === 'chafe_staff_messages' || e.key === 'chafe_live_staff_messages') {
+      try {
+        const raw = localStorage.getItem('chafe_staff_messages') || localStorage.getItem('chafe_live_staff_messages')
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (Array.isArray(parsed)) callback(parsed)
+        }
+      } catch {}
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('chafe_staff_messages_updated', handleLocalUpdate)
+    window.addEventListener('storage', handleStorageUpdate)
+  }
+
+  return () => {
+    unsubFirestore()
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('chafe_staff_messages_updated', handleLocalUpdate)
+      window.removeEventListener('storage', handleStorageUpdate)
+    }
+  }
+}
+
+
+
+// ============================================================================
+// ADMIN TO STAFF NOTIFICATIONS (Push from Admin → Staff)
+// ============================================================================
+export async function sendAdminNotificationToFirebase(data) {
+  const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+  const record = {
+    id: notifId,
+    target_staff_id: data.target_staff_id || 'all', // 'all' or specific staff ID
+    target_staff_name: data.target_staff_name || 'All Staff',
+    title: data.title || 'Admin Notice',
+    message: data.message || '',
+    priority: data.priority || 'normal', // 'normal' | 'urgent' | 'info'
+    is_broadcast: !data.target_staff_id || data.target_staff_id === 'all',
+    created_at: new Date().toISOString(),
+    read_by: [],
+  }
+
+  try {
+    await setDoc(doc(db, 'admin_notifications', notifId), record)
+  } catch (err) {
+    console.warn('Firebase admin notification write failed, using local fallback:', err)
+  }
+
+  const current = getLocal('admin_notifications', [])
+  const updated = [record, ...current]
+  setLocal('admin_notifications', updated)
+  try {
+    localStorage.setItem('chafe_admin_notifications', JSON.stringify(updated))
+  } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_admin_notifications_updated', { detail: updated }))
+    window.dispatchEvent(new Event('storage'))
+  }
+  return record
+}
+
+export async function getAdminNotificationsFromFirebase() {
+  try {
+    const snap = await getDocs(collection(db, 'admin_notifications'))
+    let list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+    setLocal('admin_notifications', list)
+    return list
+  } catch {
+    return getLocal('admin_notifications', [])
+  }
+}
+
+export function subscribeToAdminNotifications(callback) {
+  // Immediate initial callback with cached admin notifications
+  const initial = getLocal('admin_notifications', [])
+  if (Array.isArray(initial) && initial.length > 0) {
+    callback(initial)
+  }
+
+  let unsubFirestore = () => {}
+  try {
+    unsubFirestore = onSnapshot(collection(db, 'admin_notifications'), (snap) => {
+      let list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      setLocal('admin_notifications', list)
+      try {
+        localStorage.setItem('chafe_admin_notifications', JSON.stringify(list))
+      } catch {}
+      callback(list)
+    }, () => {
+      callback(getLocal('admin_notifications', []))
+    })
+  } catch {
+    callback(getLocal('admin_notifications', []))
+  }
+
+  const handleLocalUpdate = (e) => {
+    if (e.detail && Array.isArray(e.detail)) callback(e.detail)
+  }
+
+  const handleStorageUpdate = (e) => {
+    if (!e || e.key === 'chafe_admin_notifications' || e.key === 'chafe_live_admin_notifications') {
+      try {
+        const raw = localStorage.getItem('chafe_admin_notifications') || localStorage.getItem('chafe_live_admin_notifications')
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (Array.isArray(parsed)) callback(parsed)
+        }
+      } catch {}
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('chafe_admin_notifications_updated', handleLocalUpdate)
+    window.addEventListener('storage', handleStorageUpdate)
+  }
+
+  return () => {
+    unsubFirestore()
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('chafe_admin_notifications_updated', handleLocalUpdate)
+      window.removeEventListener('storage', handleStorageUpdate)
+    }
+  }
+}
+
+export async function deleteAdminNotificationFromFirebase(notifId) {
+  try {
+    await deleteDoc(doc(db, 'admin_notifications', notifId))
+  } catch {}
+  const current = getLocal('admin_notifications', [])
+  const updated = current.filter(n => n.id !== notifId)
+  setLocal('admin_notifications', updated)
+  try {
+    localStorage.setItem('chafe_admin_notifications', JSON.stringify(updated))
+  } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_admin_notifications_updated', { detail: updated }))
+    window.dispatchEvent(new Event('storage'))
+  }
+}

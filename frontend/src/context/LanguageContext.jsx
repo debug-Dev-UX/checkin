@@ -33,10 +33,14 @@ export const TRANSLATIONS = {
     dayOff: 'Day Off',
     performance: 'Performance',
     shiftLogs: 'Shift Logs',
-    station: 'Station',
+    station: 'TOP',
+    topStaff: 'TOP',
     idBadge: 'ID Badge',
     storeAlerts: 'Store Alerts',
     support: 'Support',
+    staffMessages: 'Messages',
+    myDayOffs: 'My Day Offs',
+    allStaffDayOffs: 'All Staff Shift Roster',
     typeOfVisit: 'Type of Visit',
     todayLogs: 'Today',
     viewAllTimesheets: 'View All Timesheets →',
@@ -138,10 +142,14 @@ export const TRANSLATIONS = {
     dayOff: 'ថ្ងៃឈប់សម្រាក',
     performance: 'ការអនុវត្តការងារ',
     shiftLogs: 'កំណត់ត្រាវេន',
-    station: 'ស្ថានីយ',
+    station: 'TOP បុគ្គលិកឆ្នើម',
+    topStaff: 'TOP',
     idBadge: 'កាតសម្គាល់',
     storeAlerts: 'ការជូនដំណឹងហាង',
     support: 'ជំនួយ',
+    staffMessages: 'សារបុគ្គលិក',
+    myDayOffs: 'ថ្ងៃសម្រាកផ្ទាល់ខ្លួន',
+    allStaffDayOffs: 'តារាងថ្ងៃសម្រាកបុគ្គលិកទាំងអស់',
     typeOfVisit: 'ប្រភេទនៃទស្សនកិច្ច / មុខងារ',
     todayLogs: 'ថ្ងៃនេះ',
     viewAllTimesheets: 'មើលតារាងវត្តមានទាំងអស់ →',
@@ -253,7 +261,11 @@ export function LanguageProvider({ children }) {
       }
     }
     window.addEventListener('storage', handleStorage)
-    return () => window.removeEventListener('storage', handleStorage)
+    window.addEventListener('chafe_lang_updated', handleStorage)
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('chafe_lang_updated', handleStorage)
+    }
   }, [lang])
 
   const t = useCallback((key, fallback) => {
