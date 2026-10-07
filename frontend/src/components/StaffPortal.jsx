@@ -36,6 +36,7 @@ import {
   IconStar,
   IconTrash,
   IconRotateCw,
+  IconGear,
 } from '../Icons'
 import { Skeleton } from './Skeleton'
 import ProfileView from './ProfileView'
@@ -151,6 +152,7 @@ export default function StaffPortal({
   const [searchQuery, setSearchQuery] = useState('')
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [activeModal, setActiveModal] = useState(null) // null | 'performance' | 'top' | 'alerts' | 'profile' | 'support'
+  const [profileInitialModal, setProfileInitialModal] = useState(null) // null | 'settings' | 'alerts' | 'password'
 
   // Dynamic Store Alerts
   const [storeAlerts, setStoreAlerts] = useState([])
@@ -993,7 +995,7 @@ export default function StaffPortal({
     window.print()
   }
 
-  // Hub items matching 3x3 grid
+  // Hub items matching 3x3 grid (Store Alerts moved to Settings menu)
   const hubItems = useMemo(() => [
     { id: 'roster', title: t('shiftRoster', 'Shift Roster'), icon: <IconCalendar size={26} color="#ffffff" />, action: () => { setScheduleMode('all'); setActiveTab('schedule') } },
     { id: 'dayoff', title: t('dayOff', 'Day Off'), icon: <IconSun size={26} color="#ffffff" />, action: () => { setScheduleMode('own'); setActiveTab('schedule') } },
@@ -1001,8 +1003,8 @@ export default function StaffPortal({
     { id: 'logs', title: t('shiftLogs', 'Shift Logs'), icon: <IconClock size={26} color="#ffffff" />, action: () => setActiveTab('history') },
     { id: 'top', title: t('topStaff', 'TOP'), icon: <IconTrophy size={26} color="#ffffff" />, action: () => setActiveModal('top') },
     { id: 'badge', title: t('idBadge', 'ID Badge'), icon: <IconQrCode size={26} color="#ffffff" />, action: () => setActiveTab('badge') },
-    { id: 'alerts', title: t('storeAlerts', 'Store Alerts'), icon: <IconBell size={26} color="#ffffff" />, action: () => setActiveModal('alerts') },
-    { id: 'profile', title: t('myProfile', 'My Profile'), icon: <IconUserCircle size={26} color="#ffffff" />, action: () => setActiveTab('profile') },
+    { id: 'settings', title: t('settings', 'Settings'), icon: <IconGear size={26} color="#ffffff" />, action: () => { setProfileInitialModal(null); setActiveTab('profile') } },
+    { id: 'profile', title: t('myProfile', 'My Profile'), icon: <IconUserCircle size={26} color="#ffffff" />, action: () => { setProfileInitialModal(null); setActiveTab('profile') } },
     { id: 'support', title: t('support', 'Support'), icon: <IconPhone size={24} color="#ffffff" />, action: () => setActiveModal('support') },
   ], [t])
 
@@ -1898,10 +1900,20 @@ export default function StaffPortal({
                 }
               }
             }}
-            onBack={() => setActiveTab('clock')}
+            onBack={() => {
+              setProfileInitialModal(null)
+              setActiveTab('clock')
+            }}
             onLogout={onLogout}
             onShowBadge={() => setActiveTab('badge')}
             showToast={showToast}
+            initialModal={profileInitialModal}
+            activeAdminNotifs={activeAdminNotifs}
+            activeStoreAlerts={activeStoreAlerts}
+            dismissedAlertIds={dismissedAlertIds}
+            onDeleteAlert={handleDeleteAlert}
+            onDeleteAllAlerts={handleDeleteAllAlerts}
+            onRestoreDismissedAlerts={handleRestoreDismissedAlerts}
           />
         )}
       </main>
@@ -2052,7 +2064,16 @@ export default function StaffPortal({
               <button
                 type="button"
                 className="drawer-nav-item"
-                onClick={() => { setActiveModal('alerts'); setIsDrawerOpen(false) }}
+                onClick={() => { setProfileInitialModal('settings'); setActiveTab('profile'); setIsDrawerOpen(false) }}
+              >
+                <IconGear size={18} color="#0284c7" />
+                <span>Settings & Permissions</span>
+              </button>
+
+              <button
+                type="button"
+                className="drawer-nav-item"
+                onClick={() => { setProfileInitialModal('alerts'); setActiveTab('profile'); setIsDrawerOpen(false) }}
               >
                 <IconBell size={18} color="#ec4899" />
                 <span>Store Announcements</span>

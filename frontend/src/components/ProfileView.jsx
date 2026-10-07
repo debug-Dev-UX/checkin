@@ -18,6 +18,8 @@ import {
   IconX,
   IconShield,
   IconRefresh,
+  IconTrash,
+  IconRotateCw,
 } from '../Icons'
 import { getBranches } from '../services/locationService'
 import { useLanguage } from '../context/LanguageContext'
@@ -31,6 +33,13 @@ export default function ProfileView({
   onBack,
   onLogout,
   showToast,
+  initialModal = null,
+  activeAdminNotifs = [],
+  activeStoreAlerts = [],
+  dismissedAlertIds = [],
+  onDeleteAlert,
+  onDeleteAllAlerts,
+  onRestoreDismissedAlerts,
 }) {
   const { lang: appLang, setLang, t } = useLanguage()
   const branchesList = (branches && branches.length > 0) ? branches : getBranches()
@@ -60,8 +69,14 @@ export default function ProfileView({
     user?.photo_url || localStorage.getItem('chafe_profile_avatar') || ''
   )
 
-  // Interactive menu modals: 'language' | 'location' | 'display' | 'feed' | 'settings' | 'password' | null
-  const [activeModal, setActiveModal] = useState(null)
+  // Interactive menu modals: 'language' | 'location' | 'display' | 'feed' | 'settings' | 'alerts' | 'password' | null
+  const [activeModal, setActiveModal] = useState(initialModal)
+
+  useEffect(() => {
+    if (initialModal) {
+      setActiveModal(initialModal)
+    }
+  }, [initialModal])
 
   const [themeMode, setThemeMode] = useState(() => {
     try {
@@ -450,23 +465,40 @@ export default function ProfileView({
                   </span>
                 </button>
 
-                {/* 4. Feed preference */}
+                {/* 4. Store Alerts & Notices (Read & Delete in Setting) */}
                 <button
                   type="button"
                   className="profile-menu-item"
-                  onClick={() => setActiveModal('feed')}
+                  onClick={() => setActiveModal('alerts')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon">
-                      <IconBell size={20} />
+                    <span className="profile-menu-icon" style={{ color: '#ec4899' }}>
+                      <IconBell size={20} color="#ec4899" />
                     </span>
                     <span className="profile-menu-label">
-                      {appLang === 'kh' ? 'ការជូនដំណឹង' : 'Feed preference'}
+                      {appLang === 'kh' ? 'ការជូនដំណឹង & សេចក្តីប្រកាស' : 'Store Alerts & Notices'}
                     </span>
                   </div>
-                  <span className="profile-menu-chevron">
-                    <IconChevronRight size={18} />
-                  </span>
+                  <div className="profile-menu-right">
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: (activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? '#ea580c' : '#10b981',
+                      background: (activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? '#fff7ed' : '#ecfdf5',
+                      border: `1px solid ${(activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? '#ffedd5' : '#a7f3d0'}`,
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <IconBell size={11} />
+                      <span>{(activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? `${activeAdminNotifs.length + activeStoreAlerts.length} Active` : 'All Clear'}</span>
+                    </span>
+                    <span className="profile-menu-chevron">
+                      <IconChevronRight size={18} />
+                    </span>
+                  </div>
                 </button>
 
                 {/* 5. Device Permissions & Cookies Settings */}
@@ -477,21 +509,40 @@ export default function ProfileView({
                 >
                   <div className="profile-menu-left">
                     <span className="profile-menu-icon" style={{ color: '#0284c7' }}>
-                      <IconGear size={20} color="#0284c7" />
+                      <IconShield size={20} color="#0284c7" />
                     </span>
                     <span className="profile-menu-label">
-                      {appLang === 'kh' ? 'ការកំណត់សិទ្ធិ & Cookies' : 'Account Settings & Cookies'}
+                      {appLang === 'kh' ? 'សិទ្ធិកាមេរ៉ា & ទីតាំង (Cookies)' : 'Camera & Location Permissions (Cookies)'}
                     </span>
                   </div>
                   <div className="profile-menu-right">
                     <span style={{ fontSize: '11px', fontWeight: 700, color: '#0284c7', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                       <IconShield size={11} color="#0284c7" />
-                      <span>{accountPerms.camera && accountPerms.location ? 'Auto Camera & GPS' : 'Cookies Active'}</span>
+                      <span>{accountPerms.camera && accountPerms.location ? 'Auto-Allow Active' : '365-Day Cookie'}</span>
                     </span>
                     <span className="profile-menu-chevron">
                       <IconChevronRight size={18} />
                     </span>
                   </div>
+                </button>
+
+                {/* 6. Feed preference */}
+                <button
+                  type="button"
+                  className="profile-menu-item"
+                  onClick={() => setActiveModal('feed')}
+                >
+                  <div className="profile-menu-left">
+                    <span className="profile-menu-icon">
+                      <IconBell size={20} />
+                    </span>
+                    <span className="profile-menu-label">
+                      {appLang === 'kh' ? 'ចំណូលចិត្តការជូនដំណឹង' : 'Feed preference'}
+                    </span>
+                  </div>
+                  <span className="profile-menu-chevron">
+                    <IconChevronRight size={18} />
+                  </span>
                 </button>
 
                 {/* 6. Password & Security (Admin Managed) */}
@@ -782,6 +833,11 @@ export default function ProfileView({
                     <IconGear size={18} color="#0f172a" /> <span>{appLang === 'kh' ? 'ការកំណត់គណនី' : 'Account Settings'}</span>
                   </>
                 )}
+                {activeModal === 'alerts' && (
+                  <>
+                    <IconBell size={18} color="#ec4899" /> <span>{appLang === 'kh' ? 'ការជូនដំណឹង & សេចក្តីប្រកាស' : 'Store Alerts & Notices'}</span>
+                  </>
+                )}
                 {activeModal === 'password' && (
                   <>
                     <IconLock size={18} color="#dc2626" /> <span>{appLang === 'kh' ? 'ប្តូរពាក្យសម្ងាត់' : 'Change Password'}</span>
@@ -1068,6 +1124,187 @@ export default function ProfileView({
                       style={{ accentColor: '#10b981', width: '18px', height: '18px' }}
                     />
                   </div>
+                </div>
+              )}
+
+              {/* STORE ALERTS & NOTICES MODAL (Read & Delete inside Settings) */}
+              {activeModal === 'alerts' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingBottom: '8px',
+                    borderBottom: '1px solid #e2e8f0'
+                  }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748b' }}>
+                      Active Notices: <strong>{activeAdminNotifs.length + activeStoreAlerts.length}</strong>
+                    </span>
+                    {(activeAdminNotifs.length > 0 || activeStoreAlerts.length > 0) && (
+                      <button
+                        type="button"
+                        onClick={onDeleteAllAlerts}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#ef4444',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}
+                      >
+                        <IconTrash size={12} color="#ef4444" />
+                        <span>Dismiss All</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Active Notices List */}
+                  {(activeAdminNotifs.length > 0 || activeStoreAlerts.length > 0) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '360px', overflowY: 'auto' }}>
+                      {/* Admin Management Notifications */}
+                      {activeAdminNotifs.map(n => (
+                        <div
+                          key={n.id}
+                          style={{
+                            background: n.priority === 'urgent' ? '#fff7ed' : '#eff6ff',
+                            border: `1px solid ${n.priority === 'urgent' ? '#fed7aa' : '#bfdbfe'}`,
+                            borderRadius: '12px',
+                            padding: '12px',
+                            fontSize: '12.5px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <div style={{ fontWeight: 800, color: n.priority === 'urgent' ? '#9a3412' : '#1e40af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>{n.priority === 'urgent' ? '🚨' : '🔔'}</span>
+                              <span>{n.title || 'Notice from Management'}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                background: n.priority === 'urgent' ? '#ea580c' : '#0284c7',
+                                color: '#ffffff'
+                              }}>
+                                {n.priority === 'urgent' ? 'URGENT' : 'NOTICE'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => onDeleteAlert?.(n.id)}
+                                title="Delete notice"
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#ef4444',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderRadius: '4px'
+                                }}
+                              >
+                                <IconTrash size={14} color="#ef4444" />
+                              </button>
+                            </div>
+                          </div>
+                          <div style={{ color: '#334155', lineHeight: 1.4 }}>
+                            {n.message}
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Store Announcements */}
+                      {activeStoreAlerts.map(alert => (
+                        <div
+                          key={alert.id}
+                          style={{
+                            background: alert.priority === 'high' ? '#eff6ff' : '#f0fdf4',
+                            border: `1px solid ${alert.priority === 'high' ? '#bfdbfe' : '#bbf7d0'}`,
+                            borderRadius: '12px',
+                            padding: '12px',
+                            fontSize: '12.5px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <IconBell size={13} />
+                              <span>{alert.title}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {alert.priority === 'high' && (
+                                <span style={{ fontSize: '10px', fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px' }}>
+                                  High Priority
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => onDeleteAlert?.(alert.id)}
+                                title="Delete notice"
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#ef4444',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderRadius: '4px'
+                                }}
+                              >
+                                <IconTrash size={14} color="#ef4444" />
+                              </button>
+                            </div>
+                          </div>
+                          <div style={{ color: '#334155', lineHeight: 1.4 }}>
+                            {alert.message}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '24px 10px', color: '#64748b', fontSize: '13px' }}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <IconCheckCircle size={36} color="#10b981" />
+                      </div>
+                      <strong style={{ display: 'block', fontSize: '14px', color: '#0f172a', marginBottom: '4px' }}>
+                        No active announcements
+                      </strong>
+                      <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#94a3b8' }}>
+                        You have read or dismissed all store alerts.
+                      </p>
+                      {dismissedAlertIds && dismissedAlertIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={onRestoreDismissedAlerts}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '7px 14px',
+                            borderRadius: '8px',
+                            background: '#f1f5f9',
+                            border: '1px solid #cbd5e1',
+                            color: '#0284c7',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <IconRotateCw size={13} />
+                          <span>Restore Cleared Notices ({dismissedAlertIds.length})</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
