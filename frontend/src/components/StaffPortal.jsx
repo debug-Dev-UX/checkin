@@ -255,21 +255,6 @@ export default function StaffPortal({
     showToast?.('Notices restored', 'success')
   }
 
-  // Auto-allow Camera & GPS Location cookie persistence on site visit
-  useEffect(() => {
-    const perms = getAccountPermissions(staffUser?.id)
-    if (perms.location) {
-      const targetStaff = staffProfile?.name ? staffProfile : staffUser
-      verifyRealtimeLocationForStaff(targetStaff, branches)
-        .then(loc => {
-          setVerifiedLocation(loc)
-        })
-        .catch(() => {
-          // background pre-check quiet
-        })
-    }
-  }, [staffUser?.id, branches])
-
   // Action Modal State (Popup modal asking Check In or Check Out)
   const [showActionModal, setShowActionModal] = useState(false)
   const [selectedScanAction, setSelectedScanAction] = useState(null) // 'in' | 'out' | null
@@ -347,6 +332,21 @@ export default function StaffPortal({
       if (unsub) unsub()
     }
   }, [staffUser?.id, staffUser?.email, showToast])
+
+  // Auto-allow Camera & GPS Location cookie persistence on site visit
+  useEffect(() => {
+    const perms = getAccountPermissions(staffUser?.id)
+    if (perms.location) {
+      const targetStaff = staffProfile?.name ? staffProfile : staffUser
+      verifyRealtimeLocationForStaff(targetStaff, branches)
+        .then(loc => {
+          setVerifiedLocation(loc)
+        })
+        .catch(() => {
+          // background pre-check quiet
+        })
+    }
+  }, [staffUser?.id, branches, staffProfile])
 
   const staffPhotoUrl = staffProfile?.photo_url || staffUser?.photo_url || localStorage.getItem('chafe_profile_avatar') || ''
 
