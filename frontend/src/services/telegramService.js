@@ -77,6 +77,19 @@ export function renderTemplate(template, vars = {}) {
   }
   return text
 }
+
+/**
+ * Format tardiness into Hour-Minute format like (1h:30min) or 1h:30min
+ */
+export function formatLateDuration(mins, withParens = false) {
+  const m = Math.max(0, parseInt(mins, 10) || 0)
+  const hours = Math.floor(m / 60)
+  const rem = m % 60
+  const formatted = hours > 0
+    ? `${hours}h:${String(rem).padStart(2, '0')}min`
+    : `0h:${String(rem).padStart(2, '0')}min`
+  return withParens ? `(${formatted})` : formatted
+}
 export function getLocalTelegramConfig() {
   try {
     const raw = localStorage.getItem(TELEGRAM_STORAGE_KEY)
@@ -246,7 +259,7 @@ export async function notifyTelegramCheckin(record, branchName = 'Store') {
   const date = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
   const isLate = record.punctuality_status === 'late'
   const punctualityText = isLate
-    ? `⚠️ <b>LATE ARRIVAL</b> (+${record.late_minutes || 0} min)`
+    ? `⚠️ <b>LATE ARRIVAL</b> (+${formatLateDuration(record.late_minutes || 0)})`
     : '✅ <b>On-Time</b> (Good Standing)'
 
   const template = config.template_checkin || DEFAULT_TELEGRAM_CONFIG.template_checkin
@@ -315,7 +328,7 @@ export async function notifyTelegramLate(record, branchName = 'Store', lateMinut
     name: record.name || 'Staff Member',
     branch: branchName || record.branch_name || 'Store',
     time,
-    late_minutes: lateMinutes,
+    late_minutes: formatLateDuration(lateMinutes),
     shift: `${record.shift_start || '07:30'} - ${record.shift_end || '16:00'}`,
     footer: config.custom_footer || DEFAULT_TELEGRAM_CONFIG.custom_footer,
   })

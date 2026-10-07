@@ -104,6 +104,7 @@ import {
   replyToStaffMessageInFirebase,
   updateStaffMessageStatus,
   subscribeToStaffMessages,
+  deleteStaffMessageInFirebase,
   sendAdminNotificationToFirebase,
   subscribeToAdminNotifications,
   deleteAdminNotificationFromFirebase,
@@ -123,6 +124,7 @@ import {
   notifyTelegramCheckin,
   notifyTelegramStoreAlert,
   notifyTelegramCustomAlert,
+  formatLateDuration,
   DEFAULT_TELEGRAM_CONFIG,
 } from './services/telegramService'
 
@@ -526,6 +528,7 @@ export default function App() {
   const [telegramTestStatus, setTelegramTestStatus] = useState(null)
   const [isTelegramSaving, setIsTelegramSaving] = useState(false)
   const [showBotToken, setShowBotToken] = useState(false)
+  const [adminSettingsCategory, setAdminSettingsCategory] = useState('general')
 
   useEffect(() => {
     getTelegramConfig().then(cfg => {
@@ -714,6 +717,17 @@ export default function App() {
       setStaffMessagesList(prev => prev.map(m => m.id === msgId ? { ...m, status } : m))
       showToast(`Inquiry marked as ${status}!`, 'info')
     } catch {}
+  }
+
+  const handleDeleteStaffMessage = async (msgId) => {
+    if (!window.confirm('Delete this staff inquiry permanently from inbox?')) return
+    try {
+      await deleteStaffMessageInFirebase(msgId)
+      setStaffMessagesList(prev => prev.filter(m => m.id !== msgId))
+      showToast('Staff inquiry removed.', 'info')
+    } catch (err) {
+      showToast('Failed to delete message: ' + err.message, 'error')
+    }
   }
 
   // Admin → Staff Notification / Broadcast State
@@ -1239,7 +1253,7 @@ export default function App() {
 
   // Save Settings
   const handleSaveSettings = async (e) => {
-    e.preventDefault()
+    if (e && e.preventDefault) e.preventDefault()
     setSettingsSaving(true)
     try {
       await saveSettingsInFirebase(cafeSettings)
@@ -1416,6 +1430,40 @@ export default function App() {
 
     return filtered
   }, [staffList, checkins, auditPeriod, auditStaffFilter, branches])
+
+  // TOP Staff Leaderboard Rankings for Admin Performance View
+  const adminTopRankings = useMemo(() => {
+    const list = (staffList || []).map(stf => {
+      const stfCheckins = (checkins || []).filter(c => {
+        if (c.type !== 'employee') return false
+        return String(c.staff_id) === String(stf.id) ||
+          (c.email && c.email.toLowerCase() === (stf.email || '').toLowerCase()) ||
+          (c.name && c.name.toLowerCase() === (stf.name || '').toLowerCase())
+      })
+      const total = stfCheckins.length
+      const late = stfCheckins.filter(c => c.punctuality_status === 'late').length
+      const onTime = Math.max(0, total - late)
+      const punctualityRate = total > 0 ? Math.round((onTime / total) * 100) : 100
+      const matchedBranch = (branches || []).find(b => b.id === stf.branch_id)
+      const branchDisplay = stf.branch_name || matchedBranch?.name || (branches?.[0]?.name || 'Chafé Store')
+
+      return {
+        id: stf.id,
+        name: stf.name,
+        role: stf.role || 'Staff / Barista',
+        branch: branchDisplay,
+        avatar: stf.photo_url || '',
+        totalShifts: total,
+        onTimeShifts: onTime,
+        lateShifts: late,
+        punctualityRate,
+      }
+    })
+    return list.sort((a, b) => {
+      if (b.punctualityRate !== a.punctualityRate) return b.punctualityRate - a.punctualityRate
+      return b.totalShifts - a.totalShifts
+    })
+  }, [staffList, checkins, branches])
 
   // 12-Hour Time Formatter (e.g. "8:30 AM", "1:15 PM")
   const formatTime = (timeStr) => {
@@ -2612,9 +2660,219 @@ export default function App() {
           {/* ============================================================== */}
           {navTab === 'performance' && (
             <div>
+              {/* TOP Staff Leaderboard Section */}
+              <div className="audit-panel-card" style={{ marginBottom: '24px' }}>
+                <div className="audit-header-row" style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', marginBottom: '20px' }}>
+                  <div className="audit-title-block">
+                    <div style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '12px',
+                      background: 'linear-gradient(135deg, #fef08a 0%, #fde047 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(234, 179, 8, 0.25)'
+                    }}>
+                      <IconTrophy size={22} color="#854d0e" />
+                    </div>
+                    <div>
+                      <h3 className="audit-title-main" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        TOP Staff Leaderboard
+                        <span style={{ fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '12px', background: '#dcfce7', color: '#15803d' }}>
+                          Live Performance
+                        </span>
+                      </h3>
+                      <p className="audit-title-subtitle">
+                        Real-time attendance & punctuality leaderboard across all store locations
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top 3 Podium Highlights */}
+                {adminTopRankings.length > 0 && (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                    gap: '16px',
+                    marginBottom: '24px'
+                  }}>
+                    {adminTopRankings.slice(0, 3).map((stf, idx) => {
+                      const isTop1 = idx === 0
+                      const isTop2 = idx === 1
+                      const rankColor = isTop1 ? '#ca8a04' : isTop2 ? '#64748b' : '#c2410c'
+                      const badgeBg = isTop1
+                        ? 'linear-gradient(135deg, #fefce8, #fef9c3)'
+                        : isTop2
+                          ? 'linear-gradient(135deg, #f8fafc, #f1f5f9)'
+                          : 'linear-gradient(135deg, #fff7ed, #ffedd5)'
+                      const borderStyle = isTop1
+                        ? '1.5px solid #fde047'
+                        : isTop2
+                          ? '1.5px solid #cbd5e1'
+                          : '1.5px solid #fed7aa'
+
+                      return (
+                        <div
+                          key={stf.id || idx}
+                          style={{
+                            background: badgeBg,
+                            border: borderStyle,
+                            borderRadius: '16px',
+                            padding: '18px 20px',
+                            position: 'relative',
+                            boxShadow: isTop1 ? '0 8px 20px rgba(234, 179, 8, 0.15)' : '0 4px 12px rgba(0,0,0,0.03)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            gap: '14px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{
+                                width: '44px',
+                                height: '44px',
+                                borderRadius: '12px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 900,
+                                background: isTop1 ? '#fef08a' : isTop2 ? '#e2e8f0' : '#ffedd5',
+                                color: rankColor
+                              }}>
+                                {isTop1 ? <IconTrophy size={18} color="#ca8a04" /> : <IconAward size={18} color={rankColor} />}
+                                <span style={{ fontSize: '11px', lineHeight: 1 }}>#{idx + 1}</span>
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 800, fontSize: '15px', color: '#0f172a' }}>{stf.name}</div>
+                                <div style={{ fontSize: '11px', color: '#64748b' }}>{stf.role} • {stf.branch}</div>
+                              </div>
+                            </div>
+                            <span style={{
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              padding: '2px 8px',
+                              borderRadius: '8px',
+                              background: isTop1 ? '#ca8a04' : isTop2 ? '#475569' : '#c2410c',
+                              color: '#ffffff'
+                            }}>
+                              {isTop1 ? 'Champion' : isTop2 ? 'Top 2' : 'Top 3'}
+                            </span>
+                          </div>
+
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            paddingTop: '10px',
+                            borderTop: '1px solid rgba(0,0,0,0.06)'
+                          }}>
+                            <div>
+                              <span style={{ fontSize: '11px', color: '#64748b' }}>Punctuality</span>
+                              <div style={{ fontSize: '18px', fontWeight: 900, color: stf.punctualityRate >= 90 ? '#15803d' : '#0284c7' }}>
+                                {stf.punctualityRate}%
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '11px', color: '#64748b' }}>Attendance</span>
+                              <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+                                {stf.onTimeShifts} on-time / {stf.totalShifts} shifts
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Full Rankings List */}
+                <div style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '14px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    padding: '12px 18px',
+                    background: '#f8fafc',
+                    borderBottom: '1px solid #e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    color: '#475569'
+                  }}>
+                    <span>Staff Member & Store Branch</span>
+                    <span>Punctuality & Total Shifts</span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {adminTopRankings.map((stf, idx) => {
+                      const isTop1 = idx === 0
+                      const isTop2 = idx === 1
+                      const isTop3 = idx === 2
+
+                      return (
+                        <div
+                          key={stf.id || idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '12px 18px',
+                            borderBottom: idx === adminTopRankings.length - 1 ? 'none' : '1px solid #f1f5f9',
+                            background: isTop1 ? '#fffdf5' : '#ffffff',
+                            transition: 'background 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                            <div style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '8px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 900,
+                              fontSize: '12px',
+                              background: isTop1 ? '#fef08a' : isTop2 ? '#e2e8f0' : isTop3 ? '#ffedd5' : '#f1f5f9',
+                              color: isTop1 ? '#854d0e' : isTop2 ? '#334155' : isTop3 ? '#9a3412' : '#64748b'
+                            }}>
+                              #{idx + 1}
+                            </div>
+
+                            <div>
+                              <div style={{ fontWeight: 800, fontSize: '13.5px', color: '#0f172a' }}>{stf.name}</div>
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                {stf.role} • {stf.branch}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 900, fontSize: '14px', color: stf.punctualityRate >= 90 ? '#15803d' : stf.punctualityRate >= 75 ? '#0284c7' : '#ea580c' }}>
+                              {stf.punctualityRate}%
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                              {stf.onTimeShifts} on-time ({stf.totalShifts} shifts)
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
               <div className="audit-panel-card">
                 {/* Header Row matching screenshot */}
                 <div className="audit-header-row">
+
                   <div className="audit-title-block">
                     <IconUsers size={24} color="#0f172a" />
                     <div>
@@ -3231,7 +3489,15 @@ export default function App() {
                                 Mark Read
                               </button>
                             )}
+                            <button
+                              onClick={() => handleDeleteStaffMessage(msg.id)}
+                              title="Delete staff inquiry permanently"
+                              style={{ padding: '7px 12px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+                            >
+                              <IconTrash size={11} color="#dc2626" /> Delete
+                            </button>
                           </div>
+
                         </div>
                       </div>
                     ))}
@@ -3466,10 +3732,75 @@ export default function App() {
           {/* TAB 5: SETTINGS */}
           {/* ============================================================== */}
           {navTab === 'settings' && (
-            <div className="content-panel" style={{ maxWidth: '700px', margin: '0 auto', padding: '24px' }}>
-              <div className="panel-heading-title" style={{ marginBottom: '16px' }}>CHAFÉ SYSTEM SETTINGS</div>
+            <div className="admin-settings-container">
+              {/* Category Navigation Pills */}
+              <div className="admin-settings-nav-bar">
+                <button
+                  type="button"
+                  className={`admin-settings-nav-pill ${adminSettingsCategory === 'general' ? 'active' : ''}`}
+                  onClick={() => setAdminSettingsCategory('general')}
+                >
+                  <IconCoffee size={15} />
+                  <span>General & Store</span>
+                </button>
+                <button
+                  type="button"
+                  className={`admin-settings-nav-pill ${adminSettingsCategory === 'branches' ? 'active' : ''}`}
+                  onClick={() => setAdminSettingsCategory('branches')}
+                >
+                  <IconBuilding size={15} />
+                  <span>Branches & GPS ({branches.length})</span>
+                </button>
+                <button
+                  type="button"
+                  className={`admin-settings-nav-pill ${adminSettingsCategory === 'roles' ? 'active' : ''}`}
+                  onClick={() => setAdminSettingsCategory('roles')}
+                >
+                  <IconUser size={15} />
+                  <span>Staff Roles ({customRoles.length})</span>
+                </button>
+                <button
+                  type="button"
+                  className={`admin-settings-nav-pill ${adminSettingsCategory === 'notices' ? 'active' : ''}`}
+                  onClick={() => setAdminSettingsCategory('notices')}
+                >
+                  <IconMegaphone size={15} />
+                  <span>Store Notices ({storeAlertsList.length})</span>
+                </button>
+                <button
+                  type="button"
+                  className={`admin-settings-nav-pill ${adminSettingsCategory === 'telegram' ? 'active' : ''}`}
+                  onClick={() => setAdminSettingsCategory('telegram')}
+                >
+                  <IconTelegram size={15} />
+                  <span>Telegram Bot {telegramConfig.enabled ? '🟢' : '⚪'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`admin-settings-nav-pill ${adminSettingsCategory === 'templates' ? 'active' : ''}`}
+                  onClick={() => setAdminSettingsCategory('templates')}
+                >
+                  <IconFileText size={15} />
+                  <span>Templates & Broadcast</span>
+                </button>
+              </div>
 
-              <form onSubmit={handleSaveSettings}>
+              {/* CATEGORY 1: GENERAL & STORE PREFERENCES */}
+              {adminSettingsCategory === 'general' && (
+                <div className="admin-settings-card">
+                  <div className="admin-settings-header">
+                    <div className="admin-settings-title-group">
+                      <h3>
+                        <IconCoffee size={18} color="#0f172a" />
+                        Café Core Identity & Operating Policies
+                      </h3>
+                      <p>
+                        Configure brand name, daily service hours, seating capacity, and check-in grace period.
+                      </p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleSaveSettings}>
                 <div className="form-group">
                   <label className="form-label">Café Brand Name</label>
                   <input
@@ -3510,13 +3841,30 @@ export default function App() {
                   />
                 </div>
 
-                <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <IconBuilding size={16} color="#0f172a" /> Store Branches & Geofence Rules (ការកំណត់សាខា & គម្លាតស្កេន)
-                      </h4>
-                      <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #f1f5f9' }}>
+                      <button
+                        type="submit"
+                        className="btn-primary"
+                        disabled={settingsSaving}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 22px' }}
+                      >
+                        <IconSave size={15} color="#ffffff" />
+                        <span>{settingsSaving ? 'Saving Preferences...' : 'Save General Settings'}</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* CATEGORY 2: BRANCHES & GPS GEOFENCE */}
+              {adminSettingsCategory === 'branches' && (
+                <div className="admin-settings-card">
+                  <div className="admin-settings-header">
+                    <div className="admin-settings-title-group">
+                      <h3>
+                        <IconBuilding size={18} color="#0f172a" /> Store Branches & Geofence Rules (ការកំណត់សាខា & គម្លាតស្កេន)
+                      </h3>
+                      <p>
                         Configure store GPS coordinates and allowed scan radius per branch. Staff far from their branch cannot scan.
                       </p>
                     </div>
@@ -3706,16 +4054,21 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+              )}
 
-                {/* Section: Custom Staff Roles (Admin Created & Managed) */}
-                <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
-                  <div style={{ marginBottom: '14px' }}>
-                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <IconUser size={16} color="#0f172a" /> Custom Roles & Role Assignment (តួនាទីបុគ្គលិក)
-                    </h4>
-                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-                      Admin can create custom roles and assign them to staff members. Changes save live to the system.
-                    </p>
+              {/* CATEGORY 3: CUSTOM STAFF ROLES */}
+              {adminSettingsCategory === 'roles' && (
+                <div className="admin-settings-card">
+                  <div className="admin-settings-header">
+                    <div className="admin-settings-title-group">
+                      <h3>
+                        <IconUser size={18} color="#0f172a" />
+                        Custom Roles & Staff Positions (តួនាទីបុគ្គលិក)
+                      </h3>
+                      <p>
+                        Admin can create custom roles and assign them to staff members. Changes save live to the system.
+                      </p>
+                    </div>
                   </div>
 
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
@@ -3783,16 +4136,20 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+              )}
 
-                {/* Section: Store Alerts & Notices (Admin Managed, Real-time to Staff) */}
-                <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
-                  <div style={{ marginBottom: '14px' }}>
-                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <IconMegaphone size={16} color="#0f172a" /> Store Alerts & Notices (ការជូនដំណឹង & សេចក្តីប្រកាសហាង)
-                    </h4>
-                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-                      Dynamic announcements broadcast live to the staff workspace hub. Staff see these instantly.
-                    </p>
+              {/* CATEGORY 4: STORE NOTICES & ANNOUNCEMENTS */}
+              {adminSettingsCategory === 'notices' && (
+                <div className="admin-settings-card">
+                  <div className="admin-settings-header">
+                    <div className="admin-settings-title-group">
+                      <h3>
+                        <IconMegaphone size={18} color="#0f172a" /> Store Alerts & Notices (ការជូនដំណឹង & សេចក្តីប្រកាសហាង)
+                      </h3>
+                      <p>
+                        Dynamic announcements broadcast live to the staff workspace hub. Staff see these instantly.
+                      </p>
+                    </div>
                   </div>
 
                   {/* List of current notices */}
@@ -3949,13 +4306,14 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* ============================================================== */}
-                {/* TELEGRAM BOT ALERTS & REAL-TIME WEBHOOK INTEGRATION */}
-                {/* ============================================================== */}
-                <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {/* CATEGORY 5: TELEGRAM BOT INTEGRATION */}
+              {adminSettingsCategory === 'telegram' && (
+                <div className="admin-settings-card">
+                  <div className="admin-settings-header">
+                    <div className="admin-settings-title-group">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <div style={{
                         width: '36px',
                         height: '36px',
@@ -3990,6 +4348,7 @@ export default function App() {
                         </p>
                       </div>
                     </div>
+                  </div>
 
                     {/* Master Switch Toggle */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -4264,9 +4623,87 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* ============================================================== */}
+                    {/* Test Status Banner */}
+                    {telegramTestStatus && (
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: telegramTestStatus.success ? '#f0fdf4' : '#fef2f2',
+                        color: telegramTestStatus.success ? '#166534' : '#991b1b',
+                        border: `1px solid ${telegramTestStatus.success ? '#bbf7d0' : '#fecaca'}`
+                      }}>
+                        {telegramTestStatus.success ? <IconCheckCircle size={16} /> : <IconAlertTriangle size={16} />}
+                        <span>{telegramTestStatus.message}</span>
+                      </div>
+                    )}
+
+                    {/* Action Buttons: Test Connection and Save */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={handleTestTelegram}
+                        disabled={isTelegramTesting}
+                        style={{
+                          fontSize: '12px',
+                          padding: '8px 16px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          borderRadius: '8px',
+                          borderColor: '#0088cc',
+                          color: '#0088cc'
+                        }}
+                      >
+                        <IconSend size={13} color="#0088cc" />
+                        <span>{isTelegramTesting ? 'Sending Test...' : 'Send Test Alert to Telegram'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={handleSaveTelegram}
+                        disabled={isTelegramSaving}
+                        style={{
+                          fontSize: '12px',
+                          padding: '8px 18px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #0088cc 0%, #0077b5 100%)',
+                          borderColor: '#0077b5'
+                        }}
+                      >
+                        <IconSave size={14} color="#ffffff" />
+                        <span>{isTelegramSaving ? 'Saving...' : 'Save Telegram Settings'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* CATEGORY 6: TEMPLATES & BROADCAST */}
+              {adminSettingsCategory === 'templates' && (
+                <div className="admin-settings-card">
+                  <div className="admin-settings-header">
+                    <div className="admin-settings-title-group">
+                      <h3>
+                        <IconFileText size={18} color="#0f172a" /> Telegram Templates & Custom Broadcast (ផ្ញើសារ & កែទម្រង់សារ)
+                      </h3>
+                      <p>
+                        Dispatch ad-hoc staff alerts or configure exact variable templates for automated bot messages.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                     {/* CUSTOM ALERT MESSAGE BROADCASTER (ADMIN AD-HOC ALERT) */}
-                    {/* ============================================================== */}
                     <div style={{
                       background: 'var(--card-bg, #ffffff)',
                       padding: '16px',
@@ -4519,47 +4956,8 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Test Status Banner */}
-                    {telegramTestStatus && (
-                      <div style={{
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        background: telegramTestStatus.success ? '#f0fdf4' : '#fef2f2',
-                        color: telegramTestStatus.success ? '#166534' : '#991b1b',
-                        border: `1px solid ${telegramTestStatus.success ? '#bbf7d0' : '#fecaca'}`
-                      }}>
-                        {telegramTestStatus.success ? <IconCheckCircle size={16} /> : <IconAlertTriangle size={16} />}
-                        <span>{telegramTestStatus.message}</span>
-                      </div>
-                    )}
-
-                    {/* Action Buttons: Test Connection and Save */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={handleTestTelegram}
-                        disabled={isTelegramTesting}
-                        style={{
-                          fontSize: '12px',
-                          padding: '8px 16px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          borderRadius: '8px',
-                          borderColor: '#0088cc',
-                          color: '#0088cc'
-                        }}
-                      >
-                        <IconSend size={13} color="#0088cc" />
-                        <span>{isTelegramTesting ? 'Sending Test...' : 'Send Test Alert to Telegram'}</span>
-                      </button>
-
+                    {/* Action Button: Save Templates */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
                       <button
                         type="button"
                         className="btn-primary"
@@ -4567,7 +4965,7 @@ export default function App() {
                         disabled={isTelegramSaving}
                         style={{
                           fontSize: '12px',
-                          padding: '8px 18px',
+                          padding: '8px 20px',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '6px',
@@ -4577,18 +4975,12 @@ export default function App() {
                         }}
                       >
                         <IconSave size={14} color="#ffffff" />
-                        <span>{isTelegramSaving ? 'Saving...' : 'Save Telegram Settings'}</span>
+                        <span>{isTelegramSaving ? 'Saving Templates...' : 'Save Templates & Settings'}</span>
                       </button>
                     </div>
                   </div>
                 </div>
-
-                <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                  <button type="submit" className="btn-primary" disabled={settingsSaving}>
-                    {settingsSaving ? 'Saving...' : 'Save Settings'}
-                  </button>
-                </div>
-              </form>
+              )}
             </div>
           )}
         </main>

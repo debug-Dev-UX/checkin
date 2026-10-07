@@ -39,29 +39,34 @@ export function getAccountPermissions(userId = 'guest') {
   const safeId = String(userId || 'guest')
   const cookieCam = getCookie(`chafe_perm_camera_${safeId}`) || getCookie('chafe_allow_camera')
   const cookieLoc = getCookie(`chafe_perm_location_${safeId}`) || getCookie('chafe_allow_location')
+  const cookieDontAsk = getCookie(`chafe_dont_ask_${safeId}`) || getCookie('chafe_dont_ask_permissions')
 
   let localCam = null
   let localLoc = null
+  let localDontAsk = null
   try {
     localCam = localStorage.getItem(`chafe_perm_camera_${safeId}`)
     localLoc = localStorage.getItem(`chafe_perm_location_${safeId}`)
+    localDontAsk = localStorage.getItem(`chafe_dont_ask_${safeId}`)
   } catch {}
 
   const allowCamera = cookieCam === 'allowed' || localCam === 'true'
   const allowLocation = cookieLoc === 'allowed' || localLoc === 'true'
+  const dontAskAgain = cookieDontAsk === 'true' || localDontAsk === 'true' || (allowCamera && allowLocation)
 
   return {
     camera: allowCamera,
     location: allowLocation,
+    dontAskAgain: dontAskAgain,
     userId: safeId,
-    cookieActive: !!(cookieCam || cookieLoc),
+    cookieActive: !!(cookieCam || cookieLoc || cookieDontAsk),
   }
 }
 
 /**
  * Save account permissions to cookies (1-year expiration) & localStorage
  */
-export function saveAccountPermissions(userId = 'guest', { camera, location }) {
+export function saveAccountPermissions(userId = 'guest', { camera, location, dontAskAgain = true }) {
   const safeId = String(userId || 'guest')
 
   if (camera) {
@@ -84,13 +89,23 @@ export function saveAccountPermissions(userId = 'guest', { camera, location }) {
     try { localStorage.removeItem(`chafe_perm_location_${safeId}`) } catch {}
   }
 
+  if (dontAskAgain) {
+    setCookie(`chafe_dont_ask_${safeId}`, 'true', 365)
+    setCookie('chafe_dont_ask_permissions', 'true', 365)
+    try { localStorage.setItem(`chafe_dont_ask_${safeId}`, 'true') } catch {}
+  } else {
+    deleteCookie(`chafe_dont_ask_${safeId}`)
+    deleteCookie('chafe_dont_ask_permissions')
+    try { localStorage.removeItem(`chafe_dont_ask_${safeId}`) } catch {}
+  }
+
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('chafe_permissions_updated', {
-      detail: { userId: safeId, camera: !!camera, location: !!location }
+      detail: { userId: safeId, camera: !!camera, location: !!location, dontAskAgain: !!dontAskAgain }
     }))
   }
 
-  return { camera: !!camera, location: !!location }
+  return { camera: !!camera, location: !!location, dontAskAgain: !!dontAskAgain }
 }
 
 /**

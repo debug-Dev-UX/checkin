@@ -19,7 +19,10 @@ import {
   IconShield,
   IconRefresh,
   IconTrash,
-  IconRotateCw,
+  IconZap,
+  IconAward,
+  IconQrCode,
+  IconClock,
 } from '../Icons'
 import { getBranches } from '../services/locationService'
 import { useLanguage } from '../context/LanguageContext'
@@ -39,7 +42,6 @@ export default function ProfileView({
   dismissedAlertIds = [],
   onDeleteAlert,
   onDeleteAllAlerts,
-  onRestoreDismissedAlerts,
 }) {
   const { lang: appLang, setLang, t } = useLanguage()
   const branchesList = (branches && branches.length > 0) ? branches : getBranches()
@@ -125,17 +127,33 @@ export default function ProfileView({
     setAccountPerms(getAccountPermissions(user?.id))
   }, [user?.id])
 
+  const handleToggleDontAskAgain = (checked) => {
+    saveAccountPermissions(user?.id, {
+      camera: accountPerms.camera,
+      location: accountPerms.location,
+      dontAskAgain: checked,
+    })
+    setAccountPerms(prev => ({ ...prev, dontAskAgain: checked }))
+    if (checked) {
+      showToast?.('Don\'t ask again enabled! Scanner will clock in/out without prompts.', 'success')
+    } else {
+      showToast?.('Prompt confirmations re-enabled.', 'info')
+    }
+  }
+
   const handleToggleCameraPerm = async (checked) => {
+    const nextDontAsk = checked ? true : accountPerms.dontAskAgain
     saveAccountPermissions(user?.id, {
       camera: checked,
       location: accountPerms.location,
+      dontAskAgain: nextDontAsk,
     })
-    setAccountPerms(prev => ({ ...prev, camera: checked }))
+    setAccountPerms(prev => ({ ...prev, camera: checked, dontAskAgain: nextDontAsk }))
     if (checked && navigator.mediaDevices?.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true })
         stream.getTracks().forEach(t => t.stop())
-        showToast?.('Camera auto-allow cookie active! Access saved for your account.', 'success')
+        showToast?.('Camera auto-allow active! Don\'t ask again enabled for your account.', 'success')
       } catch (err) {
         showToast?.('Cookie saved! Please click Allow if browser prompts for camera.', 'info')
       }
@@ -145,15 +163,17 @@ export default function ProfileView({
   }
 
   const handleToggleLocationPerm = (checked) => {
+    const nextDontAsk = checked ? true : accountPerms.dontAskAgain
     saveAccountPermissions(user?.id, {
       camera: accountPerms.camera,
       location: checked,
+      dontAskAgain: nextDontAsk,
     })
-    setAccountPerms(prev => ({ ...prev, location: checked }))
+    setAccountPerms(prev => ({ ...prev, location: checked, dontAskAgain: nextDontAsk }))
     if (checked && navigator.geolocation?.getCurrentPosition) {
       navigator.geolocation.getCurrentPosition(
         () => {
-          showToast?.('Location auto-allow cookie active! Store GPS access saved.', 'success')
+          showToast?.('Location auto-allow active! Don\'t ask again enabled.', 'success')
         },
         () => {
           showToast?.('Cookie saved! Please enable device location if prompted.', 'info')
@@ -195,15 +215,15 @@ export default function ProfileView({
       }
     })
 
-    // Store persistent cookies for 1 year
-    saveAccountPermissions(user?.id, { camera: true, location: true })
-    setAccountPerms({ camera: true, location: true, cookieActive: true, userId: user?.id })
+    // Store persistent cookies for 1 year + don't ask again
+    saveAccountPermissions(user?.id, { camera: true, location: true, dontAskAgain: true })
+    setAccountPerms({ camera: true, location: true, dontAskAgain: true, cookieActive: true, userId: user?.id })
     setTestingPerms(false)
     setPermTestMessage(camOk && locOk
-      ? '✅ Both Camera & GPS permissions confirmed and stored to account cookie!'
-      : '🍪 Account cookies active! Permissions set to auto-allow on visit.'
+      ? '✅ Permissions & Don\'t Ask Again confirmed and saved to cookie!'
+      : '🍪 Account cookies active! Don\'t Ask Again enabled.'
     )
-    showToast?.('Camera and Location permissions saved to account cookie!', 'success')
+    showToast?.('Camera, Location and Don\'t Ask Again permissions saved to account cookie!', 'success')
   }
 
   const fileInputRef = useRef(null)
@@ -327,156 +347,141 @@ export default function ProfileView({
         {/* SCREEN 1: MY PROFILE (VISIBLE WHEN NOT EDITING)                */}
         {/* ============================================================== */}
         {!isEditing ? (
-          <div className="profile-screen-card my-profile-card">
-            {/* Top Bar */}
-            <div className="profile-header-bar">
+          <div className="profile-screen-card my-profile-card mobile-styled-profile">
+            {/* Top Navigation Bar with Back & Settings */}
+            <div className="profile-header-bar mobile-nav-bar">
               <button
                 type="button"
-                className="profile-header-icon-btn"
+                className="profile-header-icon-btn mobile-frosted-btn"
                 onClick={onBack}
                 title={appLang === 'kh' ? 'ត្រឡប់ក្រោយ' : 'Go Back'}
               >
-                <IconArrowLeft size={20} />
+                <IconArrowLeft size={19} />
               </button>
               <h2 className="profile-header-title">
-                {appLang === 'kh' ? 'ព័ត៌មានផ្ទាល់ខ្លួន' : 'My Profile'}
+                {appLang === 'kh' ? 'គណនីបុគ្គលិក' : 'Employee Profile'}
               </h2>
               <button
                 type="button"
-                className="profile-header-icon-btn"
+                className="profile-header-icon-btn mobile-frosted-btn"
                 onClick={() => setActiveModal('settings')}
-                title="Settings"
+                title="Account Settings"
               >
-                <IconGear size={20} />
+                <IconGear size={19} />
               </button>
             </div>
 
-            {/* Profile User Info Card */}
-            <div className="profile-user-hero">
-              <div
-                className="profile-avatar-container"
-                onClick={() => fileInputRef.current?.click()}
-                title="Click to change photo"
-              >
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt={user?.name || 'Staff Profile'}
-                    className="profile-avatar-img"
-                    onError={() => setAvatarUrl('')}
-                  />
-                ) : (
-                  <div className="profile-avatar-placeholder">
-                    {userInitials}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="profile-avatar-camera-badge"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    fileInputRef.current?.click()
-                  }}
-                  title="Upload Photo"
+            {/* Mobile Executive Hero Banner */}
+            <div className="mobile-profile-hero-banner">
+              <div className="mobile-hero-upper">
+                <div
+                  className="profile-avatar-container mobile-hero-avatar-wrap"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Click to change photo"
                 >
-                  <IconCameraBadge size={13} color="#0f172a" />
-                </button>
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt={user?.name || 'Staff Profile'}
+                      className="profile-avatar-img mobile-hero-avatar-img"
+                      onError={() => setAvatarUrl('')}
+                    />
+                  ) : (
+                    <div className="profile-avatar-placeholder mobile-hero-avatar-placeholder">
+                      {userInitials}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="profile-avatar-camera-badge mobile-hero-camera-btn"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      fileInputRef.current?.click()
+                    }}
+                    title="Upload Photo"
+                  >
+                    <IconCameraBadge size={13} color="#0f172a" />
+                  </button>
+                  <span className="mobile-avatar-online-dot" title="Active on Duty" />
+                </div>
+
+                <div className="mobile-hero-info">
+                  <div className="mobile-hero-status-pill">
+                    <span className="status-pulse-dot" />
+                    <span>Active Member • មានវត្តមាន</span>
+                  </div>
+                  <h3 className="mobile-hero-name">
+                    {user?.name || `${firstName} ${lastName}`.trim() || 'Staff Member'}
+                  </h3>
+                  <div className="mobile-hero-email">
+                    {user?.email || email || 'staff@chafe.internal'}
+                  </div>
+                  <div className="mobile-hero-badges-row">
+                    <span className="mobile-hero-role-chip">
+                      <IconAward size={12} color="#0284c7" />
+                      <span>{user?.role || 'Staff / Barista'}</span>
+                    </span>
+                    <span className="mobile-hero-branch-chip">
+                      <IconMapPin size={11} color="#059669" />
+                      <span>{user?.branch_name || 'Chafé • Main'}</span>
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div className="profile-user-meta">
-                <h3 className="profile-user-name">
-                  {user?.name || `${firstName} ${lastName}`.trim() || 'Staff Member'}
-                </h3>
-                <div className="profile-user-email">
-                  {user?.email || email || 'staff@chafe.internal'}
+              {/* 3-Column Executive KPI Quick Stats */}
+              <div className="mobile-hero-kpi-bar">
+                <div className="mobile-kpi-cell">
+                  <div className="mobile-kpi-val text-emerald">100%</div>
+                  <div className="mobile-kpi-lbl">Punctuality</div>
                 </div>
+                <div className="mobile-kpi-divider" />
+                <div className="mobile-kpi-cell">
+                  <div className="mobile-kpi-val text-blue">
+                    {accountPerms.dontAskAgain ? "Don't Ask" : 'Auto-Allow'}
+                  </div>
+                  <div className="mobile-kpi-lbl">Cookie Pass</div>
+                </div>
+                <div className="mobile-kpi-divider" />
+                <div className="mobile-kpi-cell">
+                  <div className="mobile-kpi-val text-slate">
+                    {user?.branch_code || 'HQ'}
+                  </div>
+                  <div className="mobile-kpi-lbl">Assigned Stn</div>
+                </div>
+              </div>
+
+              {/* Edit Profile Action Pill */}
+              <div className="mobile-hero-actions-row">
                 <button
                   type="button"
-                  className="profile-edit-green-btn"
+                  className="mobile-hero-edit-btn"
                   onClick={() => setIsEditing(true)}
                 >
-                  {appLang === 'kh' ? 'កែប្រែព័ត៌មាន' : 'Edit Profile'}
+                  <IconZap size={14} />
+                  <span>{appLang === 'kh' ? 'កែប្រែព័ត៌មាន (Edit Profile)' : 'Edit Profile & Details'}</span>
                 </button>
               </div>
             </div>
 
-            {/* Menu List Groups (Clean: Favourites, Downloads, Subscription, Clear Cache, Clear history REMOVED) */}
-            <div className="profile-menu-groups">
-              <div className="profile-menu-group">
-                {/* 1. Language (ONLY two options: kh and en) */}
+            {/* Segmented Modern Card Groups (iOS 17 Clean App Style) */}
+            <div className="profile-menu-groups mobile-segmented-groups">
+              {/* Group 1: Notices & Communication */}
+              <div className="mobile-group-card">
+                <div className="mobile-group-heading">
+                  {appLang === 'kh' ? 'ការជូនដំណឹង & សារហាង' : 'COMMUNICATIONS & NOTICES'}
+                </div>
                 <button
                   type="button"
-                  className="profile-menu-item"
-                  onClick={() => setActiveModal('language')}
-                >
-                  <div className="profile-menu-left">
-                    <span className="profile-menu-icon">
-                      <IconGlobe size={20} />
-                    </span>
-                    <span className="profile-menu-label">
-                      {appLang === 'kh' ? 'ភាសា' : 'Language'}
-                    </span>
-                  </div>
-                  <div className="profile-menu-right">
-                    <span className="profile-menu-subvalue">
-                      {appLang === 'kh' ? 'ភាសាខ្មែរ (kh)' : 'English (en)'}
-                    </span>
-                    <span className="profile-menu-chevron">
-                      <IconChevronRight size={18} />
-                    </span>
-                  </div>
-                </button>
-
-                {/* 2. Location */}
-                <button
-                  type="button"
-                  className="profile-menu-item"
-                  onClick={() => setActiveModal('location')}
-                >
-                  <div className="profile-menu-left">
-                    <span className="profile-menu-icon">
-                      <IconMapPin size={20} />
-                    </span>
-                    <span className="profile-menu-label">
-                      {appLang === 'kh' ? 'ទីតាំងសាខា' : 'Location'}
-                    </span>
-                  </div>
-                  <span className="profile-menu-chevron">
-                    <IconChevronRight size={18} />
-                  </span>
-                </button>
-
-                {/* 3. Display */}
-                <button
-                  type="button"
-                  className="profile-menu-item"
-                  onClick={() => setActiveModal('display')}
-                >
-                  <div className="profile-menu-left">
-                    <span className="profile-menu-icon">
-                      <IconDeviceMobile size={20} />
-                    </span>
-                    <span className="profile-menu-label">
-                      {appLang === 'kh' ? 'ការបង្ហាញ' : 'Display'}
-                    </span>
-                  </div>
-                  <span className="profile-menu-chevron">
-                    <IconChevronRight size={18} />
-                  </span>
-                </button>
-
-                {/* 4. Store Alerts & Notices (Read & Delete in Setting) */}
-                <button
-                  type="button"
-                  className="profile-menu-item"
+                  className="profile-menu-item mobile-item-rounded"
                   onClick={() => setActiveModal('alerts')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#ec4899' }}>
-                      <IconBell size={20} color="#ec4899" />
+                    <span className="profile-menu-icon" style={{ color: '#ec4899', background: '#fdf2f8', padding: '6px', borderRadius: '10px' }}>
+                      <IconBell size={18} color="#ec4899" />
                     </span>
                     <span className="profile-menu-label">
-                      {appLang === 'kh' ? 'ការជូនដំណឹង & សេចក្តីប្រកាស' : 'Store Alerts & Notices'}
+                      {appLang === 'kh' ? 'សេចក្តីប្រកាសហាង' : 'Store Alerts & Notices'}
                     </span>
                   </div>
                   <div className="profile-menu-right">
@@ -496,100 +501,195 @@ export default function ProfileView({
                       <span>{(activeAdminNotifs.length + activeStoreAlerts.length) > 0 ? `${activeAdminNotifs.length + activeStoreAlerts.length} Active` : 'All Clear'}</span>
                     </span>
                     <span className="profile-menu-chevron">
-                      <IconChevronRight size={18} />
+                      <IconChevronRight size={17} />
                     </span>
                   </div>
                 </button>
+              </div>
 
-                {/* 5. Device Permissions & Cookies Settings */}
+              {/* Group 2: App Preferences */}
+              <div className="mobile-group-card">
+                <div className="mobile-group-heading">
+                  {appLang === 'kh' ? 'ការកំណត់កម្មវិធី' : 'PREFERENCES & INTERFACE'}
+                </div>
+
+                {/* 1. Language */}
                 <button
                   type="button"
-                  className="profile-menu-item"
-                  onClick={() => setActiveModal('settings')}
+                  className="profile-menu-item mobile-item-row"
+                  onClick={() => setActiveModal('language')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#0284c7' }}>
-                      <IconShield size={20} color="#0284c7" />
+                    <span className="profile-menu-icon" style={{ color: '#0284c7', background: '#eff6ff', padding: '6px', borderRadius: '10px' }}>
+                      <IconGlobe size={18} color="#0284c7" />
                     </span>
                     <span className="profile-menu-label">
-                      {appLang === 'kh' ? 'សិទ្ធិកាមេរ៉ា & ទីតាំង (Cookies)' : 'Camera & Location Permissions (Cookies)'}
+                      {appLang === 'kh' ? 'ភាសា' : 'Language'}
                     </span>
                   </div>
                   <div className="profile-menu-right">
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#0284c7', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <IconShield size={11} color="#0284c7" />
-                      <span>{accountPerms.camera && accountPerms.location ? 'Auto-Allow Active' : '365-Day Cookie'}</span>
+                    <span className="profile-menu-subvalue">
+                      {appLang === 'kh' ? 'ភាសាខ្មែរ (kh)' : 'English (en)'}
                     </span>
                     <span className="profile-menu-chevron">
-                      <IconChevronRight size={18} />
+                      <IconChevronRight size={17} />
                     </span>
                   </div>
                 </button>
 
-                {/* 6. Feed preference */}
+                <div className="mobile-row-divider" />
+
+                {/* 2. Display Theme */}
                 <button
                   type="button"
-                  className="profile-menu-item"
+                  className="profile-menu-item mobile-item-row"
+                  onClick={() => setActiveModal('display')}
+                >
+                  <div className="profile-menu-left">
+                    <span className="profile-menu-icon" style={{ color: '#8b5cf6', background: '#f5f3ff', padding: '6px', borderRadius: '10px' }}>
+                      <IconDeviceMobile size={18} color="#8b5cf6" />
+                    </span>
+                    <span className="profile-menu-label">
+                      {appLang === 'kh' ? 'ការបង្ហាញ' : 'Display Theme'}
+                    </span>
+                  </div>
+                  <div className="profile-menu-right">
+                    <span className="profile-menu-subvalue">
+                      {themeMode}
+                    </span>
+                    <span className="profile-menu-chevron">
+                      <IconChevronRight size={17} />
+                    </span>
+                  </div>
+                </button>
+
+                <div className="mobile-row-divider" />
+
+                {/* 3. Feed Preference */}
+                <button
+                  type="button"
+                  className="profile-menu-item mobile-item-row"
                   onClick={() => setActiveModal('feed')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon">
-                      <IconBell size={20} />
+                    <span className="profile-menu-icon" style={{ color: '#f59e0b', background: '#fffbeb', padding: '6px', borderRadius: '10px' }}>
+                      <IconBell size={18} color="#f59e0b" />
                     </span>
                     <span className="profile-menu-label">
-                      {appLang === 'kh' ? 'ចំណូលចិត្តការជូនដំណឹង' : 'Feed preference'}
+                      {appLang === 'kh' ? 'ចំណូលចិត្តការជូនដំណឹង' : 'Notification Feeds'}
                     </span>
                   </div>
                   <span className="profile-menu-chevron">
-                    <IconChevronRight size={18} />
+                    <IconChevronRight size={17} />
                   </span>
                 </button>
+              </div>
 
-                {/* 6. Password & Security (Admin Managed) */}
+              {/* Group 3: Permissions, Cookies & Don't Ask Again */}
+              <div className="mobile-group-card">
+                <div className="mobile-group-heading">
+                  {appLang === 'kh' ? 'សិទ្ធិ & សុវត្ថិភាព' : 'SECURITY & HARDWARE PERMISSIONS'}
+                </div>
+
+                {/* Device Permissions & Don't Ask Again */}
                 <button
                   type="button"
-                  className="profile-menu-item"
+                  className="profile-menu-item mobile-item-row"
+                  onClick={() => setActiveModal('settings')}
+                >
+                  <div className="profile-menu-left">
+                    <span className="profile-menu-icon" style={{ color: '#10b981', background: '#ecfdf5', padding: '6px', borderRadius: '10px' }}>
+                      <IconShield size={18} color="#10b981" />
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                      <span className="profile-menu-label">
+                        {appLang === 'kh' ? 'កាមេរ៉ា & ទីតាំង (Don\'t Ask)' : 'Camera, GPS & Don\'t Ask'}
+                      </span>
+                      <span style={{ fontSize: '10.5px', color: '#64748b' }}>
+                        {accountPerms.dontAskAgain ? '✓ Don\'t Ask Staff Again Active' : 'Persistent 365-Day Cookie'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="profile-menu-right">
+                    <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#059669', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '2px 8px', borderRadius: '6px' }}>
+                      {accountPerms.dontAskAgain ? 'Don\'t Ask' : 'Configured'}
+                    </span>
+                    <span className="profile-menu-chevron">
+                      <IconChevronRight size={17} />
+                    </span>
+                  </div>
+                </button>
+
+                <div className="mobile-row-divider" />
+
+                {/* Store Branch Location */}
+                <button
+                  type="button"
+                  className="profile-menu-item mobile-item-row"
+                  onClick={() => setActiveModal('location')}
+                >
+                  <div className="profile-menu-left">
+                    <span className="profile-menu-icon" style={{ color: '#06b6d4', background: '#ecfeff', padding: '6px', borderRadius: '10px' }}>
+                      <IconMapPin size={18} color="#06b6d4" />
+                    </span>
+                    <span className="profile-menu-label">
+                      {appLang === 'kh' ? 'សាខាហាង' : 'Store Branch Location'}
+                    </span>
+                  </div>
+                  <div className="profile-menu-right">
+                    <span className="profile-menu-subvalue">
+                      {user?.branch_name || 'Kohke'}
+                    </span>
+                    <span className="profile-menu-chevron">
+                      <IconChevronRight size={17} />
+                    </span>
+                  </div>
+                </button>
+
+                <div className="mobile-row-divider" />
+
+                {/* Password Managed by Admin */}
+                <button
+                  type="button"
+                  className="profile-menu-item mobile-item-row"
                   onClick={() => setActiveModal('password')}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon" style={{ color: '#ea580c' }}>
-                      <IconLock size={20} color="#ea580c" />
+                    <span className="profile-menu-icon" style={{ color: '#ea580c', background: '#fff7ed', padding: '6px', borderRadius: '10px' }}>
+                      <IconLock size={18} color="#ea580c" />
                     </span>
                     <span className="profile-menu-label">
                       {appLang === 'kh' ? 'ពាក្យសម្ងាត់គណនី' : 'Account Password'}
                     </span>
                   </div>
                   <div className="profile-menu-right">
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#ea580c', background: '#fff7ed', border: '1px solid #ffedd5', padding: '2px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <IconLock size={11} color="#ea580c" />
-                      <span>{appLang === 'kh' ? 'គ្រប់គ្រងដោយ Admin' : 'Admin Managed'}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#ea580c', background: '#fff7ed', border: '1px solid #ffedd5', padding: '2px 8px', borderRadius: '6px' }}>
+                      Admin Managed
                     </span>
                     <span className="profile-menu-chevron">
-                      <IconChevronRight size={18} />
+                      <IconChevronRight size={17} />
                     </span>
                   </div>
                 </button>
               </div>
 
-              <div className="profile-menu-divider" />
-
-              {/* 5. Log Out */}
-              <div className="profile-menu-group">
+              {/* Group 4: Log Out */}
+              <div className="mobile-group-card">
                 <button
                   type="button"
-                  className="profile-menu-item logout-item"
+                  className="profile-menu-item mobile-logout-item"
                   onClick={onLogout}
                 >
                   <div className="profile-menu-left">
-                    <span className="profile-menu-icon text-red">
-                      <IconDoorOut size={20} color="#ef4444" />
+                    <span className="profile-menu-icon text-red" style={{ background: '#fef2f2', padding: '6px', borderRadius: '10px' }}>
+                      <IconDoorOut size={18} color="#ef4444" />
                     </span>
                     <span className="profile-menu-label text-red">
-                      {appLang === 'kh' ? 'ចាកចេញ' : 'Log Out'}
+                      {appLang === 'kh' ? 'ចាកចេញពីគណនី' : 'Sign Out of Account'}
                     </span>
                   </div>
                   <span className="profile-menu-chevron">
-                    <IconChevronRight size={18} />
+                    <IconChevronRight size={17} />
                   </span>
                 </button>
               </div>
@@ -1011,6 +1111,39 @@ export default function ProfileView({
                     </div>
                   </div>
 
+                  {/* Master Switch: Don't Ask Staff Again */}
+                  <div className="settings-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1.5px solid #e2e8f0' }}>
+                    <div style={{ flex: 1, paddingRight: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <IconZap size={16} color="#059669" />
+                        <strong style={{ fontSize: '13px', color: '#0f172a' }}>Don't Ask Staff Again (កុំសួរម្តងទៀត)</strong>
+                      </div>
+                      <p style={{ fontSize: '11.5px', color: '#64748b', margin: '3px 0 0' }}>
+                        When turned ON, QR scan clocks in/out instantly and suppresses all camera/location confirmation prompts.
+                      </p>
+                    </div>
+                    <label className="settings-switch" style={{ cursor: 'pointer', position: 'relative', display: 'inline-block', width: '42px', height: '24px' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!accountPerms.dontAskAgain}
+                        onChange={(e) => handleToggleDontAskAgain(e.target.checked)}
+                        style={{ opacity: 0, width: 0, height: 0 }}
+                      />
+                      <span style={{
+                        position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: accountPerms.dontAskAgain ? '#10b981' : '#cbd5e1',
+                        transition: '0.2s', borderRadius: '24px'
+                      }}>
+                        <span style={{
+                          position: 'absolute', content: '""', height: '18px', width: '18px',
+                          left: accountPerms.dontAskAgain ? '21px' : '3px', bottom: '3px',
+                          backgroundColor: '#ffffff', transition: '0.2s', borderRadius: '50%',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                        }} />
+                      </span>
+                    </label>
+                  </div>
+
                   {/* Cookie Option 1: Auto-Allow Camera on Visit */}
                   <div className="settings-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
                     <div style={{ flex: 1, paddingRight: '12px' }}>
@@ -1278,31 +1411,9 @@ export default function ProfileView({
                       <strong style={{ display: 'block', fontSize: '14px', color: '#0f172a', marginBottom: '4px' }}>
                         No active announcements
                       </strong>
-                      <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#94a3b8' }}>
+                      <p style={{ margin: '0', fontSize: '12px', color: '#94a3b8' }}>
                         You have read or dismissed all store alerts.
                       </p>
-                      {dismissedAlertIds && dismissedAlertIds.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={onRestoreDismissedAlerts}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '7px 14px',
-                            borderRadius: '8px',
-                            background: '#f1f5f9',
-                            border: '1px solid #cbd5e1',
-                            color: '#0284c7',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <IconRotateCw size={13} />
-                          <span>Restore Cleared Notices ({dismissedAlertIds.length})</span>
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>

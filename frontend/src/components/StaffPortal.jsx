@@ -70,12 +70,12 @@ import {
   getDismissedAlertIds,
   dismissAlertForAccount,
   dismissAllAlertsForAccount,
-  resetDismissedAlertsForAccount,
 } from '../services/cookieService'
 import {
   notifyTelegramCheckin,
   notifyTelegramCheckout,
   notifyTelegramStaffMessage,
+  formatLateDuration,
 } from '../services/telegramService'
 
 function playSuccessBeep() {
@@ -254,12 +254,6 @@ export default function StaffPortal({
     const updated = dismissAllAlertsForAccount(staffUser?.id, allIds)
     setDismissedAlertIds(updated)
     showToast?.('All notices cleared', 'info')
-  }
-
-  const handleRestoreDismissedAlerts = () => {
-    resetDismissedAlertsForAccount(staffUser?.id)
-    setDismissedAlertIds([])
-    showToast?.('Notices restored', 'success')
   }
 
   // Action Modal State (Popup modal asking Check In or Check Out)
@@ -978,9 +972,14 @@ export default function StaffPortal({
           } else if (currentAction === 'out') {
             handleExecuteAttendance('out')
           } else {
-            // No action was chosen beforehand: pop up modal to ask Check In or Check Out!
-            setScannedQrData(code.data)
-            setShowActionModal(true)
+            // When turn on don't ask staff again: automatically determine Clock In vs Clock Out
+            if (accountPerms.dontAskAgain || accountPerms.camera) {
+              const autoAction = isOnShift ? 'out' : 'in'
+              handleExecuteAttendance(autoAction)
+            } else {
+              setScannedQrData(code.data)
+              setShowActionModal(true)
+            }
           }
 
           setTimeout(() => {
@@ -1326,7 +1325,7 @@ export default function StaffPortal({
                     <div>
                       <span className="meta-label">PUNCTUALITY</span>
                       <strong className={`meta-val ${activeCheckin.punctuality_status === 'on_time' ? 'text-emerald' : 'text-amber'}`}>
-                        {activeCheckin.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : `Late by ${activeCheckin.late_minutes} min`}
+                        {activeCheckin.punctuality_status === 'on_time' ? 'On-Time (Good Standing)' : `Late (${formatLateDuration(activeCheckin.late_minutes)})`}
                       </strong>
                     </div>
                   </div>
@@ -1857,7 +1856,7 @@ export default function StaffPortal({
                             </td>
                             <td>
                               <span className={`pro-badge ${log.punctuality_status === 'on_time' ? 'badge-emerald' : 'badge-amber'}`}>
-                                {log.punctuality_status === 'on_time' ? 'On-Time' : `Late (${log.late_minutes}m)`}
+                                {log.punctuality_status === 'on_time' ? 'On-Time' : `Late (${formatLateDuration(log.late_minutes)})`}
                               </span>
                             </td>
                           </tr>
@@ -1937,7 +1936,6 @@ export default function StaffPortal({
             dismissedAlertIds={dismissedAlertIds}
             onDeleteAlert={handleDeleteAlert}
             onDeleteAllAlerts={handleDeleteAllAlerts}
-            onRestoreDismissedAlerts={handleRestoreDismissedAlerts}
           />
         )}
       </main>
@@ -2479,31 +2477,9 @@ export default function StaffPortal({
                       <strong style={{ display: 'block', fontSize: '14px', color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', marginBottom: '4px' }}>
                         {t('noAlerts', 'No active announcements at this time.')}
                       </strong>
-                      <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#94a3b8' }}>
+                      <p style={{ margin: '0', fontSize: '12px', color: '#94a3b8' }}>
                         You have read or cleared all store alerts and management notices.
                       </p>
-                      {dismissedAlertIds.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={handleRestoreDismissedAlerts}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '7px 14px',
-                            borderRadius: '8px',
-                            background: themeMode === 'dark' ? '#1e293b' : '#f1f5f9',
-                            border: `1px solid ${themeMode === 'dark' ? '#334155' : '#cbd5e1'}`,
-                            color: themeMode === 'dark' ? '#38bdf8' : '#0284c7',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <IconRotateCw size={13} />
-                          <span>Restore Cleared Notices ({dismissedAlertIds.length})</span>
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>

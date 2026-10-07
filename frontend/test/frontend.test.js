@@ -386,3 +386,64 @@ test('Admin Custom Message Alert & Template Customization: Formats, placeholders
   assert.match(appContent, /Broadcast Custom Alert to Telegram/, 'App.jsx must render broadcast custom alert UI')
   assert.match(appContent, /Customizable Alert Message Templates/, 'App.jsx must render template customization UI')
 })
+
+test('Late duration formatting: formatLateDuration outputs Hour-Minute like (1h:30min)', async () => {
+  const { formatLateDuration } = await import('../src/services/telegramService.js')
+  assert.strictEqual(typeof formatLateDuration, 'function')
+  assert.strictEqual(formatLateDuration(90), '1h:30min')
+  assert.strictEqual(formatLateDuration(90, true), '(1h:30min)')
+  assert.strictEqual(formatLateDuration(60), '1h:00min')
+  assert.strictEqual(formatLateDuration(60, true), '(1h:00min)')
+  assert.strictEqual(formatLateDuration(15), '0h:15min')
+  assert.strictEqual(formatLateDuration(15, true), '(0h:15min)')
+  assert.strictEqual(formatLateDuration(0), '0h:00min')
+})
+
+test('Don\'t ask staff again & Notification restore removal', async () => {
+  const staffPortalPath = path.resolve('src/components/StaffPortal.jsx')
+  const staffPortalContent = fs.readFileSync(staffPortalPath, 'utf-8')
+  const profileViewPath = path.resolve('src/components/ProfileView.jsx')
+  const profileViewContent = fs.readFileSync(profileViewPath, 'utf-8')
+
+  // Notification restore must be completely removed
+  assert.doesNotMatch(staffPortalContent, /handleRestoreDismissedAlerts/, 'Restore dismissed alerts handler must be removed')
+  assert.doesNotMatch(staffPortalContent, /Restore Cleared Notices/, 'Restore button must be removed from StaffPortal')
+  assert.doesNotMatch(profileViewContent, /Restore Cleared Notices/, 'Restore button must be removed from ProfileView')
+
+  // Don't ask staff again support in ProfileView and cookies
+  assert.match(profileViewContent, /dontAskAgain/, 'ProfileView must manage dontAskAgain state')
+  assert.match(profileViewContent, /Don't Ask Staff Again/, 'ProfileView must display Don\'t Ask Staff Again option')
+  assert.match(profileViewContent, /mobile-profile-hero-banner/, 'ProfileView must use new modern mobile profile design')
+})
+
+test('Staff Inquiries deletion & Admin Performance TOP Staff Leaderboard', async () => {
+  const firebasePath = path.resolve('src/services/firebaseService.js')
+  const firebaseContent = fs.readFileSync(firebasePath, 'utf-8')
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
+
+  // Inbox deletion
+  assert.match(firebaseContent, /deleteStaffMessageInFirebase/, 'firebaseService must export deleteStaffMessageInFirebase')
+  assert.match(appContent, /handleDeleteStaffMessage/, 'App.jsx must define handleDeleteStaffMessage')
+  assert.match(appContent, /Delete staff inquiry permanently/, 'App.jsx must have delete inquiry button')
+
+  // Admin Performance TOP Staff Leaderboard
+  assert.match(appContent, /adminTopRankings/, 'App.jsx must compute adminTopRankings')
+  assert.match(appContent, /TOP Staff Leaderboard/, 'App.jsx must render TOP Staff Leaderboard in performance tab')
+})
+
+test('Admin Settings Suite Category Navigation & Loading Page Holographic Orb', async () => {
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
+  const loadingPath = path.resolve('src/components/LoadingPage.jsx')
+  const loadingContent = fs.readFileSync(loadingPath, 'utf-8')
+
+  // Admin Settings navigation suite
+  assert.match(appContent, /adminSettingsCategory/, 'App.jsx must track adminSettingsCategory')
+  assert.match(appContent, /admin-settings-nav-bar/, 'App.jsx must render admin settings category navigation pills')
+
+  // Loading Page holographic orb and text loading...
+  assert.match(loadingContent, /loading-orb\.png/, 'LoadingPage must use reference iridescent orb')
+  assert.match(loadingContent, /loading\.\.\./, 'LoadingPage must display lowercase loading... text at bottom')
+})
+

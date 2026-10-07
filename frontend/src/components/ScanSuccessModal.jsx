@@ -11,6 +11,16 @@ import {
   IconTarget,
 } from '../Icons'
 
+function formatLateDuration(mins, withParens = true) {
+  const m = Math.max(0, parseInt(mins, 10) || 0)
+  const hours = Math.floor(m / 60)
+  const rem = m % 60
+  const formatted = hours > 0
+    ? `${hours}h:${String(rem).padStart(2, '0')}min`
+    : `0h:${String(rem).padStart(2, '0')}min`
+  return withParens ? `(${formatted})` : formatted
+}
+
 export default function ScanSuccessModal({ data, onClose, autoCloseSeconds = 6 }) {
   const [secondsRemaining, setSecondsRemaining] = useState(autoCloseSeconds)
 
@@ -160,7 +170,7 @@ export default function ScanSuccessModal({ data, onClose, autoCloseSeconds = 6 }
             </div>
             <div className="scan-punctuality-sub">
               {data.isLate
-                ? `${data.lateMins || 1} minute(s) past scheduled grace period`
+                ? `${formatLateDuration(data.lateMins || 1, true)} past scheduled grace period`
                 : 'Punctuality rate and record updated in HR system'}
             </div>
           </div>

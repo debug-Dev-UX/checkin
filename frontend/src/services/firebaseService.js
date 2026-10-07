@@ -1282,6 +1282,25 @@ export async function updateStaffMessageStatus(messageId, status) {
   return updated
 }
 
+export async function deleteStaffMessageInFirebase(messageId) {
+  try {
+    await deleteDoc(doc(db, 'staff_messages', messageId))
+  } catch (err) {
+    console.warn('Error deleting staff message in Firestore:', err)
+  }
+  const current = getLocal('staff_messages', [])
+  const updated = current.filter(m => m.id !== messageId)
+  setLocal('staff_messages', updated)
+  try {
+    localStorage.setItem('chafe_staff_messages', JSON.stringify(updated))
+  } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_staff_messages_updated', { detail: updated }))
+    window.dispatchEvent(new Event('storage'))
+  }
+  return true
+}
+
 export function subscribeToStaffMessages(callback) {
   // Immediate initial callback with cached messages
   const initial = getLocal('staff_messages', [])
