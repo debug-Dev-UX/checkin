@@ -45,6 +45,10 @@ import {
   getBranches,
   getBranchById,
 } from '../services/locationService'
+import {
+  notifyTelegramCheckin,
+  notifyTelegramCheckout,
+} from '../services/telegramService'
 
 /**
  * Web Audio API chime on successful scan / action
@@ -379,6 +383,9 @@ export default function UserDashboard({
 
         const newRecord = await createCheckinInFirebase(payload)
 
+        // Dispatch real-time Telegram Alert
+        notifyTelegramCheckin(newRecord, activeBranch?.name || staffMember?.branch_name || 'Chafé Store')
+
         playSuccessBeep()
         setScanResult({
           type: 'success',
@@ -413,6 +420,9 @@ export default function UserDashboard({
         }
 
         await checkoutInFirebase(active.id, staffMember.id)
+
+        // Dispatch real-time Telegram Alert
+        notifyTelegramCheckout(active, activeBranch?.name || staffMember?.branch_name || 'Chafé Store')
 
         playSuccessBeep()
         setScanResult({

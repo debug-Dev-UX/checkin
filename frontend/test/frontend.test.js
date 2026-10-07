@@ -304,3 +304,52 @@ test('Staff Performance & Punctuality table uses real staff data without demo or
   assert.doesNotMatch(content, /Kenji Sato/, 'Must not contain Kenji Sato demo staff')
   assert.match(content, /\(staffList \|\| \[\]\)\.map\(stf =>/, 'auditRows must strictly derive from registered staffList')
 })
+
+test('Telegram Alert Integration: Service, config, and admin customizable features exist', async () => {
+  const {
+    DEFAULT_TELEGRAM_CONFIG,
+    sendTelegramMessage,
+    notifyTelegramCheckin,
+    notifyTelegramCheckout,
+    notifyTelegramLate,
+    notifyTelegramLeave,
+    notifyTelegramStaffMessage,
+    notifyTelegramStoreAlert,
+  } = await import('../src/services/telegramService.js')
+
+  // Verify default schema
+  assert.strictEqual(typeof DEFAULT_TELEGRAM_CONFIG, 'object')
+  assert.strictEqual(DEFAULT_TELEGRAM_CONFIG.enabled, false)
+  assert.strictEqual(DEFAULT_TELEGRAM_CONFIG.notify_checkin, true)
+  assert.strictEqual(DEFAULT_TELEGRAM_CONFIG.notify_checkout, true)
+  assert.strictEqual(DEFAULT_TELEGRAM_CONFIG.notify_late, true)
+  assert.strictEqual(DEFAULT_TELEGRAM_CONFIG.notify_leave, true)
+  assert.strictEqual(DEFAULT_TELEGRAM_CONFIG.notify_messages, true)
+  assert.strictEqual(DEFAULT_TELEGRAM_CONFIG.notify_broadcast, true)
+  assert.strictEqual(DEFAULT_TELEGRAM_CONFIG.branch_filter, 'all')
+
+  // Verify validation: when alerts are disabled, returns gracefully without throwing
+  const disabledRes = await sendTelegramMessage('test message')
+  assert.strictEqual(disabledRes.success, false)
+  assert.match(disabledRes.error, /disabled/)
+
+  // Verify validation: when enabled but missing token, reports missing token
+  const noTokenRes = await sendTelegramMessage('test message', 'HTML', { enabled: true, bot_token: '', chat_id: '123' })
+  assert.strictEqual(noTokenRes.success, false)
+  assert.match(noTokenRes.error, /Bot Token is missing/)
+
+  // Verify App.jsx contains Telegram settings panel and toggle
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
+  assert.match(appContent, /telegramConfig/, 'App.jsx must manage telegramConfig state')
+  assert.match(appContent, /handleTestTelegram/, 'App.jsx must have test Telegram handler')
+  assert.match(appContent, /handleSaveTelegram/, 'App.jsx must have save Telegram handler')
+  assert.match(appContent, /IconTelegram/, 'App.jsx must render Telegram icon')
+
+  // Verify StaffPortal integrates telegram alerts
+  const staffPortalPath = path.resolve('src/components/StaffPortal.jsx')
+  const staffPortalContent = fs.readFileSync(staffPortalPath, 'utf-8')
+  assert.match(staffPortalContent, /notifyTelegramCheckin/, 'StaffPortal must dispatch notifyTelegramCheckin')
+  assert.match(staffPortalContent, /notifyTelegramCheckout/, 'StaffPortal must dispatch notifyTelegramCheckout')
+  assert.match(staffPortalContent, /notifyTelegramStaffMessage/, 'StaffPortal must dispatch notifyTelegramStaffMessage')
+})

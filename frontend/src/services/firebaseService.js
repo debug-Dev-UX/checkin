@@ -13,6 +13,7 @@ import {
   onSnapshot
 } from 'firebase/firestore'
 import { db } from '../firebase.js'
+export { db }
 
 // Local storage backup keys for offline resilience
 const STORAGE_PREFIX = 'chafe_live_'

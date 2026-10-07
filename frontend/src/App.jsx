@@ -56,6 +56,7 @@ import {
   IconBell,
   IconPhone,
   IconSend,
+  IconTelegram,
 } from './Icons'
 import UserDashboard from './components/UserDashboard'
 import LoginForm from './components/LoginForm'
@@ -114,6 +115,14 @@ import {
   saveBranches,
   DEFAULT_BRANCHES
 } from './services/locationService'
+import {
+  getTelegramConfig,
+  saveTelegramConfig,
+  subscribeToTelegramConfig,
+  sendTelegramTestNotification,
+  notifyTelegramCheckin,
+  notifyTelegramStoreAlert,
+} from './services/telegramService'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
@@ -470,6 +479,7 @@ export default function App() {
     const updated = [created, ...storeAlertsList]
     setStoreAlertsList(updated)
     await saveStoreAlertsToFirebase(updated)
+    notifyTelegramStoreAlert(created)
     setNewAlertForm({ title: '', message: '', priority: 'normal' })
     showToast('Store notice published!')
   }
@@ -484,6 +494,7 @@ export default function App() {
     } : a)
     setStoreAlertsList(updated)
     await saveStoreAlertsToFirebase(updated)
+    notifyTelegramStoreAlert(editAlertForm)
     setEditingAlertId(null)
     showToast('Store notice updated!')
   }
@@ -493,6 +504,77 @@ export default function App() {
     setStoreAlertsList(updated)
     await saveStoreAlertsToFirebase(updated)
     showToast('Store notice removed.')
+  }
+
+  // Telegram Bot Alert Settings (Admin customizable)
+  const [telegramConfig, setTelegramConfig] = useState(() => ({
+    enabled: false,
+    bot_token: '',
+    chat_id: '',
+    notify_checkin: true,
+    notify_checkout: true,
+    notify_late: true,
+    notify_leave: true,
+    notify_messages: true,
+    notify_broadcast: true,
+    branch_filter: 'all',
+    bot_name: 'Chafé Alert Bot',
+  }))
+  const [isTelegramTesting, setIsTelegramTesting] = useState(false)
+  const [telegramTestStatus, setTelegramTestStatus] = useState(null)
+  const [isTelegramSaving, setIsTelegramSaving] = useState(false)
+  const [showBotToken, setShowBotToken] = useState(false)
+
+  useEffect(() => {
+    getTelegramConfig().then(cfg => {
+      if (cfg) setTelegramConfig(cfg)
+    })
+    const unsub = subscribeToTelegramConfig((cfg) => {
+      if (cfg && navTab !== 'settings') {
+        setTelegramConfig(cfg)
+      }
+    })
+    return () => { if (unsub) unsub() }
+  }, [navTab])
+
+  const handleSaveTelegram = async () => {
+    setIsTelegramSaving(true)
+    try {
+      await saveTelegramConfig(telegramConfig)
+      showToast('Telegram alert settings saved successfully!', 'success')
+    } catch (err) {
+      showToast('Failed to save Telegram settings: ' + err.message, 'error')
+    } finally {
+      setIsTelegramSaving(false)
+    }
+  }
+
+  const handleTestTelegram = async () => {
+    if (!telegramConfig.bot_token?.trim()) {
+      showToast('Please provide a Telegram Bot Token first.', 'error')
+      return
+    }
+    if (!telegramConfig.chat_id?.trim()) {
+      showToast('Please provide a Telegram Chat ID first.', 'error')
+      return
+    }
+    setIsTelegramTesting(true)
+    setTelegramTestStatus(null)
+    try {
+      const res = await sendTelegramTestNotification(telegramConfig)
+      if (res.success) {
+        setTelegramTestStatus({ success: true, message: 'Test message sent successfully to your Telegram chat!' })
+        showToast('Telegram test message delivered!', 'success')
+      } else {
+        setTelegramTestStatus({ success: false, message: res.error || 'Failed to send test message' })
+        showToast('Telegram test failed: ' + (res.error || 'Unknown error'), 'error')
+      }
+    } catch (err) {
+      setTelegramTestStatus({ success: false, message: err.message })
+      showToast('Error: ' + err.message, 'error')
+    } finally {
+      setIsTelegramTesting(false)
+    }
   }
 
   // Staff Messages & Support Desk State
@@ -618,6 +700,11 @@ export default function App() {
       })
       if (record) {
         setAdminNotifList(prev => [record, ...prev.filter(n => n.id !== record.id)])
+        notifyTelegramStoreAlert({
+          title: `[Notice to ${targetName}] ${title}`,
+          message: message,
+          priority: adminNotifForm.priority || 'normal'
+        })
       }
       setAdminNotifForm({ target_staff_id: 'all', target_staff_name: 'All Staff', title: '', message: '', priority: 'normal' })
       showToast('Notification sent to staff successfully!', 'success')
@@ -913,6 +1000,9 @@ export default function App() {
         branch_name: chosenBranch?.name || 'Chafé • Kohke',
       }
       await createCheckinInFirebase(payload)
+      if (payload.type === 'employee' || payload.type === 'staff') {
+        notifyTelegramCheckin(payload, chosenBranch?.name)
+      }
       showToast(`${checkinForm.name} checked in!`)
       setIsCheckinModalOpen(false)
       setCheckinForm({
@@ -3795,6 +3885,384 @@ export default function App() {
                           Publish Notice
                         </button>
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ============================================================== */}
+                {/* TELEGRAM BOT ALERTS & REAL-TIME WEBHOOK INTEGRATION */}
+                {/* ============================================================== */}
+                <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #0088cc 0%, #00b4d8 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(0, 136, 204, 0.25)'
+                      }}>
+                        <IconTelegram size={20} color="#ffffff" />
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--text-dark, #0f172a)' }}>
+                            Telegram Alerts & Integration (ការជូនដំណឹង Telegram)
+                          </h4>
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            background: telegramConfig.enabled ? '#dcfce7' : '#f1f5f9',
+                            color: telegramConfig.enabled ? '#15803d' : '#64748b',
+                            border: `1px solid ${telegramConfig.enabled ? '#86efac' : '#cbd5e1'}`
+                          }}>
+                            {telegramConfig.enabled ? '● Active' : '○ Disabled'}
+                          </span>
+                        </div>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted, #64748b)' }}>
+                          Direct real-time alerts for staff attendance, late arrivals, day offs, and support inquiries to your Telegram channel.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Master Switch Toggle */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: telegramConfig.enabled ? '#0088cc' : '#64748b' }}>
+                          {telegramConfig.enabled ? 'Alerts ON' : 'Alerts OFF'}
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={telegramConfig.enabled}
+                          onChange={(e) => setTelegramConfig(prev => ({ ...prev, enabled: e.target.checked }))}
+                          style={{
+                            width: '20px',
+                            height: '20px',
+                            accentColor: '#0088cc',
+                            cursor: 'pointer'
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Telegram Configuration Body */}
+                  <div style={{
+                    background: 'var(--bg-secondary, #f8fafc)',
+                    padding: '18px',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border-color, #e2e8f0)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px'
+                  }}>
+                    {/* Bot Token Field */}
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <label className="form-label" style={{ margin: 0, fontWeight: 700, fontSize: '12px' }}>
+                          Telegram Bot Token (HTTP API) *
+                        </label>
+                        <a
+                          href="https://t.me/BotFather"
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: '11px', color: '#0088cc', textDecoration: 'none', fontWeight: 600 }}
+                        >
+                          Create Bot via @BotFather ↗
+                        </a>
+                      </div>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type={showBotToken ? 'text' : 'password'}
+                          className="form-input"
+                          placeholder="e.g. 7123456789:AAHkQd_example_token_xyz"
+                          value={telegramConfig.bot_token}
+                          onChange={(e) => setTelegramConfig(prev => ({ ...prev, bot_token: e.target.value }))}
+                          style={{ paddingRight: '40px', fontFamily: showBotToken ? 'monospace' : 'inherit' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowBotToken(prev => !prev)}
+                          style={{
+                            position: 'absolute',
+                            right: '10px',
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#64748b',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '4px'
+                          }}
+                          title={showBotToken ? 'Hide Bot Token' : 'Show Bot Token'}
+                        >
+                          {showBotToken ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                        </button>
+                      </div>
+                      <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                        Security notice: The token is securely stored and used to broadcast attendance notifications.
+                      </span>
+                    </div>
+
+                    {/* Chat ID and Bot Name Row */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontWeight: 700, fontSize: '12px' }}>
+                          Target Chat / Channel / Group ID *
+                        </label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="e.g. -1001234567890 or @chafe_alerts"
+                          value={telegramConfig.chat_id}
+                          onChange={(e) => setTelegramConfig(prev => ({ ...prev, chat_id: e.target.value }))}
+                        />
+                        <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                          For groups or channels, add your bot as Administrator.
+                        </span>
+                      </div>
+
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontWeight: 700, fontSize: '12px' }}>
+                          Bot Sender Display Name
+                        </label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="e.g. Chafé Alert Bot"
+                          value={telegramConfig.bot_name}
+                          onChange={(e) => setTelegramConfig(prev => ({ ...prev, bot_name: e.target.value }))}
+                        />
+                        <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                          Header branding displayed in test messages.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Target Branch Filter */}
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontWeight: 700, fontSize: '12px' }}>
+                        Alert Branch Scope (សាខាដែលត្រូវជូនដំណឹង)
+                      </label>
+                      <select
+                        className="form-select"
+                        value={telegramConfig.branch_filter}
+                        onChange={(e) => setTelegramConfig(prev => ({ ...prev, branch_filter: e.target.value }))}
+                        style={{ fontSize: '12px' }}
+                      >
+                        <option value="all">All Branches (Floating - គ្រប់សាខាទាំងអស់)</option>
+                        {branches.map(b => (
+                          <option key={b.id} value={b.id}>{b.name} ({b.code || b.id})</option>
+                        ))}
+                      </select>
+                      <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                        Send alerts for all branches or isolate to a specific shop branch.
+                      </span>
+                    </div>
+
+                    {/* Granular Event Triggers */}
+                    <div>
+                      <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', marginBottom: '8px', display: 'block' }}>
+                        Custom Event Triggers (ជ្រើសរើសប្រភេទការជូនដំណឹង)
+                      </label>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+                        gap: '8px'
+                      }}>
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'var(--card-bg, #ffffff)',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={telegramConfig.notify_checkin}
+                            onChange={(e) => setTelegramConfig(prev => ({ ...prev, notify_checkin: e.target.checked }))}
+                            style={{ accentColor: '#0088cc' }}
+                          />
+                          <span>🟢 Staff Clock-In</span>
+                        </label>
+
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'var(--card-bg, #ffffff)',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={telegramConfig.notify_checkout}
+                            onChange={(e) => setTelegramConfig(prev => ({ ...prev, notify_checkout: e.target.checked }))}
+                            style={{ accentColor: '#0088cc' }}
+                          />
+                          <span>🔴 Staff Clock-Out</span>
+                        </label>
+
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'var(--card-bg, #ffffff)',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={telegramConfig.notify_late}
+                            onChange={(e) => setTelegramConfig(prev => ({ ...prev, notify_late: e.target.checked }))}
+                            style={{ accentColor: '#0088cc' }}
+                          />
+                          <span>🚨 Late Arrival Warning</span>
+                        </label>
+
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'var(--card-bg, #ffffff)',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={telegramConfig.notify_leave}
+                            onChange={(e) => setTelegramConfig(prev => ({ ...prev, notify_leave: e.target.checked }))}
+                            style={{ accentColor: '#0088cc' }}
+                          />
+                          <span>☀️ Day Off / Leave</span>
+                        </label>
+
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'var(--card-bg, #ffffff)',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={telegramConfig.notify_messages}
+                            onChange={(e) => setTelegramConfig(prev => ({ ...prev, notify_messages: e.target.checked }))}
+                            style={{ accentColor: '#0088cc' }}
+                          />
+                          <span>💬 Staff Messages</span>
+                        </label>
+
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'var(--card-bg, #ffffff)',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={telegramConfig.notify_broadcast}
+                            onChange={(e) => setTelegramConfig(prev => ({ ...prev, notify_broadcast: e.target.checked }))}
+                            style={{ accentColor: '#0088cc' }}
+                          />
+                          <span>📢 Store Announcements</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Test Status Banner */}
+                    {telegramTestStatus && (
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: telegramTestStatus.success ? '#f0fdf4' : '#fef2f2',
+                        color: telegramTestStatus.success ? '#166534' : '#991b1b',
+                        border: `1px solid ${telegramTestStatus.success ? '#bbf7d0' : '#fecaca'}`
+                      }}>
+                        {telegramTestStatus.success ? <IconCheckCircle size={16} /> : <IconAlertTriangle size={16} />}
+                        <span>{telegramTestStatus.message}</span>
+                      </div>
+                    )}
+
+                    {/* Action Buttons: Test Connection and Save */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={handleTestTelegram}
+                        disabled={isTelegramTesting}
+                        style={{
+                          fontSize: '12px',
+                          padding: '8px 16px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          borderRadius: '8px',
+                          borderColor: '#0088cc',
+                          color: '#0088cc'
+                        }}
+                      >
+                        <IconSend size={13} color="#0088cc" />
+                        <span>{isTelegramTesting ? 'Sending Test...' : 'Send Test Alert to Telegram'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={handleSaveTelegram}
+                        disabled={isTelegramSaving}
+                        style={{
+                          fontSize: '12px',
+                          padding: '8px 18px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #0088cc 0%, #0077b5 100%)',
+                          borderColor: '#0077b5'
+                        }}
+                      >
+                        <IconSave size={14} color="#ffffff" />
+                        <span>{isTelegramSaving ? 'Saving...' : 'Save Telegram Settings'}</span>
+                      </button>
                     </div>
                   </div>
                 </div>

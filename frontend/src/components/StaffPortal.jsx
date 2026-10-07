@@ -72,6 +72,11 @@ import {
   dismissAllAlertsForAccount,
   resetDismissedAlertsForAccount,
 } from '../services/cookieService'
+import {
+  notifyTelegramCheckin,
+  notifyTelegramCheckout,
+  notifyTelegramStaffMessage,
+} from '../services/telegramService'
 
 function playSuccessBeep() {
   try {
@@ -611,6 +616,14 @@ export default function StaffPortal({
         priority: supportForm.priority || 'normal',
       })
       setSupportForm({ subject: '', message: '', priority: 'normal' })
+      notifyTelegramStaffMessage({
+        staff_name: staffProfile?.name || staffUser?.name || 'Staff Member',
+        email: staffUser?.email || '',
+        branch_name: staffUser?.branch_name || 'Store',
+        subject: supportForm.subject.trim() || 'Staff Inquiry',
+        message: supportForm.message.trim(),
+        priority: supportForm.priority || 'normal',
+      })
       showToast?.(
         lang === 'kh' ? 'សារត្រូវបានផ្ញើទៅ Admin រួចរាល់!' : 'Message sent to Admin successfully!',
         'success'
@@ -665,6 +678,9 @@ export default function StaffPortal({
 
         const newRecord = await createCheckinInFirebase(payload)
 
+        // Dispatch real-time Telegram Alert
+        notifyTelegramCheckin(newRecord, activeBranch?.name || staffUser?.branch_name || 'Chafé Store')
+
         playSuccessBeep()
         setActiveCheckin(newRecord)
         setRecentLogs(prev => [newRecord, ...(prev || [])])
@@ -691,6 +707,14 @@ export default function StaffPortal({
       } else {
         // CLOCK OUT
         await checkoutInFirebase(activeCheckin?.id, staffUser.id)
+
+        // Dispatch real-time Telegram Alert
+        notifyTelegramCheckout({
+          name: staffProfile?.name || staffUser.name || 'Staff Member',
+          department: staffProfile?.role || staffUser.role || 'Barista',
+          branch_name: activeBranch?.name || staffUser?.branch_name || 'Chafé Store',
+          ...(activeCheckin || {})
+        }, activeBranch?.name || staffUser?.branch_name || 'Chafé Store', elapsedShiftTime)
 
         playSuccessBeep()
         setActiveCheckin(null)

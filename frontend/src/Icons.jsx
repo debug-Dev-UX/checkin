@@ -814,7 +814,11 @@ export function IconSend({ size = 18, color = 'currentColor', className = '' }) 
   )
 }
 
-
-
-
-
+export function IconTelegram({ size = 20, color = 'currentColor', className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M21.5 2L2 9.5l7 3 2.5 7.5L15 15l6.5 5L21.5 2z" />
+      <path d="M9 12.5l7.5-6.5" />
+    </svg>
+  )
+}

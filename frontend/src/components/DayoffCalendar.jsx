@@ -32,6 +32,7 @@ import {
   getLeaveTypesFromFirebase,
   saveLeaveTypesToFirebase,
 } from '../services/firebaseService'
+import { notifyTelegramLeave } from '../services/telegramService'
 
 export function renderLeaveIcon(iconKey, size = 14, color = 'currentColor') {
   if (iconKey === 'sun' || iconKey?.includes('\uD83C\uDF34')) return <IconSun size={size} color={color} />
@@ -256,6 +257,9 @@ export default function DayoffCalendar({ apiBase, staffList = [], showToast }) {
       }
 
       await createDayoffInFirebase(payload)
+
+      // Dispatch real-time Telegram Alert
+      notifyTelegramLeave(payload)
 
       if (showToast) showToast('Day off assigned successfully!', 'success')
       setIsModalOpen(false)
