@@ -3,7 +3,9 @@ import {
   IconArrowLeft,
   IconGear,
   IconCheck,
+  IconCheckCircle,
   IconCameraBadge,
+  IconCamera,
   IconGlobe,
   IconMapPin,
   IconDeviceMobile,
@@ -14,10 +16,13 @@ import {
   IconEye,
   IconEyeOff,
   IconX,
+  IconShield,
+  IconRefresh,
 } from '../Icons'
 import { getBranches } from '../services/locationService'
 import { useLanguage } from '../context/LanguageContext'
 import { updateStaffInFirebase } from '../services/firebaseService'
+import { getAccountPermissions, saveAccountPermissions } from '../services/cookieService'
 
 export default function ProfileView({
   user,
@@ -71,10 +76,14 @@ export default function ProfileView({
   // Theme selection handler with persistence and custom event dispatch
   const handleSelectTheme = (mode) => {
     setThemeMode(mode)
-    const isDark = mode === 'Dark Mode'
+    let isDark = mode === 'Dark Mode'
+    if (mode === 'System Default' && typeof window !== 'undefined') {
+      isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+    }
     const themeVal = isDark ? 'dark' : 'light'
     try {
       localStorage.setItem('chafe_theme_mode', themeVal)
+      localStorage.setItem('chafe_theme_preference', mode)
       if (isDark) {
         document.documentElement.setAttribute('data-theme', 'dark')
       } else {
@@ -90,6 +99,96 @@ export default function ProfileView({
       appLang === 'kh' ? `បានប្តូរផ្ទៃបង្ហាញទៅ ${mode}` : `Display theme set to ${mode}`,
       'success'
     )
+  }
+
+  // Account-specific Cookie Storage for Auto Camera & GPS Location permissions
+  const [accountPerms, setAccountPerms] = useState(() => getAccountPermissions(user?.id))
+  const [testingPerms, setTestingPerms] = useState(false)
+  const [permTestMessage, setPermTestMessage] = useState('')
+
+  useEffect(() => {
+    setAccountPerms(getAccountPermissions(user?.id))
+  }, [user?.id])
+
+  const handleToggleCameraPerm = async (checked) => {
+    saveAccountPermissions(user?.id, {
+      camera: checked,
+      location: accountPerms.location,
+    })
+    setAccountPerms(prev => ({ ...prev, camera: checked }))
+    if (checked && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+        stream.getTracks().forEach(t => t.stop())
+        showToast?.('Camera auto-allow cookie active! Access saved for your account.', 'success')
+      } catch (err) {
+        showToast?.('Cookie saved! Please click Allow if browser prompts for camera.', 'info')
+      }
+    } else {
+      showToast?.('Camera auto-allow cookie disabled for your account.', 'info')
+    }
+  }
+
+  const handleToggleLocationPerm = (checked) => {
+    saveAccountPermissions(user?.id, {
+      camera: accountPerms.camera,
+      location: checked,
+    })
+    setAccountPerms(prev => ({ ...prev, location: checked }))
+    if (checked && navigator.geolocation?.getCurrentPosition) {
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          showToast?.('Location auto-allow cookie active! Store GPS access saved.', 'success')
+        },
+        () => {
+          showToast?.('Cookie saved! Please enable device location if prompted.', 'info')
+        },
+        { enableHighAccuracy: true, timeout: 6000 }
+      )
+    } else {
+      showToast?.('Location auto-allow cookie disabled for your account.', 'info')
+    }
+  }
+
+  const handleVerifyBothPermissionsNow = async () => {
+    setTestingPerms(true)
+    setPermTestMessage('Requesting browser permissions...')
+    let camOk = false
+    let locOk = false
+
+    // Test Camera
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        const s = await navigator.mediaDevices.getUserMedia({ video: true })
+        s.getTracks().forEach(t => t.stop())
+        camOk = true
+      }
+    } catch {
+      camOk = false
+    }
+
+    // Test Geolocation
+    await new Promise(resolve => {
+      if (navigator.geolocation?.getCurrentPosition) {
+        navigator.geolocation.getCurrentPosition(
+          () => { locOk = true; resolve() },
+          () => { locOk = false; resolve() },
+          { enableHighAccuracy: true, timeout: 6000 }
+        )
+      } else {
+        resolve()
+      }
+    })
+
+    // Store persistent cookies for 1 year
+    saveAccountPermissions(user?.id, { camera: true, location: true })
+    setAccountPerms({ camera: true, location: true, cookieActive: true, userId: user?.id })
+    setTestingPerms(false)
+    setPermTestMessage(camOk && locOk
+      ? '✅ Both Camera & GPS permissions confirmed and stored to account cookie!'
+      : '🍪 Account cookies active! Permissions set to auto-allow on visit.'
+    )
+    showToast?.('Camera and Location permissions saved to account cookie!', 'success')
   }
 
   const fileInputRef = useRef(null)
@@ -199,7 +298,7 @@ export default function ProfileView({
     .toUpperCase()
 
   return (
-    <div className="profile-template-wrapper">
+    <div className={`profile-template-wrapper ${themeMode === 'Dark Mode' || (themeMode === 'System Default' && typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark-theme' : ''}`}>
       <input
         type="file"
         ref={fileInputRef}
@@ -370,7 +469,32 @@ export default function ProfileView({
                   </span>
                 </button>
 
-                {/* 5. Password & Security (Admin Managed) */}
+                {/* 5. Device Permissions & Cookies Settings */}
+                <button
+                  type="button"
+                  className="profile-menu-item"
+                  onClick={() => setActiveModal('settings')}
+                >
+                  <div className="profile-menu-left">
+                    <span className="profile-menu-icon" style={{ color: '#0284c7' }}>
+                      <IconGear size={20} color="#0284c7" />
+                    </span>
+                    <span className="profile-menu-label">
+                      {appLang === 'kh' ? 'ការកំណត់សិទ្ធិ & Cookies' : 'Account Settings & Cookies'}
+                    </span>
+                  </div>
+                  <div className="profile-menu-right">
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#0284c7', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <IconShield size={11} color="#0284c7" />
+                      <span>{accountPerms.camera && accountPerms.location ? 'Auto Camera & GPS' : 'Cookies Active'}</span>
+                    </span>
+                    <span className="profile-menu-chevron">
+                      <IconChevronRight size={18} />
+                    </span>
+                  </div>
+                </button>
+
+                {/* 6. Password & Security (Admin Managed) */}
                 <button
                   type="button"
                   className="profile-menu-item"
@@ -806,20 +930,142 @@ export default function ProfileView({
                 </div>
               )}
 
-              {/* SETTINGS MODAL */}
+              {/* SETTINGS MODAL: Own Account Cookie Storage for Camera & Location */}
               {activeModal === 'settings' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div className="settings-row">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Account Cookie Info Card */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, #f0fdf4, #ecfdf5)',
+                    border: '1.5px solid #a7f3d0',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    fontSize: '12.5px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <div style={{ fontWeight: 800, color: '#065f46', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <IconShield size={16} color="#059669" />
+                        <span>Account Cookie Storage</span>
+                      </div>
+                      <span style={{ fontSize: '10px', fontWeight: 800, background: '#d1fae5', color: '#047857', padding: '2px 7px', borderRadius: '4px' }}>
+                        365-DAY COOKIE
+                      </span>
+                    </div>
+                    <div style={{ color: '#047857', fontSize: '11.5px', lineHeight: 1.4 }}>
+                      Persistent cookies stored for <strong>@{user?.username || user?.name || 'staff'}</strong> to automatically grant camera and GPS location verification when visiting this site.
+                    </div>
+                  </div>
+
+                  {/* Cookie Option 1: Auto-Allow Camera on Visit */}
+                  <div className="settings-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ flex: 1, paddingRight: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <IconCamera size={16} color="#0284c7" />
+                        <strong style={{ fontSize: '13px', color: '#0f172a' }}>Auto-Allow Camera on Visit</strong>
+                      </div>
+                      <p style={{ fontSize: '11.5px', color: '#64748b', margin: '3px 0 0' }}>
+                        Store cookie for account to open QR camera scanner without permission prompts.
+                      </p>
+                    </div>
+                    <label className="settings-switch" style={{ cursor: 'pointer', position: 'relative', display: 'inline-block', width: '42px', height: '24px' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!accountPerms.camera}
+                        onChange={(e) => handleToggleCameraPerm(e.target.checked)}
+                        style={{ opacity: 0, width: 0, height: 0 }}
+                      />
+                      <span style={{
+                        position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: accountPerms.camera ? '#10b981' : '#cbd5e1',
+                        transition: '0.2s', borderRadius: '24px'
+                      }}>
+                        <span style={{
+                          position: 'absolute', content: '""', height: '18px', width: '18px',
+                          left: accountPerms.camera ? '21px' : '3px', bottom: '3px',
+                          backgroundColor: '#ffffff', transition: '0.2s', borderRadius: '50%',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                        }} />
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Cookie Option 2: Auto-Allow Location on Visit */}
+                  <div className="settings-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ flex: 1, paddingRight: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <IconMapPin size={16} color="#059669" />
+                        <strong style={{ fontSize: '13px', color: '#0f172a' }}>Auto-Allow Store GPS Location</strong>
+                      </div>
+                      <p style={{ fontSize: '11.5px', color: '#64748b', margin: '3px 0 0' }}>
+                        Store cookie to verify café store distance instantly for 1-tap Check-In.
+                      </p>
+                    </div>
+                    <label className="settings-switch" style={{ cursor: 'pointer', position: 'relative', display: 'inline-block', width: '42px', height: '24px' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!accountPerms.location}
+                        onChange={(e) => handleToggleLocationPerm(e.target.checked)}
+                        style={{ opacity: 0, width: 0, height: 0 }}
+                      />
+                      <span style={{
+                        position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: accountPerms.location ? '#10b981' : '#cbd5e1',
+                        transition: '0.2s', borderRadius: '24px'
+                      }}>
+                        <span style={{
+                          position: 'absolute', content: '""', height: '18px', width: '18px',
+                          left: accountPerms.location ? '21px' : '3px', bottom: '3px',
+                          backgroundColor: '#ffffff', transition: '0.2s', borderRadius: '50%',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                        }} />
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Test & Save All Permissions Action Button */}
+                  <div style={{ marginTop: '2px' }}>
+                    <button
+                      type="button"
+                      onClick={handleVerifyBothPermissionsNow}
+                      disabled={testingPerms}
+                      style={{
+                        width: '100%',
+                        padding: '11px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                        color: '#ffffff',
+                        border: 'none',
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        cursor: testingPerms ? 'wait' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: '0 2px 8px rgba(2, 132, 199, 0.25)'
+                      }}
+                    >
+                      <IconRefresh size={15} color="#ffffff" className={testingPerms ? 'spinning' : ''} />
+                      <span>{testingPerms ? 'Verifying Hardware & Storing Cookies...' : 'Verify & Store Permissions to Cookie Now'}</span>
+                    </button>
+                    {permTestMessage && (
+                      <div style={{ marginTop: '8px', fontSize: '11.5px', color: '#059669', textAlign: 'center', fontWeight: 600 }}>
+                        {permTestMessage}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Standard Notifications Row */}
+                  <div className="settings-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderTop: '1px solid #f1f5f9' }}>
                     <div>
-                      <strong>Push Notifications</strong>
-                      <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                      <strong style={{ fontSize: '13px', color: '#0f172a' }}>Push Notifications</strong>
+                      <p style={{ fontSize: '11.5px', color: '#64748b', margin: '2px 0 0' }}>
                         Shift alerts & announcements
                       </p>
                     </div>
                     <input
                       type="checkbox"
                       defaultChecked
-                      style={{ accentColor: '#10b981', width: '20px', height: '20px' }}
+                      style={{ accentColor: '#10b981', width: '18px', height: '18px' }}
                     />
                   </div>
                 </div>

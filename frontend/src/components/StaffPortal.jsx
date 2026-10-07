@@ -34,6 +34,8 @@ import {
   IconXCircle,
   IconSend,
   IconStar,
+  IconTrash,
+  IconRotateCw,
 } from '../Icons'
 import { Skeleton } from './Skeleton'
 import ProfileView from './ProfileView'
@@ -62,6 +64,13 @@ import {
   getBranches,
   getBranchById,
 } from '../services/locationService'
+import {
+  getAccountPermissions,
+  getDismissedAlertIds,
+  dismissAlertForAccount,
+  dismissAllAlertsForAccount,
+  resetDismissedAlertsForAccount,
+} from '../services/cookieService'
 
 function playSuccessBeep() {
   try {
@@ -158,12 +167,22 @@ export default function StaffPortal({
 
   // Admin Notifications (push from admin to staff)
   const [adminNotifications, setAdminNotifications] = useState([])
-  const [unreadAdminNotifCount, setUnreadAdminNotifCount] = useState(0)
+
+  // Store Alerts & Notices Dismissal state per Staff Account (saved to cookies and localStorage)
+  const [dismissedAlertIds, setDismissedAlertIds] = useState(() => getDismissedAlertIds(staffUser?.id))
+
   useEffect(() => {
-    const readKey = `chafe_read_admin_notifs_${staffUser?.id || 'guest'}`
-    const readIds = (() => {
-      try { return JSON.parse(localStorage.getItem(readKey) || '[]') } catch { return [] }
-    })()
+    setDismissedAlertIds(getDismissedAlertIds(staffUser?.id))
+    const handleDismissedUpdate = (e) => {
+      if (!e.detail || !e.detail.userId || String(e.detail.userId) === String(staffUser?.id || 'guest')) {
+        setDismissedAlertIds(getDismissedAlertIds(staffUser?.id))
+      }
+    }
+    window.addEventListener('chafe_alerts_dismissed_updated', handleDismissedUpdate)
+    return () => window.removeEventListener('chafe_alerts_dismissed_updated', handleDismissedUpdate)
+  }, [staffUser?.id])
+
+  useEffect(() => {
     const unsub = subscribeToAdminNotifications((list) => {
       if (!Array.isArray(list)) return
       const mine = list.filter(n =>
@@ -175,17 +194,81 @@ export default function StaffPortal({
         (staffUser?.name && n.target_staff_name && n.target_staff_name.toLowerCase() === staffUser.name.toLowerCase())
       )
       setAdminNotifications(mine)
-      setUnreadAdminNotifCount(mine.filter(n => !readIds.includes(n.id)).length)
     })
     return () => { if (unsub) unsub() }
   }, [staffUser])
 
+  // Filtered active notifications & alerts (excluding ones deleted/dismissed by this staff account)
+  const activeAdminNotifs = useMemo(() => {
+    return adminNotifications.filter(n => !dismissedAlertIds.includes(String(n.id)))
+  }, [adminNotifications, dismissedAlertIds])
+
+  const activeStoreAlerts = useMemo(() => {
+    return storeAlerts.filter(a => !dismissedAlertIds.includes(String(a.id)))
+  }, [storeAlerts, dismissedAlertIds])
+
+  const [readAdminNotifIds, setReadAdminNotifIds] = useState(() => {
+    const readKey = `chafe_read_admin_notifs_${staffUser?.id || 'guest'}`
+    try { return JSON.parse(localStorage.getItem(readKey) || '[]') } catch { return [] }
+  })
+
+  useEffect(() => {
+    const readKey = `chafe_read_admin_notifs_${staffUser?.id || 'guest'}`
+    try {
+      setReadAdminNotifIds(JSON.parse(localStorage.getItem(readKey) || '[]'))
+    } catch {
+      setReadAdminNotifIds([])
+    }
+  }, [staffUser?.id])
+
+  const unreadAdminNotifCount = useMemo(() => {
+    return activeAdminNotifs.filter(n => !readAdminNotifIds.includes(n.id)).length
+  }, [activeAdminNotifs, readAdminNotifIds])
+
   const markAdminNotifsRead = () => {
     const readKey = `chafe_read_admin_notifs_${staffUser?.id || 'guest'}`
-    const ids = adminNotifications.map(n => n.id)
+    const ids = activeAdminNotifs.map(n => n.id)
     try { localStorage.setItem(readKey, JSON.stringify(ids)) } catch {}
-    setUnreadAdminNotifCount(0)
+    setReadAdminNotifIds(ids)
   }
+
+  const handleDeleteAlert = (alertId, e) => {
+    if (e) e.stopPropagation()
+    const updated = dismissAlertForAccount(staffUser?.id, String(alertId))
+    setDismissedAlertIds(updated)
+    showToast?.('Notice removed', 'info')
+  }
+
+  const handleDeleteAllAlerts = () => {
+    const allIds = [
+      ...activeAdminNotifs.map(n => String(n.id)),
+      ...activeStoreAlerts.map(a => String(a.id))
+    ]
+    const updated = dismissAllAlertsForAccount(staffUser?.id, allIds)
+    setDismissedAlertIds(updated)
+    showToast?.('All notices cleared', 'info')
+  }
+
+  const handleRestoreDismissedAlerts = () => {
+    resetDismissedAlertsForAccount(staffUser?.id)
+    setDismissedAlertIds([])
+    showToast?.('Notices restored', 'success')
+  }
+
+  // Auto-allow Camera & GPS Location cookie persistence on site visit
+  useEffect(() => {
+    const perms = getAccountPermissions(staffUser?.id)
+    if (perms.location) {
+      const targetStaff = staffProfile?.name ? staffProfile : staffUser
+      verifyRealtimeLocationForStaff(targetStaff, branches)
+        .then(loc => {
+          setVerifiedLocation(loc)
+        })
+        .catch(() => {
+          // background pre-check quiet
+        })
+    }
+  }, [staffUser?.id, branches])
 
   // Action Modal State (Popup modal asking Check In or Check Out)
   const [showActionModal, setShowActionModal] = useState(false)
@@ -977,7 +1060,7 @@ export default function StaffPortal({
           aria-label="View Alerts"
         >
           <IconBell size={20} color="#ffffff" />
-          {(storeAlerts.length > 0 || unreadAdminNotifCount > 0) && (
+          {(activeStoreAlerts.length > 0 || unreadAdminNotifCount > 0) && (
             <span className="mobile-bell-badge" style={unreadAdminNotifCount > 0 ? { background: '#ef4444', color: '#fff', fontSize: '9px', fontWeight: 800, minWidth: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', position: 'absolute', top: '-2px', right: '-2px' } : {}}>
               {unreadAdminNotifCount > 0 ? unreadAdminNotifCount : ''}
             </span>
@@ -988,7 +1071,7 @@ export default function StaffPortal({
       {/* Main Container */}
       <main style={{ flex: 1 }}>
         {/* Management Announcement Banner (Push from Admin) */}
-        {unreadAdminNotifCount > 0 && adminNotifications.length > 0 && (
+        {unreadAdminNotifCount > 0 && activeAdminNotifs.length > 0 && (
           <div
             className="pro-admin-notif-banner"
             onClick={() => { setActiveModal('alerts'); markAdminNotifsRead(); }}
@@ -996,10 +1079,12 @@ export default function StaffPortal({
               margin: '14px 18px 0',
               padding: '12px 16px',
               borderRadius: '14px',
-              background: adminNotifications[0]?.priority === 'urgent'
-                ? 'linear-gradient(135deg, #fff7ed, #ffedd5)'
-                : 'linear-gradient(135deg, #f0f9ff, #e0f2fe)',
-              border: `1.5px solid ${adminNotifications[0]?.priority === 'urgent' ? '#fed7aa' : '#bae6fd'}`,
+              background: themeMode === 'dark'
+                ? (activeAdminNotifs[0]?.priority === 'urgent' ? 'linear-gradient(135deg, #451a03, #291500)' : 'linear-gradient(135deg, #0c2b4e, #0a192f)')
+                : (activeAdminNotifs[0]?.priority === 'urgent' ? 'linear-gradient(135deg, #fff7ed, #ffedd5)' : 'linear-gradient(135deg, #f0f9ff, #e0f2fe)'),
+              border: themeMode === 'dark'
+                ? (activeAdminNotifs[0]?.priority === 'urgent' ? '1.5px solid #7c2d12' : '1.5px solid #0369a1')
+                : (activeAdminNotifs[0]?.priority === 'urgent' ? '1.5px solid #fed7aa' : '1.5px solid #bae6fd'),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -1013,7 +1098,7 @@ export default function StaffPortal({
                 width: '36px',
                 height: '36px',
                 borderRadius: '10px',
-                background: adminNotifications[0]?.priority === 'urgent' ? '#ea580c' : '#0284c7',
+                background: activeAdminNotifs[0]?.priority === 'urgent' ? '#ea580c' : '#0284c7',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1021,31 +1106,50 @@ export default function StaffPortal({
                 fontSize: '18px',
                 flexShrink: 0
               }}>
-                {adminNotifications[0]?.priority === 'urgent' ? '🚨' : '🔔'}
+                {activeAdminNotifs[0]?.priority === 'urgent' ? '🚨' : '🔔'}
               </div>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <strong style={{ fontSize: '13px', color: '#0f172a' }}>
-                    {adminNotifications[0]?.title || 'Notice from Management'}
+                  <strong style={{ fontSize: '13px', color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>
+                    {activeAdminNotifs[0]?.title || 'Notice from Management'}
                   </strong>
                   <span style={{
                     fontSize: '10px',
                     fontWeight: 800,
                     padding: '1px 6px',
                     borderRadius: '4px',
-                    background: adminNotifications[0]?.priority === 'urgent' ? '#ea580c' : '#0284c7',
+                    background: activeAdminNotifs[0]?.priority === 'urgent' ? '#ea580c' : '#0284c7',
                     color: '#ffffff'
                   }}>
-                    {adminNotifications[0]?.priority === 'urgent' ? 'URGENT' : 'NEW NOTICE'}
+                    {activeAdminNotifs[0]?.priority === 'urgent' ? 'URGENT' : 'NEW NOTICE'}
                   </span>
                 </div>
-                <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
-                  {adminNotifications[0]?.message}
+                <div style={{ fontSize: '12px', color: themeMode === 'dark' ? '#cbd5e1' : '#475569', marginTop: '2px' }}>
+                  {activeAdminNotifs[0]?.message}
                 </div>
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '11px', fontWeight: 700, color: '#0284c7', whiteSpace: 'nowrap' }}>View Alert →</span>
+              <button
+                type="button"
+                className="banner-dismiss-btn"
+                onClick={(e) => handleDeleteAlert(activeAdminNotifs[0]?.id, e)}
+                title="Delete notice"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px 6px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ef4444'
+                }}
+              >
+                <IconTrash size={15} color="#ef4444" />
+              </button>
             </div>
           </div>
         )}
@@ -1431,7 +1535,7 @@ export default function StaffPortal({
         {activeTab === 'schedule' && (
           <div className="pro-card">
             {/* Mode Toggle Bar: My Day Offs (Own Account) vs Shift Roster (All Staff) */}
-            <div style={{ padding: '16px 20px 0', display: 'flex', gap: '8px', borderBottom: '1px solid #f1f5f9' }}>
+            <div style={{ padding: '16px 20px 0', display: 'flex', gap: '8px', borderBottom: `1px solid ${themeMode === 'dark' ? '#334155' : '#f1f5f9'}` }}>
               <button
                 type="button"
                 onClick={() => setScheduleMode('own')}
@@ -1442,17 +1546,17 @@ export default function StaffPortal({
                   fontSize: '13px',
                   cursor: 'pointer',
                   border: 'none',
-                  background: scheduleMode === 'own' ? '#0f172a' : '#f1f5f9',
-                  color: scheduleMode === 'own' ? '#ffffff' : '#64748b',
+                  background: scheduleMode === 'own' ? (themeMode === 'dark' ? '#0284c7' : '#0f172a') : (themeMode === 'dark' ? '#1e293b' : '#f1f5f9'),
+                  color: scheduleMode === 'own' ? '#ffffff' : (themeMode === 'dark' ? '#94a3b8' : '#64748b'),
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
                   transition: 'all 0.2s ease',
                 }}
               >
-                <IconSun size={16} color={scheduleMode === 'own' ? '#38bdf8' : '#94a3b8'} />
+                <IconSun size={16} color={scheduleMode === 'own' ? (themeMode === 'dark' ? '#ffffff' : '#38bdf8') : '#94a3b8'} />
                 <span>{t('myDayOffs', 'My Day Offs (Own Account)')}</span>
-                <span style={{ fontSize: '11px', background: scheduleMode === 'own' ? '#334155' : '#e2e8f0', color: scheduleMode === 'own' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: '10px' }}>
+                <span style={{ fontSize: '11px', background: scheduleMode === 'own' ? (themeMode === 'dark' ? 'rgba(255,255,255,0.2)' : '#334155') : (themeMode === 'dark' ? '#334155' : '#e2e8f0'), color: scheduleMode === 'own' ? '#ffffff' : (themeMode === 'dark' ? '#cbd5e1' : '#475569'), padding: '1px 6px', borderRadius: '10px' }}>
                   {dayoffs.length}
                 </span>
               </button>
@@ -1467,17 +1571,17 @@ export default function StaffPortal({
                   fontSize: '13px',
                   cursor: 'pointer',
                   border: 'none',
-                  background: scheduleMode === 'all' ? '#0f172a' : '#f1f5f9',
-                  color: scheduleMode === 'all' ? '#ffffff' : '#64748b',
+                  background: scheduleMode === 'all' ? (themeMode === 'dark' ? '#0284c7' : '#0f172a') : (themeMode === 'dark' ? '#1e293b' : '#f1f5f9'),
+                  color: scheduleMode === 'all' ? '#ffffff' : (themeMode === 'dark' ? '#94a3b8' : '#64748b'),
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
                   transition: 'all 0.2s ease',
                 }}
               >
-                <IconCalendar size={16} color={scheduleMode === 'all' ? '#38bdf8' : '#94a3b8'} />
+                <IconCalendar size={16} color={scheduleMode === 'all' ? (themeMode === 'dark' ? '#ffffff' : '#38bdf8') : '#94a3b8'} />
                 <span>{t('allStaffDayOffs', 'Shift Roster (All Staff Day Offs)')}</span>
-                <span style={{ fontSize: '11px', background: scheduleMode === 'all' ? '#334155' : '#e2e8f0', color: scheduleMode === 'all' ? '#ffffff' : '#475569', padding: '1px 6px', borderRadius: '10px' }}>
+                <span style={{ fontSize: '11px', background: scheduleMode === 'all' ? (themeMode === 'dark' ? 'rgba(255,255,255,0.2)' : '#334155') : (themeMode === 'dark' ? '#334155' : '#e2e8f0'), color: scheduleMode === 'all' ? '#ffffff' : (themeMode === 'dark' ? '#cbd5e1' : '#475569'), padding: '1px 6px', borderRadius: '10px' }}>
                   {allDayoffs.length}
                 </span>
               </button>
@@ -1508,7 +1612,9 @@ export default function StaffPortal({
                       style={{
                         padding: '6px 12px 6px 30px',
                         fontSize: '12px',
-                        border: '1px solid #cbd5e1',
+                        border: `1px solid ${themeMode === 'dark' ? '#334155' : '#cbd5e1'}`,
+                        background: themeMode === 'dark' ? '#0f172a' : '#ffffff',
+                        color: themeMode === 'dark' ? '#f8fafc' : '#0f172a',
                         borderRadius: '20px',
                         outline: 'none',
                         width: '180px'
@@ -2007,24 +2113,35 @@ export default function StaffPortal({
                     <div style={{ fontSize: '38px', fontWeight: 900, color: '#10b981' }}>
                       {punctualityStats.rate}%
                     </div>
-                    <div style={{ fontSize: '13px', color: '#64748b', fontWeight: 700 }}>
+                    <div style={{ fontSize: '13px', color: themeMode === 'dark' ? '#94a3b8' : '#64748b', fontWeight: 700 }}>
                       Overall Punctuality Rating
                     </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
-                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>{punctualityStats.onTime}</div>
-                      <div style={{ fontSize: '11px', color: '#64748b' }}>On-Time Shifts</div>
+                    <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}`, padding: '12px', borderRadius: '12px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '20px', fontWeight: 800, color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{punctualityStats.onTime}</div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>On-Time Shifts</div>
                     </div>
-                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', textAlign: 'center' }}>
+                    <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}`, padding: '12px', borderRadius: '12px', textAlign: 'center' }}>
                       <div style={{ fontSize: '20px', fontWeight: 800, color: '#f59e0b' }}>{punctualityStats.late}</div>
-                      <div style={{ fontSize: '11px', color: '#64748b' }}>Late Arrivals</div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>Late Arrivals</div>
                     </div>
                   </div>
 
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px', fontSize: '12.5px', color: '#166534', lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <IconAward size={18} color="#166534" />
+                  <div style={{
+                    background: themeMode === 'dark' ? '#064e3b' : '#f0fdf4',
+                    border: `1px solid ${themeMode === 'dark' ? '#059669' : '#bbf7d0'}`,
+                    borderRadius: '12px',
+                    padding: '14px',
+                    fontSize: '12.5px',
+                    color: themeMode === 'dark' ? '#a7f3d0' : '#166534',
+                    lineHeight: 1.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <IconAward size={18} color={themeMode === 'dark' ? '#34d399' : '#166534'} />
                     <span><strong>Good Standing:</strong> Attendance records are verified and synced with cloud timesheets. Keep up the high standard of punctuality!</span>
                   </div>
                 </div>
@@ -2033,7 +2150,15 @@ export default function StaffPortal({
               {/* TOP Staff Leaderboard Modal */}
               {activeModal === 'top' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
+                  <div style={{
+                    background: themeMode === 'dark' ? '#1e293b' : '#f8fafc',
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}`,
+                    fontSize: '12px',
+                    color: themeMode === 'dark' ? '#cbd5e1' : '#475569',
+                    lineHeight: 1.5
+                  }}>
                     Real-time attendance & punctuality leaderboard across all store locations.
                   </div>
 
@@ -2053,8 +2178,12 @@ export default function StaffPortal({
                             justifyContent: 'space-between',
                             padding: '12px 14px',
                             borderRadius: '12px',
-                            background: isTop1 ? 'linear-gradient(135deg, #fefce8, #fef9c3)' : isMe ? '#f0fdf4' : '#ffffff',
-                            border: `1px solid ${isTop1 ? '#fde047' : isTop2 ? '#cbd5e1' : isTop3 ? '#fcd34d' : isMe ? '#86efac' : '#e2e8f0'}`,
+                            background: themeMode === 'dark'
+                              ? (isTop1 ? 'linear-gradient(135deg, #422006, #291500)' : isMe ? '#064e3b' : '#1e293b')
+                              : (isTop1 ? 'linear-gradient(135deg, #fefce8, #fef9c3)' : isMe ? '#f0fdf4' : '#ffffff'),
+                            border: themeMode === 'dark'
+                              ? `1px solid ${isTop1 ? '#ca8a04' : isTop2 ? '#475569' : isTop3 ? '#ea580c' : isMe ? '#10b981' : '#334155'}`
+                              : `1px solid ${isTop1 ? '#fde047' : isTop2 ? '#cbd5e1' : isTop3 ? '#fcd34d' : isMe ? '#86efac' : '#e2e8f0'}`,
                             boxShadow: isTop1 ? '0 2px 8px rgba(234, 179, 8, 0.15)' : '0 1px 3px rgba(0,0,0,0.03)'
                           }}
                         >
@@ -2069,8 +2198,12 @@ export default function StaffPortal({
                               alignItems: 'center',
                               justifyContent: 'center',
                               fontWeight: 900,
-                              background: isTop1 ? '#fef08a' : isTop2 ? '#f1f5f9' : isTop3 ? '#ffedd5' : '#f8fafc',
-                              color: isTop1 ? '#854d0e' : isTop2 ? '#334155' : isTop3 ? '#9a3412' : '#64748b'
+                              background: themeMode === 'dark'
+                                ? (isTop1 ? '#713f12' : isTop2 ? '#334155' : isTop3 ? '#7c2d12' : '#0f172a')
+                                : (isTop1 ? '#fef08a' : isTop2 ? '#f1f5f9' : isTop3 ? '#ffedd5' : '#f8fafc'),
+                              color: themeMode === 'dark'
+                                ? (isTop1 ? '#fef08a' : isTop2 ? '#cbd5e1' : isTop3 ? '#ffedd5' : '#94a3b8')
+                                : (isTop1 ? '#854d0e' : isTop2 ? '#334155' : isTop3 ? '#9a3412' : '#64748b')
                             }}>
                               {isTop1 ? (
                                 <IconTrophy size={16} color="#ca8a04" />
@@ -2084,14 +2217,14 @@ export default function StaffPortal({
 
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ fontWeight: 800, fontSize: '13.5px', color: '#0f172a' }}>{stf.name}</span>
+                                <span style={{ fontWeight: 800, fontSize: '13.5px', color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{stf.name}</span>
                                 {isMe && (
                                   <span style={{ fontSize: '10px', fontWeight: 700, background: '#10b981', color: '#ffffff', padding: '1px 6px', borderRadius: '4px' }}>
                                     YOU
                                   </span>
                                 )}
                               </div>
-                              <div style={{ fontSize: '11px', color: '#64748b' }}>
+                              <div style={{ fontSize: '11px', color: '#94a3b8' }}>
                                 {stf.role} • {stf.branch}
                               </div>
                             </div>
@@ -2101,7 +2234,7 @@ export default function StaffPortal({
                             <div style={{ fontWeight: 900, fontSize: '14px', color: stf.rate >= 90 ? '#10b981' : stf.rate >= 75 ? '#0284c7' : '#f59e0b' }}>
                               {stf.rate}%
                             </div>
-                            <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                            <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
                               {stf.onTime} on-time ({stf.total} shifts)
                             </div>
                           </div>
@@ -2112,41 +2245,108 @@ export default function StaffPortal({
                 </div>
               )}
 
-              {/* Alerts Modal */}
+              {/* Alerts Modal: Read & Delete Store Alerts & Notices */}
               {activeModal === 'alerts' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Top Bar with Clear All button */}
+                  {(activeAdminNotifs.length > 0 || activeStoreAlerts.length > 0) && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      paddingBottom: '8px',
+                      borderBottom: `1px solid ${themeMode === 'dark' ? '#334155' : '#f1f5f9'}`
+                    }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: themeMode === 'dark' ? '#94a3b8' : '#64748b' }}>
+                        {activeAdminNotifs.length + activeStoreAlerts.length} Active {activeAdminNotifs.length + activeStoreAlerts.length === 1 ? 'Notice' : 'Notices'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleDeleteAllAlerts}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#ef4444',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '4px 8px',
+                          borderRadius: '6px'
+                        }}
+                        title="Dismiss all notices"
+                      >
+                        <IconTrash size={13} color="#ef4444" />
+                        <span>Dismiss All</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Admin Notifications Section */}
-                  {adminNotifications.length > 0 && (
+                  {activeAdminNotifs.length > 0 && (
                     <div>
-                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 800, color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <IconBell size={13} color="#ea580c" />
                         MESSAGES FROM MANAGEMENT
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {adminNotifications.map(notif => (
+                        {activeAdminNotifs.map(notif => (
                           <div
                             key={notif.id}
                             style={{
-                              background: notif.priority === 'urgent' ? '#fff7ed' : notif.priority === 'info' ? '#eff6ff' : '#f8fafc',
-                              border: `1px solid ${notif.priority === 'urgent' ? '#fed7aa' : notif.priority === 'info' ? '#bfdbfe' : '#e2e8f0'}`,
+                              background: themeMode === 'dark'
+                                ? (notif.priority === 'urgent' ? '#451a03' : notif.priority === 'info' ? '#0f2942' : '#1e293b')
+                                : (notif.priority === 'urgent' ? '#fff7ed' : notif.priority === 'info' ? '#eff6ff' : '#f8fafc'),
+                              border: themeMode === 'dark'
+                                ? `1px solid ${notif.priority === 'urgent' ? '#7c2d12' : notif.priority === 'info' ? '#0369a1' : '#334155'}`
+                                : `1px solid ${notif.priority === 'urgent' ? '#fed7aa' : notif.priority === 'info' ? '#bfdbfe' : '#e2e8f0'}`,
                               borderRadius: '12px',
                               padding: '12px',
                               fontSize: '12.5px'
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                              <div style={{ fontWeight: 800, color: notif.priority === 'urgent' ? '#c2410c' : notif.priority === 'info' ? '#1e40af' : '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <div style={{
+                                fontWeight: 800,
+                                color: themeMode === 'dark'
+                                  ? '#f8fafc'
+                                  : (notif.priority === 'urgent' ? '#c2410c' : notif.priority === 'info' ? '#1e40af' : '#0f172a'),
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                              }}>
                                 {notif.priority === 'urgent' ? '🚨' : notif.priority === 'info' ? 'ℹ️' : '🔔'}
                                 <span>{notif.title}</span>
                               </div>
-                              {notif.priority === 'urgent' && (
-                                <span style={{ fontSize: '10px', fontWeight: 700, background: '#fed7aa', color: '#c2410c', padding: '2px 6px', borderRadius: '4px' }}>URGENT</span>
-                              )}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {notif.priority === 'urgent' && (
+                                  <span style={{ fontSize: '10px', fontWeight: 700, background: '#fed7aa', color: '#c2410c', padding: '2px 6px', borderRadius: '4px' }}>URGENT</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteAlert(notif.id, e)}
+                                  title="Delete notice"
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#ef4444',
+                                    cursor: 'pointer',
+                                    padding: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: '4px'
+                                  }}
+                                >
+                                  <IconTrash size={14} color="#ef4444" />
+                                </button>
+                              </div>
                             </div>
-                            <div style={{ color: '#334155', lineHeight: 1.5 }}>{notif.message}</div>
-                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
-                              From Management • {new Date(notif.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            <div style={{ color: themeMode === 'dark' ? '#cbd5e1' : '#334155', lineHeight: 1.5 }}>{notif.message}</div>
+                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>From Management • {new Date(notif.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                           </div>
                         ))}
@@ -2155,20 +2355,24 @@ export default function StaffPortal({
                   )}
 
                   {/* Store Notices Section */}
-                  {storeAlerts.length > 0 && (
+                  {activeStoreAlerts.length > 0 && (
                     <div>
-                      {adminNotifications.length > 0 && (
-                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f172a', marginBottom: '8px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {activeAdminNotifs.length > 0 && (
+                        <div style={{ fontSize: '11px', fontWeight: 800, color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', marginBottom: '8px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <IconBell size={13} color="#0284c7" />
                           STORE NOTICES
                         </div>
                       )}
-                      {storeAlerts.map(alert => (
+                      {activeStoreAlerts.map(alert => (
                         <div
                           key={alert.id}
                           style={{
-                            background: alert.priority === 'high' ? '#eff6ff' : '#f0fdf4',
-                            border: `1px solid ${alert.priority === 'high' ? '#bfdbfe' : '#bbf7d0'}`,
+                            background: themeMode === 'dark'
+                              ? (alert.priority === 'high' ? '#0f2942' : '#064e3b')
+                              : (alert.priority === 'high' ? '#eff6ff' : '#f0fdf4'),
+                            border: themeMode === 'dark'
+                              ? `1px solid ${alert.priority === 'high' ? '#0369a1' : '#059669'}`
+                              : `1px solid ${alert.priority === 'high' ? '#bfdbfe' : '#bbf7d0'}`,
                             borderRadius: '12px',
                             padding: '12px',
                             fontSize: '12.5px',
@@ -2176,17 +2380,45 @@ export default function StaffPortal({
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <div style={{ fontWeight: 800, color: alert.priority === 'high' ? '#1e40af' : '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div style={{
+                              fontWeight: 800,
+                              color: themeMode === 'dark'
+                                ? '#f8fafc'
+                                : (alert.priority === 'high' ? '#1e40af' : '#166534'),
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px'
+                            }}>
                               <IconBell size={13} />
                               <span>{alert.title}</span>
                             </div>
-                            {alert.priority === 'high' && (
-                              <span style={{ fontSize: '10px', fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px' }}>
-                                {t('priorityHigh', 'High Priority')}
-                              </span>
-                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {alert.priority === 'high' && (
+                                <span style={{ fontSize: '10px', fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '4px' }}>
+                                  {t('priorityHigh', 'High Priority')}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteAlert(alert.id, e)}
+                                title="Delete notice"
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#ef4444',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderRadius: '4px'
+                                }}
+                              >
+                                <IconTrash size={14} color="#ef4444" />
+                              </button>
+                            </div>
                           </div>
-                          <div style={{ color: alert.priority === 'high' ? '#2563eb' : '#15803d', lineHeight: 1.4 }}>
+                          <div style={{ color: themeMode === 'dark' ? '#cbd5e1' : (alert.priority === 'high' ? '#2563eb' : '#15803d'), lineHeight: 1.4 }}>
                             {alert.message}
                           </div>
                         </div>
@@ -2194,9 +2426,39 @@ export default function StaffPortal({
                     </div>
                   )}
 
-                  {adminNotifications.length === 0 && storeAlerts.length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '20px 0', color: '#64748b', fontSize: '13px' }}>
-                      {t('noAlerts', 'No active announcements at this time.')}
+                  {activeAdminNotifs.length === 0 && activeStoreAlerts.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '30px 10px', color: '#64748b', fontSize: '13px' }}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <IconCheckCircle size={38} color="#10b981" />
+                      </div>
+                      <strong style={{ display: 'block', fontSize: '14px', color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', marginBottom: '4px' }}>
+                        {t('noAlerts', 'No active announcements at this time.')}
+                      </strong>
+                      <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#94a3b8' }}>
+                        You have read or cleared all store alerts and management notices.
+                      </p>
+                      {dismissedAlertIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleRestoreDismissedAlerts}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '7px 14px',
+                            borderRadius: '8px',
+                            background: themeMode === 'dark' ? '#1e293b' : '#f1f5f9',
+                            border: `1px solid ${themeMode === 'dark' ? '#334155' : '#cbd5e1'}`,
+                            color: themeMode === 'dark' ? '#38bdf8' : '#0284c7',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <IconRotateCw size={13} />
+                          <span>Restore Cleared Notices ({dismissedAlertIds.length})</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2206,24 +2468,24 @@ export default function StaffPortal({
               {/* Profile Modal */}
               {activeModal === 'profile' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b' }}>Full Name:</span>
-                    <strong style={{ color: '#0f172a' }}>{staffUser?.name || 'Staff Member'}</strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: `1px solid ${themeMode === 'dark' ? '#334155' : '#f1f5f9'}` }}>
+                    <span style={{ color: '#94a3b8' }}>Full Name:</span>
+                    <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{staffUser?.name || 'Staff Member'}</strong>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b' }}>Role / Department:</span>
-                    <strong style={{ color: '#0f172a' }}>{staffUser?.role || 'Barista'}</strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: `1px solid ${themeMode === 'dark' ? '#334155' : '#f1f5f9'}` }}>
+                    <span style={{ color: '#94a3b8' }}>Role / Department:</span>
+                    <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{staffUser?.role || 'Barista'}</strong>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b' }}>Email:</span>
-                    <strong style={{ color: '#0f172a' }}>{staffUser?.email || 'staff@chafe.com'}</strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: `1px solid ${themeMode === 'dark' ? '#334155' : '#f1f5f9'}` }}>
+                    <span style={{ color: '#94a3b8' }}>Email:</span>
+                    <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{staffUser?.email || 'staff@chafe.com'}</strong>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b' }}>Shift Hours:</span>
-                    <strong style={{ color: '#0f172a' }}>{staffUser?.shift_start || '07:30'} - {staffUser?.shift_end || '16:00'}</strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: `1px solid ${themeMode === 'dark' ? '#334155' : '#f1f5f9'}` }}>
+                    <span style={{ color: '#94a3b8' }}>Shift Hours:</span>
+                    <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{staffUser?.shift_start || '07:30'} - {staffUser?.shift_end || '16:00'}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Employee Code:</span>
+                    <span style={{ color: '#94a3b8' }}>Employee Code:</span>
                     <strong style={{ color: '#0284c7' }}>STAFF-#{String(staffUser?.id || '').slice(-6).toUpperCase()}</strong>
                   </div>
                 </div>
@@ -2234,25 +2496,25 @@ export default function StaffPortal({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
                   {/* Contact Hotlines */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '12px', borderRadius: '10px', border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}` }}>
+                      <div style={{ fontWeight: 800, color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <IconPhone size={14} color="#0284c7" />
                         <span>Manager Hotline</span>
                       </div>
-                      <div style={{ color: '#64748b', fontSize: '11px' }}>+1 (555) 234-5678</div>
+                      <div style={{ color: '#94a3b8', fontSize: '11px' }}>+1 (555) 234-5678</div>
                     </div>
-                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '12px', borderRadius: '10px', border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}` }}>
+                      <div style={{ fontWeight: 800, color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <IconMail size={14} color="#0284c7" />
                         <span>Email Desk</span>
                       </div>
-                      <div style={{ color: '#64748b', fontSize: '11px' }}>support@chafe.internal</div>
+                      <div style={{ color: '#94a3b8', fontSize: '11px' }}>support@chafe.internal</div>
                     </div>
                   </div>
 
                   {/* Form to Send Message to Admin */}
-                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '14px' }}>
-                    <div style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#ffffff', border: `1px solid ${themeMode === 'dark' ? '#334155' : '#cbd5e1'}`, borderRadius: '12px', padding: '14px' }}>
+                    <div style={{ fontWeight: 800, fontSize: '13px', color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <IconSend size={15} color="#0284c7" />
                       <span>Send Inquiry or Request to Admin</span>
                     </div>
@@ -2260,7 +2522,7 @@ export default function StaffPortal({
                     <form onSubmit={handleSendSupportMessage} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
                         <div>
-                          <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 700, color: themeMode === 'dark' ? '#cbd5e1' : '#475569', display: 'block', marginBottom: '4px' }}>
                             Subject
                           </label>
                           <input
@@ -2272,7 +2534,9 @@ export default function StaffPortal({
                               width: '100%',
                               padding: '8px 10px',
                               borderRadius: '8px',
-                              border: '1px solid #cbd5e1',
+                              border: `1px solid ${themeMode === 'dark' ? '#334155' : '#cbd5e1'}`,
+                              background: themeMode === 'dark' ? '#0f172a' : '#ffffff',
+                              color: themeMode === 'dark' ? '#f8fafc' : '#0f172a',
                               fontSize: '12px',
                               outline: 'none',
                               boxSizing: 'border-box'
@@ -2280,7 +2544,7 @@ export default function StaffPortal({
                           />
                         </div>
                         <div>
-                          <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 700, color: themeMode === 'dark' ? '#cbd5e1' : '#475569', display: 'block', marginBottom: '4px' }}>
                             Priority
                           </label>
                           <select
@@ -2290,7 +2554,9 @@ export default function StaffPortal({
                               width: '100%',
                               padding: '8px 10px',
                               borderRadius: '8px',
-                              border: '1px solid #cbd5e1',
+                              border: `1px solid ${themeMode === 'dark' ? '#334155' : '#cbd5e1'}`,
+                              background: themeMode === 'dark' ? '#0f172a' : '#ffffff',
+                              color: themeMode === 'dark' ? '#f8fafc' : '#0f172a',
                               fontSize: '12px',
                               outline: 'none',
                               boxSizing: 'border-box'
@@ -2305,7 +2571,7 @@ export default function StaffPortal({
                       </div>
 
                       <div>
-                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: themeMode === 'dark' ? '#cbd5e1' : '#475569', display: 'block', marginBottom: '4px' }}>
                           Message to Admin *
                         </label>
                         <textarea
@@ -2317,7 +2583,9 @@ export default function StaffPortal({
                             width: '100%',
                             padding: '8px 10px',
                             borderRadius: '8px',
-                            border: '1px solid #cbd5e1',
+                            border: `1px solid ${themeMode === 'dark' ? '#334155' : '#cbd5e1'}`,
+                            background: themeMode === 'dark' ? '#0f172a' : '#ffffff',
+                            color: themeMode === 'dark' ? '#f8fafc' : '#0f172a',
                             fontSize: '12px',
                             outline: 'none',
                             resize: 'vertical',

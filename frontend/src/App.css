@@ -8082,9 +8082,16 @@ body {
   border: 1px solid #1e293b !important;
 }
 
+[data-theme='dark'] .shift-detail-val,
+.dark-theme .shift-detail-val,
 [data-theme='dark'] .shift-detail-value,
 .dark-theme .shift-detail-value {
   color: #f8fafc !important;
+}
+
+[data-theme='dark'] .shift-card-details-grid,
+.dark-theme .shift-card-details-grid {
+  border-top: 1px solid #334155 !important;
 }
 
 [data-theme='dark'] .shift-detail-label,
@@ -8319,3 +8326,183 @@ body {
   border-color: #38bdf8 !important;
   color: #ffffff !important;
 }
+
+/* ==============================================================
+   DARK THEME: ELEMENT 2 - ACTION CARDS (CHECK-IN & CHECK-OUT)
+   ============================================================== */
+[data-theme='dark'] .mobile-action-card,
+.dark-theme .mobile-action-card {
+  background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+  border: 2px solid #f59e0b !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme='dark'] .mobile-action-card:hover,
+.dark-theme .mobile-action-card:hover {
+  background: linear-gradient(135deg, #243247, #131d33) !important;
+  border-color: #fbbf24 !important;
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.25) !important;
+}
+
+[data-theme='dark'] .mobile-action-card.active-state,
+.dark-theme .mobile-action-card.active-state {
+  background: linear-gradient(135deg, #2a2012, #1c1917) !important;
+  border-color: #fbbf24 !important;
+}
+
+[data-theme='dark'] .mobile-action-label,
+.dark-theme .mobile-action-label {
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .mobile-action-sublabel,
+.dark-theme .mobile-action-sublabel {
+  color: #cbd5e1 !important;
+}
+
+/* Section Headings */
+[data-theme='dark'] .mobile-section-heading,
+.dark-theme .mobile-section-heading {
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .mobile-section-heading-sub,
+.dark-theme .mobile-section-heading-sub {
+  color: #38bdf8 !important;
+}
+
+/* Active Session Banner */
+[data-theme='dark'] .pro-active-session-banner,
+.dark-theme .pro-active-session-banner {
+  background: linear-gradient(135deg, #064e3b, #022c22) !important;
+  border: 1px solid #059669 !important;
+  box-shadow: 0 4px 16px rgba(5, 150, 105, 0.25) !important;
+}
+
+[data-theme='dark'] .session-badge,
+.dark-theme .session-badge {
+  color: #6ee7b7 !important;
+}
+
+[data-theme='dark'] .session-timer-live,
+.dark-theme .session-timer-live {
+  color: #a7f3d0 !important;
+  background: rgba(5, 150, 105, 0.3) !important;
+}
+
+[data-theme='dark'] .session-meta-row,
+.dark-theme .session-meta-row {
+  border-top: 1px solid rgba(5, 150, 105, 0.3) !important;
+}
+
+[data-theme='dark'] .meta-label,
+.dark-theme .meta-label {
+  color: #94a3b8 !important;
+}
+
+[data-theme='dark'] .meta-val,
+.dark-theme .meta-val {
+  color: #f8fafc !important;
+}
+
+/* Desktop Recent Shift Activity Card */
+[data-theme='dark'] .desktop-recent-shifts-card,
+.dark-theme .desktop-recent-shifts-card {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+}
+
+[data-theme='dark'] .desktop-recent-header,
+.dark-theme .desktop-recent-header {
+  color: #f8fafc !important;
+}
+
+/* Desktop Floating Capsule Bottom Dock */
+@media (min-width: 900px) {
+  [data-theme='dark'] .mobile-fixed-bottom-bar,
+  .dark-theme .mobile-fixed-bottom-bar {
+    background: rgba(15, 23, 42, 0.95) !important;
+    border: 1px solid rgba(51, 65, 85, 0.9) !important;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5) !important;
+  }
+}
+
+/* Timesheet Table */
+[data-theme='dark'] .pro-timesheet-table th,
+.dark-theme .pro-timesheet-table th {
+  background: #0f172a !important;
+  color: #94a3b8 !important;
+  border-bottom: 1px solid #334155 !important;
+}
+
+[data-theme='dark'] .pro-timesheet-table td,
+.dark-theme .pro-timesheet-table td {
+  border-bottom: 1px solid #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+[data-theme='dark'] .pro-timesheet-table tr:hover td,
+.dark-theme .pro-timesheet-table tr:hover td {
+  background: #1e293b !important;
+}
+
+/* Digital ID Badge Card */
+[data-theme='dark'] .pro-id-badge-card,
+.dark-theme .pro-id-badge-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .id-badge-name,
+.dark-theme .id-badge-name {
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .id-badge-role,
+.dark-theme .id-badge-role {
+  color: #38bdf8 !important;
+}
+
+[data-theme='dark'] .id-badge-code,
+.dark-theme .id-badge-code {
+  color: #94a3b8 !important;
+  background: #0f172a !important;
+}
+
+[data-theme='dark'] .id-badge-qr-box,
+.dark-theme .id-badge-qr-box {
+  background: #ffffff !important;
+  border-color: #334155 !important;
+}
+
+[data-theme='dark'] .id-badge-qr-caption,
+.dark-theme .id-badge-qr-caption {
+  color: #64748b !important;
+}
+
+[data-theme='dark'] .id-badge-footer,
+.dark-theme .id-badge-footer {
+  color: #94a3b8 !important;
+  border-top-color: #334155 !important;
+}
+
+/* Settings and Input Controls */
+[data-theme='dark'] .settings-row,
+.dark-theme .settings-row {
+  border-color: #334155 !important;
+}
+
+[data-theme='dark'] .edit-form-input,
+.dark-theme .edit-form-input {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .edit-form-label,
+.dark-theme .edit-form-label {
+  color: #cbd5e1 !important;
+}
+
