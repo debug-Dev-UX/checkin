@@ -25,6 +25,7 @@ import {
   IconFlashlight,
   IconZap,
   IconAward,
+  IconQuote,
   IconX,
   IconMapPin,
   IconBuilding,
@@ -121,6 +122,7 @@ export default function StaffPortal({
   const [allStaffList, setAllStaffList] = useState([])
   const [allCheckinsList, setAllCheckinsList] = useState([])
   const [staffMessages, setStaffMessages] = useState([])
+  const [viewingTeammate, setViewingTeammate] = useState(null)
   const [supportForm, setSupportForm] = useState({ subject: '', message: '', priority: 'normal' })
   const [supportSending, setSupportSending] = useState(false)
   const [themeMode, setThemeMode] = useState(() => {
@@ -746,6 +748,8 @@ export default function StaffPortal({
       if (showToast) showToast(err.message, 'error')
     } finally {
       stopCamera()
+      setShowCamera(false)
+      setActiveTab('clock')
       setProcessing(false)
       setShowActionModal(false)
       setSelectedScanAction(null)
@@ -960,6 +964,7 @@ export default function StaffPortal({
           // Explicitly stop camera immediately upon successful scan so hardware turns off
           stopCamera()
           setShowCamera(false)
+          setActiveTab('clock')
 
           playSuccessBeep()
           if (navigator.vibrate) {
@@ -1414,6 +1419,104 @@ export default function StaffPortal({
                   </div>
                 )}
               </div>
+
+              {/* Team Members & Coworkers Section */}
+              <div className="pro-card" style={{ marginTop: '16px' }}>
+                <div className="pro-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <IconUsers size={16} color="#0284c7" />
+                    <span className="pro-card-title">TEAM & COWORKERS ({allStaffList.length})</span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>Click to view profile</span>
+                </div>
+
+                <div className="pro-team-grid" style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+                  gap: '10px',
+                  padding: '12px 14px'
+                }}>
+                  {allStaffList.map((stf) => {
+                    const isMe = String(stf.id) === String(staffUser?.id)
+                    const stfInitials = (stf.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                    return (
+                      <div
+                        key={stf.id}
+                        onClick={() => setViewingTeammate(stf)}
+                        style={{
+                          background: themeMode === 'dark' ? '#1e293b' : '#f8fafc',
+                          border: `1px solid ${isMe ? '#38bdf8' : (themeMode === 'dark' ? '#334155' : '#e2e8f0')}`,
+                          borderRadius: '12px',
+                          padding: '12px 8px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          textAlign: 'center',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          position: 'relative'
+                        }}
+                      >
+                        {isMe && (
+                          <span style={{
+                            position: 'absolute',
+                            top: '5px',
+                            right: '5px',
+                            fontSize: '9px',
+                            fontWeight: 800,
+                            background: '#0284c7',
+                            color: '#fff',
+                            padding: '1px 5px',
+                            borderRadius: '6px'
+                          }}>You</span>
+                        )}
+                        <div style={{
+                          width: '38px',
+                          height: '38px',
+                          borderRadius: '50%',
+                          background: '#e0f2fe',
+                          color: '#0284c7',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: '6px',
+                          overflow: 'hidden'
+                        }}>
+                          {stf.photo_url ? (
+                            <img src={stf.photo_url} alt={stf.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            stfInitials
+                          )}
+                        </div>
+                        <div style={{ fontWeight: 800, fontSize: '12px', color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                          {stf.name}
+                        </div>
+                        {stf.nickname && (
+                          <div style={{ fontSize: '10px', color: '#0284c7', fontWeight: 700 }}>
+                            @{stf.nickname}
+                          </div>
+                        )}
+                        <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '2px' }}>
+                          {stf.role || 'Staff'}
+                        </div>
+                        <span style={{
+                          fontSize: '9.5px',
+                          fontWeight: 700,
+                          padding: '2px 5px',
+                          borderRadius: '6px',
+                          marginTop: '6px',
+                          background: stf.is_on_shift ? '#dcfce7' : stf.has_dayoff_today ? '#fef3c7' : '#f1f5f9',
+                          color: stf.is_on_shift ? '#15803d' : stf.has_dayoff_today ? '#b45309' : '#64748b'
+                        }}>
+                          {stf.is_on_shift ? '● On Shift' : stf.has_dayoff_today ? '● Day Off' : '○ Off Duty'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1423,130 +1526,217 @@ export default function StaffPortal({
         {/* ============================================================== */}
         {activeTab === 'scan' && (
           <div className="pro-app-scanner-screen">
-            <div className="pro-scanner-card">
-              <div className="pro-scanner-header">
+            <div className="pro-scanner-card new-pro-scanner-card">
+              {/* Dynamic Futuristic Header */}
+              <div className="pro-scanner-header new-scanner-header">
                 <div className="pro-scanner-header-left">
-                  <span className="pro-scanner-title">
-                    {selectedScanAction === 'in'
-                      ? 'SCAN QR TO CLOCK IN'
-                      : selectedScanAction === 'out'
-                      ? 'SCAN QR TO CLOCK OUT'
-                      : 'CAMERA QR SCANNER'}
-                  </span>
-                  <span className={`pro-scanner-lens-badge ${selectedScanAction ? 'badge-' + selectedScanAction : ''}`}>
-                    {selectedScanAction === 'in'
-                      ? 'CHECK IN MODE'
-                      : selectedScanAction === 'out'
-                      ? 'CHECK OUT MODE'
-                      : cameraFacing === 'environment'
-                      ? 'BACK CAMERA (REAR)'
-                      : 'FRONT CAMERA'}
-                  </span>
+                  <div className="new-scanner-pulse-beacon">
+                    <span className="beacon-dot" />
+                    <span className="beacon-ring" />
+                  </div>
+                  <div>
+                    <span className="pro-scanner-title">
+                      {selectedScanAction === 'in'
+                        ? 'OPTICAL SCAN • CLOCK IN'
+                        : selectedScanAction === 'out'
+                        ? 'OPTICAL SCAN • CLOCK OUT'
+                        : 'STORE QR ATTENDANCE SCANNER'}
+                    </span>
+                    <div className="new-scanner-subhead">
+                      {verifiedLocation?.branch?.name ? `📍 ${verifiedLocation.branch.name} (${Math.round(verifiedLocation.distance || 0)}m)` : 'GPS Verified • Ready'}
+                    </div>
+                  </div>
                 </div>
+
                 <button
                   type="button"
-                  className="pro-btn-scanner-close"
+                  className="pro-btn-scanner-close new-btn-close-hud"
                   onClick={() => {
                     stopCamera()
                     setShowCamera(false)
                     setActiveTab('clock')
+                    setSelectedScanAction(null)
+                    setScannedQrData(null)
                   }}
-                  title="Close scanner"
+                  title="Close scanner and return to dashboard"
                 >
-                  <IconX size={16} />
+                  <IconX size={18} />
+                </button>
+              </div>
+
+              {/* Mode Switcher Tabs right in the Scanner UI */}
+              <div className="new-scanner-mode-switch-bar">
+                <button
+                  type="button"
+                  className={`new-mode-pill-btn in ${selectedScanAction === 'in' ? 'active' : ''}`}
+                  onClick={() => {
+                    setSelectedScanAction('in')
+                    selectedScanActionRef.current = 'in'
+                  }}
+                >
+                  <span className="pill-dot" />
+                  <span>Clock In</span>
+                </button>
+                <button
+                  type="button"
+                  className={`new-mode-pill-btn out ${selectedScanAction === 'out' ? 'active' : ''}`}
+                  onClick={() => {
+                    setSelectedScanAction('out')
+                    selectedScanActionRef.current = 'out'
+                  }}
+                >
+                  <span className="pill-dot" />
+                  <span>Clock Out</span>
+                </button>
+                <button
+                  type="button"
+                  className={`new-mode-pill-btn auto ${!selectedScanAction ? 'active' : ''}`}
+                  onClick={() => {
+                    setSelectedScanAction(null)
+                    selectedScanActionRef.current = null
+                  }}
+                >
+                  <IconZap size={12} />
+                  <span>Smart Auto</span>
                 </button>
               </div>
 
               {/* Viewfinder Screen */}
-              <div className="pro-viewfinder-wrapper">
+              <div className="pro-viewfinder-wrapper new-viewfinder-wrapper">
                 <video
                   ref={videoRef}
                   playsInline
                   muted
-                  className="pro-viewfinder-video"
+                  className="pro-viewfinder-video new-viewfinder-video"
                 />
                 <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-                {/* Viewfinder Target Mask */}
-                <div className="pro-viewfinder-overlay">
-                  <div className={`pro-target-reticle ${selectedScanAction === 'in' ? 'reticle-in' : selectedScanAction === 'out' ? 'reticle-out' : ''}`}>
-                    {/* 4 Corner Brackets */}
-                    <div className="corner top-left"></div>
-                    <div className="corner top-right"></div>
-                    <div className="corner bottom-left"></div>
-                    <div className="corner bottom-right"></div>
+                {/* Cyber Viewfinder Target Mask */}
+                <div className="pro-viewfinder-overlay new-viewfinder-overlay">
+                  {/* Subtle Grid Lines HUD */}
+                  <div className="new-scanner-grid-hud" />
+
+                  <div className={`pro-target-reticle new-target-reticle ${selectedScanAction === 'in' ? 'reticle-in' : selectedScanAction === 'out' ? 'reticle-out' : 'reticle-auto'}`}>
+                    {/* 4 Corner Brackets with Glow */}
+                    <div className="corner top-left"><span className="corner-dot" /></div>
+                    <div className="corner top-right"><span className="corner-dot" /></div>
+                    <div className="corner bottom-left"><span className="corner-dot" /></div>
+                    <div className="corner bottom-right"><span className="corner-dot" /></div>
+
+                    {/* Center Crosshair Target */}
+                    <div className="new-reticle-crosshair">
+                      <div className="ch-line ch-h" />
+                      <div className="ch-line ch-v" />
+                      <div className="ch-center-circle" />
+                    </div>
 
                     {/* Animated Scanning Laser */}
-                    <div className="pro-scanning-laser"></div>
+                    <div className="pro-scanning-laser new-scanning-laser" />
 
-                    <div className="pro-reticle-hint">
-                      {selectedScanAction === 'in'
-                        ? 'Point at Store QR to Clock In'
-                        : selectedScanAction === 'out'
-                        ? 'Point at Store QR to Clock Out'
-                        : 'Align Store QR (Modal will ask Check In or Out)'}
+                    <div className="pro-reticle-hint new-reticle-hint">
+                      <IconTarget size={13} />
+                      <span>
+                        {selectedScanAction === 'in'
+                          ? 'Align Store QR to Clock In'
+                          : selectedScanAction === 'out'
+                          ? 'Align Store QR to Clock Out'
+                          : 'Align Store QR (Auto Detect)'}
+                      </span>
                     </div>
                   </div>
                 </div>
 
                 {!cameraActive && (
-                  <div className="pro-viewfinder-loading">
+                  <div className="pro-viewfinder-loading new-viewfinder-loading">
                     <div className="pro-spinner"></div>
-                    <span>Initializing Back Camera...</span>
+                    <span>Initializing HD Camera Stream...</span>
                   </div>
                 )}
               </div>
 
               {/* Scanner Control Bar */}
-              <div className="pro-scanner-controls">
+              <div className="pro-scanner-controls new-scanner-controls">
                 <button
                   type="button"
-                  className="pro-scanner-ctrl-btn"
+                  className="pro-scanner-ctrl-btn new-ctrl-btn"
                   onClick={handleToggleFacing}
                   title="Flip camera"
                 >
-                  <IconRefresh size={16} />
-                  <span>{cameraFacing === 'environment' ? 'Switch to Front' : 'Switch to Back'}</span>
+                  <IconRefresh size={15} />
+                  <span>{cameraFacing === 'environment' ? 'Rear' : 'Front'}</span>
                 </button>
 
                 <button
                   type="button"
-                  className={`pro-scanner-ctrl-btn ${torchOn ? 'active' : ''}`}
+                  className={`pro-scanner-ctrl-btn new-ctrl-btn ${torchOn ? 'active' : ''}`}
                   onClick={handleToggleTorch}
                   title="Toggle flashlight"
                 >
-                  <IconFlashlight size={14} />
-                  <span>{torchOn ? 'Flash On' : 'Flashlight'}</span>
+                  <IconFlashlight size={15} />
+                  <span>{torchOn ? 'Torch On' : 'Torch'}</span>
                 </button>
 
                 <button
                   type="button"
-                  className="pro-scanner-ctrl-btn primary"
+                  className="pro-scanner-ctrl-btn primary new-ctrl-btn"
                   onClick={() => setActiveTab('badge')}
                   title="Display My ID Pass"
                 >
-                  <IconQrCode size={16} />
-                  <span>Show My Pass</span>
+                  <IconQrCode size={15} />
+                  <span>My Pass</span>
+                </button>
+              </div>
+
+              {/* Quick Simulation Testing Dock (Instant Scan Test) */}
+              <div className="new-scanner-quick-test-dock">
+                <span className="test-dock-lbl">Test Actions:</span>
+                <button
+                  type="button"
+                  className="new-quick-scan-test-btn in"
+                  disabled={processing || isOnShift}
+                  onClick={() => {
+                    stopCamera()
+                    setShowCamera(false)
+                    setActiveTab('clock')
+                    handleExecuteAttendance('in')
+                  }}
+                  title="Instantly execute Clock In"
+                >
+                  ⚡ Test Clock In
+                </button>
+                <button
+                  type="button"
+                  className="new-quick-scan-test-btn out"
+                  disabled={processing || !isOnShift}
+                  onClick={() => {
+                    stopCamera()
+                    setShowCamera(false)
+                    setActiveTab('clock')
+                    handleExecuteAttendance('out')
+                  }}
+                  title="Instantly execute Clock Out"
+                >
+                  ⚡ Test Clock Out
                 </button>
               </div>
 
               {/* Status footer notice */}
-              <div className="pro-scanner-footer-notice">
-                <div className="notice-icon"><IconZap size={16} color="#f59e0b" /></div>
+              <div className="pro-scanner-footer-notice new-scanner-footer-notice">
+                <div className="notice-icon"><IconZap size={16} color="#06b6d4" /></div>
                 <div className="notice-text">
                   <strong>
                     {selectedScanAction === 'in'
-                      ? 'Check In Mode Active'
+                      ? 'Shift Attendance: Clock In Ready'
                       : selectedScanAction === 'out'
-                      ? 'Check Out Mode Active'
-                      : 'Universal Store QR Scanner'}
+                      ? 'Shift Attendance: Clock Out Ready'
+                      : 'Optical Attendance Engine Active'}
                   </strong>
                   <p>
                     {selectedScanAction === 'in'
-                      ? 'Point at the store QR code to instantly start your shift.'
+                      ? 'Camera automatically terminates immediately upon scanning Store QR code.'
                       : selectedScanAction === 'out'
-                      ? 'Point at the store QR code to instantly complete your shift.'
-                      : 'Scanning the store QR code will popup a modal to ask if you want to Clock In or Clock Out.'}
+                      ? 'Camera automatically terminates immediately upon scanning Store QR code.'
+                      : 'Scanning store QR will verify your GPS radius and clock in or out.'}
                   </p>
                 </div>
               </div>
@@ -2515,21 +2705,24 @@ export default function StaffPortal({
               {/* Support & Send Message to Admin Modal */}
               {activeModal === 'support' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13px' }}>
-                  {/* Contact Hotlines */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '12px', borderRadius: '10px', border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}` }}>
-                      <div style={{ fontWeight: 800, color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <IconPhone size={14} color="#0284c7" />
-                        <span>Manager Hotline</span>
+                  {/* Support Notice */}
+                  <div style={{
+                    background: themeMode === 'dark' ? 'rgba(2, 132, 199, 0.12)' : '#f0f9ff',
+                    border: `1px solid ${themeMode === 'dark' ? 'rgba(2, 132, 199, 0.3)' : '#bae6fd'}`,
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px'
+                  }}>
+                    <IconEnvelope size={20} color="#0284c7" />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 800, color: themeMode === 'dark' ? '#f8fafc' : '#0369a1', fontSize: '13px' }}>
+                        Store Operations Support Desk
                       </div>
-                      <div style={{ color: '#94a3b8', fontSize: '11px' }}>+1 (555) 234-5678</div>
-                    </div>
-                    <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '12px', borderRadius: '10px', border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}` }}>
-                      <div style={{ fontWeight: 800, color: themeMode === 'dark' ? '#f8fafc' : '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <IconMail size={14} color="#0284c7" />
-                        <span>Email Desk</span>
+                      <div style={{ color: themeMode === 'dark' ? '#94a3b8' : '#0284c7', fontSize: '11px', marginTop: '2px' }}>
+                        Submit your inquiries, schedule adjustment requests, or equipment notices directly to the Store Administrator below.
                       </div>
-                      <div style={{ color: '#94a3b8', fontSize: '11px' }}>support@chafe.internal</div>
                     </div>
                   </div>
 
@@ -2914,6 +3107,168 @@ export default function StaffPortal({
           </div>
         </div>
       )}
+      {/* COWORKER PROFILE MODAL (Staff can view other staff profile) */}
+      {viewingTeammate && (
+        <div className="staff-modal-backdrop" onClick={() => setViewingTeammate(null)}>
+          <div
+            className="staff-modal-dialog"
+            style={{ maxWidth: '440px', width: '100%', padding: 0, overflow: 'hidden', borderRadius: '18px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header Banner */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+              padding: '20px 20px 32px',
+              color: '#ffffff',
+              position: 'relative'
+            }}>
+              <button
+                type="button"
+                onClick={() => setViewingTeammate(null)}
+                style={{
+                  position: 'absolute',
+                  top: '14px',
+                  right: '14px',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <IconX size={16} />
+              </button>
+              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>
+                Coworker Profile • Team Member Profile • មិត្តរួមការងារ
+              </div>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#ffffff' }}>
+                {viewingTeammate.name}
+              </h2>
+              {viewingTeammate.nickname && (
+                <div style={{ fontSize: '13px', color: '#bae6fd', fontWeight: 700, marginTop: '2px' }}>
+                  @{viewingTeammate.nickname}
+                </div>
+              )}
+            </div>
+
+            {/* Profile Content Body */}
+            <div style={{
+              padding: '0 20px 20px',
+              marginTop: '-24px',
+              background: themeMode === 'dark' ? '#0f172a' : '#ffffff'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px' }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '16px',
+                  background: '#f8fafc',
+                  border: '3px solid #ffffff',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '18px',
+                  fontWeight: 900,
+                  color: '#0284c7',
+                  overflow: 'hidden'
+                }}>
+                  {viewingTeammate.photo_url ? (
+                    <img src={viewingTeammate.photo_url} alt={viewingTeammate.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    (viewingTeammate.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                  )}
+                </div>
+
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  padding: '4px 10px',
+                  borderRadius: '12px',
+                  background: viewingTeammate.is_on_shift ? '#dcfce7' : viewingTeammate.has_dayoff_today ? '#fef3c7' : '#f1f5f9',
+                  color: viewingTeammate.is_on_shift ? '#15803d' : viewingTeammate.has_dayoff_today ? '#b45309' : '#64748b'
+                }}>
+                  {viewingTeammate.is_on_shift ? '● On Shift Now' : viewingTeammate.has_dayoff_today ? '● Day Off Today' : '○ Off Duty'}
+                </span>
+              </div>
+
+              {/* Bio & Passions Card */}
+              <div style={{
+                background: themeMode === 'dark' ? '#1e293b' : '#f8fafc',
+                border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}`,
+                borderRadius: '12px',
+                padding: '12px 14px',
+                marginBottom: '14px'
+              }}>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#0284c7', textTransform: 'uppercase', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <IconQuote size={13} color="#0284c7" />
+                  <span>About & Coffee Passions</span>
+                </div>
+                <p style={{ margin: 0, fontSize: '12.5px', color: viewingTeammate.bio ? (themeMode === 'dark' ? '#cbd5e1' : '#334155') : '#94a3b8', fontStyle: viewingTeammate.bio ? 'normal' : 'italic', lineHeight: '1.45' }}>
+                  {viewingTeammate.bio || 'This team member hasn\'t written their personal bio yet.'}
+                </p>
+              </div>
+
+              {/* Meta Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', marginBottom: '16px' }}>
+                <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '10px 12px', borderRadius: '10px' }}>
+                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Role</span>
+                  <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{viewingTeammate.role || 'Barista'}</strong>
+                </div>
+                <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '10px 12px', borderRadius: '10px' }}>
+                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Store Branch</span>
+                  <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{viewingTeammate.branch_name || 'Chafé Store'}</strong>
+                </div>
+                <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '10px 12px', borderRadius: '10px' }}>
+                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Shift Hours</span>
+                  <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{formatTime(viewingTeammate.shift_start)} - {formatTime(viewingTeammate.shift_end)}</strong>
+                </div>
+                <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '10px 12px', borderRadius: '10px' }}>
+                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Status</span>
+                  <strong style={{ color: '#059669' }}>Verified Team</strong>
+                </div>
+              </div>
+
+              {/* Badges Strip */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                <span style={{ fontSize: '10.5px', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', background: 'rgba(2,132,199,0.1)', color: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <IconAward size={12} /> Team Member
+                </span>
+                <span style={{ fontSize: '10.5px', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', background: 'rgba(16,185,129,0.1)', color: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <IconCheck size={12} /> Verified Identity
+                </span>
+                <span style={{ fontSize: '10.5px', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', background: 'rgba(234,88,12,0.1)', color: '#ea580c', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <IconCoffee size={12} /> Coffee Artisan
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setViewingTeammate(null)}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                Close Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Scan Success Popup Confirmation Modal */}
       <ScanSuccessModal
         data={scanSuccessModal}

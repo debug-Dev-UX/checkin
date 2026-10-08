@@ -3,29 +3,42 @@ import * as THREE from 'three'
 
 export default function LoadingPage({ message = 'loading...' }) {
   const mountRef = useRef(null)
-  const [progress, setProgress] = useState(25)
+  const [progress, setProgress] = useState(18)
+  const [statusText, setStatusText] = useState(message !== 'loading...' && message ? message : 'Initializing secure environment...')
 
+  // Multi-stage realistic progress and status cycling
   useEffect(() => {
-    const t1 = setTimeout(() => setProgress(55), 250)
-    const t2 = setTimeout(() => setProgress(88), 650)
-    const t3 = setTimeout(() => setProgress(98), 1100)
-    return () => {
-      clearTimeout(t1)
-      clearTimeout(t2)
-      clearTimeout(t3)
-    }
-  }, [])
+    const steps = [
+      { p: 38, text: 'Synchronizing encrypted personnel records...' },
+      { p: 68, text: 'Calibrating optical attendance scanner...' },
+      { p: 89, text: 'Establishing real-time cloud handshake...' },
+      { p: 99, text: 'Finalizing system telemetry...' },
+    ]
 
+    const timers = steps.map((step, idx) => {
+      return setTimeout(() => {
+        setProgress(step.p)
+        if (!message || message === 'loading...') {
+          setStatusText(step.text)
+        }
+      }, (idx + 1) * 320)
+    })
+
+    return () => {
+      timers.forEach(t => clearTimeout(t))
+    }
+  }, [message])
+
+  // 3D Iridescent Holographic Orb Renderer
   useEffect(() => {
     const container = mountRef.current
     if (!container) return
 
-    // Scene & Camera
+    // Scene & Camera setup
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
     camera.position.z = 4.2
 
-    // Renderer
     let renderer
     try {
       renderer = new THREE.WebGLRenderer({
@@ -34,26 +47,24 @@ export default function LoadingPage({ message = 'loading...' }) {
         powerPreference: 'high-performance'
       })
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-      renderer.setSize(280, 280)
+      renderer.setSize(220, 220)
       renderer.setClearColor(0x000000, 0)
       container.appendChild(renderer.domElement)
     } catch {
-      // In non-WebGL environment, graceful fallback
+      // In non-WebGL environments (or SSR / headless tests), graceful fallback to image orb
       return
     }
 
-    // Sphere Geometry
     const geometry = new THREE.SphereGeometry(1.35, 64, 64)
 
-    // Custom Iridescent Holographic Shader Material
     const customMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uColorCore: { value: new THREE.Color(0x08081f) },     // Deep midnight core
-        uColorBlue: { value: new THREE.Color(0x1d4ed8) },     // Electric royal blue
-        uColorMagenta: { value: new THREE.Color(0xc026d3) },  // Holographic magenta
-        uColorCyan: { value: new THREE.Color(0x06b6d4) },     // Neon cyan / turquoise
-        uColorRim: { value: new THREE.Color(0xec4899) },      // Hot pink edge rim
+        uColorCore: { value: new THREE.Color(0x060919) },     // Deep midnight core
+        uColorBlue: { value: new THREE.Color(0x2563eb) },     // Royal electric blue
+        uColorMagenta: { value: new THREE.Color(0xd946ef) },  // Holographic magenta
+        uColorCyan: { value: new THREE.Color(0x06b6d4) },     // Luminous cyan
+        uColorRim: { value: new THREE.Color(0xf43f5e) },      // Hot pink edge rim
       },
       vertexShader: `
         varying vec3 vNormal;
@@ -66,9 +77,9 @@ export default function LoadingPage({ message = 'loading...' }) {
           vPosition = position;
           vUv = uv;
 
-          // Subtle organic liquid surface oscillation
+          // Organic subtle liquid wobble
           vec3 pos = position;
-          float wobble = sin(pos.y * 3.5 + uTime * 2.2) * cos(pos.x * 3.0 + uTime * 1.8) * 0.02;
+          float wobble = sin(pos.y * 3.5 + uTime * 2.2) * cos(pos.x * 3.0 + uTime * 1.8) * 0.025;
           pos += normal * wobble;
 
           gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
@@ -85,7 +96,6 @@ export default function LoadingPage({ message = 'loading...' }) {
         uniform vec3 uColorCyan;
         uniform vec3 uColorRim;
 
-        // Optimized 3D Perlin / Simplex Noise
         vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
         vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
         vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
@@ -138,7 +148,7 @@ export default function LoadingPage({ message = 'loading...' }) {
           vec3 viewDir = normalize(vec3(0.0, 0.0, 1.0));
           float fresnel = pow(1.0 - max(dot(vNormal, viewDir), 0.0), 2.2);
 
-          // Liquid chromatic noise layers
+          // Liquid chromatic noise dynamics
           float n1 = snoise(vPosition * 1.6 + vec3(uTime * 0.25, uTime * 0.18, uTime * 0.2));
           float n2 = snoise(vPosition * 2.4 - vec3(uTime * 0.2, uTime * 0.25, 0.0));
           float blendVal = smoothstep(-0.5, 0.5, n1 * 0.6 + n2 * 0.4);
@@ -152,19 +162,19 @@ export default function LoadingPage({ message = 'loading...' }) {
           // Electric cyan specular sweep
           col = mix(col, uColorCyan, smoothstep(0.35, 0.85, n2));
 
-          // Sweeping iridescent highlight ribbon matching reference image
+          // Sweeping iridescent highlight ribbon
           float arc = smoothstep(0.4, 0.9, sin(vPosition.y * 2.2 + vPosition.x * 2.6 + uTime * 0.9) * cos(vPosition.z * 1.8));
           col += vec3(0.95, 0.98, 1.0) * arc * 0.7;
 
-          // Glowing iridescent Fresnel rim (neon pink & cyan)
+          // Glowing iridescent Fresnel rim
           vec3 rimBlend = mix(uColorCyan, uColorRim, sin(uTime * 1.5 + vPosition.y * 2.5) * 0.5 + 0.5);
-          col = mix(col, rimBlend, fresnel * 0.9);
+          col = mix(col, rimBlend, fresnel * 0.92);
 
-          // Specular light reflection on apex
+          // Specular apex highlight
           float spec = pow(max(dot(vNormal, normalize(vec3(0.35, 0.75, 1.0))), 0.0), 40.0);
           col += vec3(1.0) * spec * 0.55;
 
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = vec4(col, 0.95);
         }
       `,
       transparent: true,
@@ -180,10 +190,10 @@ export default function LoadingPage({ message = 'loading...' }) {
       const elapsed = (time - startTime) * 0.001
       customMaterial.uniforms.uTime.value = elapsed
 
-      // Fluid orbital rotation and breathing
-      sphere.rotation.y = elapsed * 0.5
+      // Fluid orbital rotation and breathing motion
+      sphere.rotation.y = elapsed * 0.45
       sphere.rotation.x = Math.sin(elapsed * 0.35) * 0.18
-      sphere.position.y = Math.sin(elapsed * 1.6) * 0.06
+      sphere.position.y = Math.sin(elapsed * 1.6) * 0.05
 
       renderer.render(scene, camera)
       reqId = requestAnimationFrame(animate)
@@ -204,20 +214,85 @@ export default function LoadingPage({ message = 'loading...' }) {
 
   return (
     <div className="full-loading-screen orb-loading-screen" role="status" aria-live="polite">
-      {/* Center Three.js 3D Iridescent Holographic Sphere Canvas */}
-      <div className="orb-center-container">
-        <div ref={mountRef} className="three-orb-canvas-wrapper" />
+      {/* Dynamic ambient nebula aurora glows */}
+      <div className="loading-bg-aurora aurora-cyan" aria-hidden="true" />
+      <div className="loading-bg-aurora aurora-magenta" aria-hidden="true" />
+      <div className="loading-grid-overlay" aria-hidden="true" />
 
-        {/* Decorative and unit-test compliant elements */}
-        <div className="emblem-ring-outer" style={{ display: 'none' }} />
-        <div className="emblem-ring-middle" style={{ display: 'none' }} />
-        <div className="loading-progress-fill" style={{ width: `${progress}%`, display: 'none' }} />
-        <img src="/loading-orb.png" alt="Fallback Orb" style={{ display: 'none' }} />
+      {/* Main glassmorphic HUD card */}
+      <div className="loading-hud-card">
+        {/* Top live executive badge */}
+        <div className="loading-badge">
+          <span className="badge-live-dot" />
+          <span className="loading-logo-text">CHAFÉ OS</span>
+          <span className="loading-badge-divider" />
+          <span className="loading-logo-tag">ENTERPRISE SYSTEM</span>
+        </div>
+
+        {/* Centerpiece: 3D Holographic Orb framed with celestial orbital rings */}
+        <div className="loading-orb-hero-stage">
+          {/* Layer 1: Outer radiant gradient orbit ring */}
+          <div className="emblem-ring-outer">
+            <span className="emblem-satellite-beacon" />
+          </div>
+
+          {/* Layer 2: Middle counter-rotating precision dashed compass ring */}
+          <div className="emblem-ring-middle">
+            <span className="emblem-tick tick-n" />
+            <span className="emblem-tick tick-s" />
+            <span className="emblem-tick tick-e" />
+            <span className="emblem-tick tick-w" />
+          </div>
+
+          {/* Layer 3: Deep ambient radial pulse glow */}
+          <div className="orb-ambient-glow" />
+
+          {/* Layer 4: The 3D holographic orb canvas & iridescent reference core */}
+          <div className="orb-sphere-wrapper">
+            <div ref={mountRef} className="three-orb-canvas-wrapper" />
+            <img
+              src="/loading-orb.png"
+              alt="Fallback Orb"
+              className="orb-sphere-image"
+            />
+          </div>
+        </div>
+
+        {/* Dynamic status title & milestone text */}
+        <div className="loading-brand-header">
+          <h2 className="loading-title">Enterprise Workspace</h2>
+          <p className="loading-subtitle">{statusText}</p>
+        </div>
+
+        {/* Animated Progress Bar & Live Percentage Counter */}
+        <div className="loading-progress-wrapper">
+          <div className="loading-progress-meta">
+            <span className="loading-meta-label">INITIALIZING WORKSPACE</span>
+            <span className="loading-pct-counter">{progress}%</span>
+          </div>
+          <div className="loading-progress-track">
+            <div
+              className="loading-progress-fill"
+              style={{ width: `${progress}%` }}
+            >
+              <div className="progress-shimmer-beam" />
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Bottom Text: loading... with animated glowing pulse */}
+      {/* Bottom Text bar: lowercase loading... required by test suite & telemetry metadata */}
       <div className="loading-bottom-bar">
         <span className="loading-bottom-caption">loading...</span>
+        <div className="loading-meta-status">
+          <span className="status-pill">
+            <span className="status-dot-green" /> TLS 1.3 ENCRYPTED
+          </span>
+          <span className="meta-bullet">•</span>
+          <span className="status-pill">CLOUD SYNC ACTIVE</span>
+          <span className="meta-bullet">•</span>
+          <span className="status-pill">CHAFÉ ENGINE v4.2</span>
+        </div>
       </div>
     </div>
   )

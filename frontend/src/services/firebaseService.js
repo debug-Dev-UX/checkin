@@ -1476,3 +1476,158 @@ export async function deleteAdminNotificationFromFirebase(notifId) {
     window.dispatchEvent(new Event('storage'))
   }
 }
+
+/**
+ * ==============================================================
+ * STAFF PROFILE AUDIT LOG (Admin can see all information changes)
+ * ==============================================================
+ */
+export async function recordStaffProfileChange(staffId, changeDetails) {
+  const newChange = {
+    id: 'chg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+    staff_id: String(staffId),
+    staff_name: changeDetails.staff_name || 'Staff Member',
+    staff_email: changeDetails.staff_email || '',
+    changed_fields: changeDetails.changed_fields || [],
+    summary: changeDetails.summary || 'Updated profile information',
+    details: changeDetails.details || {},
+    timestamp: new Date().toISOString(),
+    created_at: new Date().toISOString()
+  }
+
+  try {
+    await setDoc(doc(db, 'staff_changes', newChange.id), newChange)
+  } catch (err) {
+    console.warn('Failed to save staff change to Firestore:', err)
+  }
+
+  const current = getLocal('staff_changes', [])
+  const updated = [newChange, ...current.filter(c => c.id !== newChange.id)].slice(0, 100)
+  setLocal('staff_changes', updated)
+  try {
+    localStorage.setItem('chafe_staff_changes', JSON.stringify(updated))
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_staff_changes_updated', { detail: updated }))
+    window.dispatchEvent(new Event('storage'))
+  }
+
+  return newChange
+}
+
+export function getStaffProfileChanges() {
+  const cached = getLocal('staff_changes', [])
+  try {
+    const raw = localStorage.getItem('chafe_staff_changes')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch {}
+  return cached
+}
+
+export function subscribeToStaffProfileChanges(callback) {
+  callback(getStaffProfileChanges())
+
+  const q = query(collection(db, 'staff_changes'), orderBy('timestamp', 'desc'))
+  const unsubFirestore = onSnapshot(
+    q,
+    (snapshot) => {
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+      if (docs.length > 0) {
+        setLocal('staff_changes', docs)
+        try { localStorage.setItem('chafe_staff_changes', JSON.stringify(docs)) } catch {}
+        callback(docs)
+      }
+    },
+    () => {
+      callback(getStaffProfileChanges())
+    }
+  )
+
+  const handleLocal = (e) => {
+    if (e.detail && Array.isArray(e.detail)) callback(e.detail)
+  }
+  const handleStorage = (e) => {
+    if (e.key === 'chafe_staff_changes' || e.key === 'chafe_live_staff_changes') {
+      callback(getStaffProfileChanges())
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('chafe_staff_changes_updated', handleLocal)
+    window.addEventListener('storage', handleStorage)
+  }
+
+  return () => {
+    unsubFirestore()
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('chafe_staff_changes_updated', handleLocal)
+      window.removeEventListener('storage', handleStorage)
+    }
+  }
+}
+
+export async function deleteStaffProfileChange(changeId) {
+  try {
+    await deleteDoc(doc(db, 'staff_changes', changeId))
+  } catch {}
+  const current = getLocal('staff_changes', [])
+  const updated = current.filter(c => c.id !== changeId)
+  setLocal('staff_changes', updated)
+  try {
+    localStorage.setItem('chafe_staff_changes', JSON.stringify(updated))
+  } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_staff_changes_updated', { detail: updated }))
+    window.dispatchEvent(new Event('storage'))
+  }
+}
+
+/**
+ * ==============================================================
+ * ADMINISTRATOR PROFILE MANAGEMENT (Admin can change own profile)
+ * ==============================================================
+ */
+export const DEFAULT_ADMIN_PROFILE = {
+  name: 'Administrator',
+  username: 'admin',
+  email: 'admin@chafe.internal',
+  title: 'System Administrator & General Manager',
+  phone: '+1 (555) 234-5678',
+  avatar_color: '#ea580c',
+  version: 'v2.4.0 Live Enterprise',
+  access_level: 'Full Enterprise Access Active'
+}
+
+export function getAdminProfile() {
+  try {
+    const raw = localStorage.getItem('chafe_admin_profile')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return { ...DEFAULT_ADMIN_PROFILE, ...parsed }
+    }
+  } catch {}
+  return DEFAULT_ADMIN_PROFILE
+}
+
+export async function saveAdminProfile(profileData) {
+  const updated = { ...getAdminProfile(), ...profileData, updated_at: new Date().toISOString() }
+  try {
+    localStorage.setItem('chafe_admin_profile', JSON.stringify(updated))
+  } catch {}
+
+  try {
+    await setDoc(doc(db, 'settings', 'admin_profile'), updated, { merge: true })
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('chafe_admin_profile_updated', { detail: updated }))
+    window.dispatchEvent(new Event('storage'))
+  }
+
+  return updated
+}
+

@@ -1391,19 +1391,14 @@ export default function UserDashboard({
 
               {activeModal === 'support' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
-                  <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px' }}>
-                    <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', color: '#0f172a', marginBottom: '4px' }}>
-                      <IconPhone size={14} color="#059669" />
-                      <span>Manager Hotline:</span>
+                  <div style={{ background: '#f0f9ff', padding: '14px', borderRadius: '10px', border: '1px solid #bae6fd' }}>
+                    <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', color: '#0369a1', marginBottom: '4px' }}>
+                      <IconZap size={14} color="#0284c7" />
+                      <span>Live Digital Support Desk</span>
                     </div>
-                    <div style={{ color: '#64748b' }}>+1 (555) 234-5678</div>
-                  </div>
-                  <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px' }}>
-                    <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', color: '#0f172a', marginBottom: '4px' }}>
-                      <IconMail size={14} color="#0284c7" />
-                      <span>Shift Operations:</span>
+                    <div style={{ color: '#0284c7', fontSize: '12px', lineHeight: '1.4' }}>
+                      For station support, equipment inquiries, or shift adjustments, please communicate directly with the shift supervisor on duty or submit a digital ticket via your staff terminal.
                     </div>
-                    <div style={{ color: '#64748b' }}>operations@chafe.internal</div>
                   </div>
                 </div>
               )}

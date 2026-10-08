@@ -479,4 +479,57 @@ test('Staff Mobile Phone Sanitization and Staff Password Change', async () => {
   assert.match(profileViewContent, /edit-password-section/, 'ProfileView must render edit-password-section in Edit Profile')
 })
 
+test('Scanner Auto-Close, Support Hotline/Email Removal, and Coworker Profile Viewing', async () => {
+  const staffPortalPath = path.resolve('src/components/StaffPortal.jsx')
+  const staffPortalContent = fs.readFileSync(staffPortalPath, 'utf-8')
+  const userDashPath = path.resolve('src/components/UserDashboard.jsx')
+  const userDashContent = fs.readFileSync(userDashPath, 'utf-8')
+  const profileViewPath = path.resolve('src/components/ProfileView.jsx')
+  const profileViewContent = fs.readFileSync(profileViewPath, 'utf-8')
+
+  // 1. Camera close upon checkin / checkout
+  assert.match(staffPortalContent, /stopCamera\(\)/, 'StaffPortal must call stopCamera() on attendance completion')
+  assert.match(staffPortalContent, /setShowCamera\(false\)/, 'StaffPortal must reset showCamera state on scan')
+  assert.match(staffPortalContent, /setActiveTab\('clock'\)/, 'StaffPortal must navigate back to clock view on scan execution')
+
+  // 2. Removal of Hotline and Email from Support
+  assert.doesNotMatch(staffPortalContent, /\+1 \(555\) 234-5678/, 'StaffPortal support must not expose phone hotline')
+  assert.doesNotMatch(staffPortalContent, /operations@chafe\.internal/, 'StaffPortal support must not expose operations email')
+  assert.doesNotMatch(userDashContent, /\+1 \(555\) 234-5678/, 'UserDashboard support must not expose phone hotline')
+  assert.doesNotMatch(userDashContent, /operations@chafe\.internal/, 'UserDashboard support must not expose operations email')
+
+  // 3. Staff custom bio and nickname
+  assert.match(profileViewContent, /nickname/, 'ProfileView must manage nickname field')
+  assert.match(profileViewContent, /bio/, 'ProfileView must manage bio field')
+  assert.match(profileViewContent, /recordStaffProfileChange/, 'ProfileView must log profile changes to audit log')
+
+  // 4. Coworker Profile Viewing
+  assert.match(staffPortalContent, /viewingTeammate/, 'StaffPortal must provide coworker inspection state')
+  assert.match(staffPortalContent, /Coworker Profile/, 'StaffPortal must render coworker profile modal')
+})
+
+test('Admin Profile Customization, Alert Deletion, and Performance Long-Late Filters', async () => {
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
+  const firebasePath = path.resolve('src/services/firebaseService.js')
+  const firebaseContent = fs.readFileSync(firebasePath, 'utf-8')
+
+  // 1. Admin Profile Customization
+  assert.match(firebaseContent, /getAdminProfile/, 'firebaseService must export getAdminProfile')
+  assert.match(firebaseContent, /saveAdminProfile/, 'firebaseService must export saveAdminProfile')
+  assert.match(appContent, /handleSaveAdminProfile/, 'App.jsx must provide handleSaveAdminProfile')
+  assert.match(appContent, /isEditingAdminProfile/, 'App.jsx must manage admin profile edit mode')
+
+  // 2. Live System Alerts Deletion
+  assert.match(appContent, /handleDeleteAlert/, 'App.jsx must provide handleDeleteAlert')
+  assert.match(appContent, /handleDeleteAllAlerts/, 'App.jsx must provide handleDeleteAllAlerts')
+  assert.match(appContent, /deletedAlertIds/, 'App.jsx must track deletedAlertIds')
+
+  // 3. Performance Late Long Time Filtering
+  assert.match(appContent, /auditLateDurationFilter/, 'App.jsx must manage auditLateDurationFilter')
+  assert.match(appContent, /maxLateMinutes/, 'App.jsx must calculate maxLateMinutes in auditRows')
+  assert.match(appContent, /Late Long Time/, 'App.jsx must render Late Long Time filter option')
+})
+
+
 

@@ -23,10 +23,11 @@ import {
   IconAward,
   IconQrCode,
   IconClock,
+  IconQuote,
 } from '../Icons'
 import { getBranches } from '../services/locationService'
 import { useLanguage } from '../context/LanguageContext'
-import { updateStaffInFirebase } from '../services/firebaseService'
+import { updateStaffInFirebase, recordStaffProfileChange } from '../services/firebaseService'
 import { getAccountPermissions, saveAccountPermissions } from '../services/cookieService'
 import { parsePhoneAndCountry, formatCleanPhone } from '../services/phoneService'
 
@@ -96,6 +97,13 @@ export default function ProfileView({
   const [avatarUrl, setAvatarUrl] = useState(
     user?.photo_url || localStorage.getItem('chafe_profile_avatar') || ''
   )
+  const [nickname, setNickname] = useState(user?.nickname || '')
+  const [bio, setBio] = useState(user?.bio || '')
+
+  useEffect(() => {
+    if (user?.nickname !== undefined) setNickname(user.nickname || '')
+    if (user?.bio !== undefined) setBio(user.bio || '')
+  }, [user?.nickname, user?.bio])
 
   // Password change states in Edit Profile form
   const [newPassword, setNewPassword] = useState('')
@@ -343,6 +351,8 @@ export default function ProfileView({
     const updatedUser = {
       ...(user || {}),
       name: combinedName,
+      nickname: nickname.trim(),
+      bio: bio.trim(),
       email: email.trim(),
       phone: finalFormattedPhone,
       gender,
@@ -358,12 +368,62 @@ export default function ProfileView({
       updatedUser.password = newPassword.trim()
     }
 
+    // Track changed fields for Admin Audit Log
+    const changedFields = []
+    const changeDetails = {}
+    if (nickname.trim() !== (user?.nickname || '')) {
+      changedFields.push('nickname')
+      changeDetails.nickname = { old: user?.nickname || 'None', new: nickname.trim() }
+    }
+    if (bio.trim() !== (user?.bio || '')) {
+      changedFields.push('bio')
+      changeDetails.bio = { old: user?.bio || 'None', new: bio.trim() }
+    }
+    if (combinedName !== (user?.name || '')) {
+      changedFields.push('name')
+      changeDetails.name = { old: user?.name || '', new: combinedName }
+    }
+    if (finalFormattedPhone !== (user?.phone || '')) {
+      changedFields.push('phone')
+      changeDetails.phone = { old: user?.phone || '', new: finalFormattedPhone }
+    }
+    if (email.trim() !== (user?.email || '')) {
+      changedFields.push('email')
+      changeDetails.email = { old: user?.email || '', new: email.trim() }
+    }
+    if (newPassword.trim()) {
+      changedFields.push('password')
+      changeDetails.password = { note: 'Password updated by staff' }
+    }
+
     if (onUpdateUser) {
       onUpdateUser(updatedUser)
     }
 
-    if (user?.id && newPassword.trim()) {
-      updateStaffInFirebase(user.id, { password: newPassword.trim() }).catch(() => {})
+    if (user?.id) {
+      const fbPayload = {
+        name: combinedName,
+        nickname: nickname.trim(),
+        bio: bio.trim(),
+        phone: finalFormattedPhone,
+        email: email.trim(),
+        gender,
+        photo_url: avatarUrl,
+      }
+      if (newPassword.trim()) {
+        fbPayload.password = newPassword.trim()
+      }
+      updateStaffInFirebase(user.id, fbPayload).catch(() => {})
+
+      if (changedFields.length > 0) {
+        recordStaffProfileChange(user.id, {
+          staff_name: combinedName,
+          staff_email: email.trim(),
+          changed_fields: changedFields,
+          summary: `${combinedName} updated profile (${changedFields.join(', ')})`,
+          details: changeDetails
+        }).catch(() => {})
+      }
     }
 
     try {
@@ -535,8 +595,21 @@ export default function ProfileView({
                     <span className="status-pulse-dot" />
                     <span>Active Member • មានវត្តមាន</span>
                   </div>
-                  <h3 className="mobile-hero-name">
-                    {user?.name || `${firstName} ${lastName}`.trim() || 'Staff Member'}
+                  <h3 className="mobile-hero-name" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span>{user?.name || `${firstName} ${lastName}`.trim() || 'Staff Member'}</span>
+                    {nickname && (
+                      <span className="mobile-hero-nickname-chip" style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#0284c7',
+                        background: 'rgba(2, 132, 199, 0.12)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(2, 132, 199, 0.25)'
+                      }}>
+                        @{nickname}
+                      </span>
+                    )}
                   </h3>
                   <div className="mobile-hero-email">
                     {user?.email || email || 'staff@chafe.internal'}
@@ -552,6 +625,24 @@ export default function ProfileView({
                     </span>
                   </div>
                 </div>
+              </div>
+
+              {/* Personal Bio Card */}
+              <div className="mobile-hero-bio-card" style={{
+                background: 'rgba(255, 255, 255, 0.85)',
+                border: '1px solid rgba(2, 132, 199, 0.18)',
+                borderRadius: '14px',
+                padding: '12px 14px',
+                margin: '14px 0 6px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 800, color: '#0284c7', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                  <IconQuote size={13} color="#0284c7" />
+                  <span>{appLang === 'kh' ? 'អំពីខ្ញុំ / Bio' : 'Personal Bio & Passions'}</span>
+                </div>
+                <p style={{ margin: 0, fontSize: '12.5px', color: bio ? '#334155' : '#94a3b8', fontStyle: bio ? 'normal' : 'italic', lineHeight: '1.45' }}>
+                  {bio || (appLang === 'kh' ? 'មិនទាន់មានជីវប្រវត្តិនៅឡើយទេ។ ចុច "កែប្រែព័ត៌មាន" ដើម្បីបន្ថែមឈ្មោះហៅក្រៅ និង Bio!' : 'No bio added yet. Click "Edit Profile & Details" below to customize your bio & nickname!')}
+                </p>
               </div>
 
               {/* 3-Column Executive KPI Quick Stats */}
@@ -901,6 +992,35 @@ export default function ProfileView({
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder={appLang === 'kh' ? 'បញ្ចូលគោត្តនាម' : 'Enter last name'}
+                />
+              </div>
+
+              {/* 2.1 Nickname */}
+              <div className="edit-input-group">
+                <label className="edit-input-label">
+                  {appLang === 'kh' ? 'ឈ្មោះហៅក្រៅ (Nickname)' : 'Nickname (Display Tag / Handle)'}
+                </label>
+                <input
+                  type="text"
+                  className="edit-input-field"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  placeholder={appLang === 'kh' ? 'ឧ. Liam, Barista King, Maya ☕' : 'e.g. Liam, Espresso God, Maya ☕'}
+                />
+              </div>
+
+              {/* 2.2 Personal Bio */}
+              <div className="edit-input-group">
+                <label className="edit-input-label">
+                  {appLang === 'kh' ? 'ព័ត៌មានផ្ទាល់ខ្លួន (Bio / Passions)' : 'Personal Bio & Passions'}
+                </label>
+                <textarea
+                  className="edit-input-field"
+                  style={{ minHeight: '68px', resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.4' }}
+                  rows={3}
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder={appLang === 'kh' ? 'សរសេរបន្តិចអំពីចំណូលចិត្តការងារ កាហ្វេ ឬជំនាញពិសេសរបស់អ្នក...' : 'Share a few words about your coffee passions, brewing style, or hobbies...'}
                 />
               </div>
 

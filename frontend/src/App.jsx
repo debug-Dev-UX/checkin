@@ -57,6 +57,10 @@ import {
   IconPhone,
   IconSend,
   IconTelegram,
+  IconEdit,
+  IconQuote,
+  IconHistory,
+  IconSliders,
 } from './Icons'
 import UserDashboard from './components/UserDashboard'
 import LoginForm from './components/LoginForm'
@@ -108,6 +112,10 @@ import {
   sendAdminNotificationToFirebase,
   subscribeToAdminNotifications,
   deleteAdminNotificationFromFirebase,
+  getAdminProfile,
+  saveAdminProfile,
+  subscribeToStaffProfileChanges,
+  deleteStaffProfileChange,
 } from './services/firebaseService'
 import {
   getStoreLocation,
@@ -367,6 +375,30 @@ export default function App() {
   // Weekly & Monthly Tardiness & Clean Record Audit State
   const [auditPeriod, setAuditPeriod] = useState('weekly') // 'weekly' | 'monthly'
   const [auditStaffFilter, setAuditStaffFilter] = useState('all') // 'all' | 'clean' | 'late' | staff_id
+  const [auditLateDurationFilter, setAuditLateDurationFilter] = useState('all') // 'all' | 'long_late' | 'moderate_late' | 'minor_late' | 'never_late'
+  const [auditFrequencyFilter, setAuditFrequencyFilter] = useState('all') // 'all' | 'chronic' | 'occasional'
+  const [auditBranchFilter, setAuditBranchFilter] = useState('all') // 'all' | branch_id
+  const [auditSortBy, setAuditSortBy] = useState('default') // 'default' | 'longest_late' | 'most_late_shifts' | 'worst_grade' | 'best_grade'
+  const [staffProfileViewTab, setStaffProfileViewTab] = useState('roster') // 'roster' | 'changes'
+  const [staffChangeLogs, setStaffChangeLogs] = useState([])
+  const [messagesSubTab, setMessagesSubTab] = useState('inbox') // 'inbox' | 'broadcast' | 'history'
+
+  // Administrator Profile State
+  const [adminProfile, setAdminProfile] = useState(() => getAdminProfile())
+  const [isEditingAdminProfile, setIsEditingAdminProfile] = useState(false)
+  const [adminProfileForm, setAdminProfileForm] = useState(() => getAdminProfile())
+  const [adminNewPassword, setAdminNewPassword] = useState('')
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('')
+
+  // Deleted alerts IDs
+  const [deletedAlertIds, setDeletedAlertIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem('chafe_deleted_alerts')
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  })
 
   // Header Menus & Modals
   const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false)
@@ -649,7 +681,7 @@ export default function App() {
   const [replyText, setReplyText] = useState('')
   const [replySubmitting, setReplySubmitting] = useState(false)
 
-  // Real-time subscriptions for Staff Messages & Store Alerts
+  // Real-time subscriptions for Staff Messages, Store Alerts & Staff Profile Changes
   useEffect(() => {
     const unsubMessages = subscribeToStaffMessages((list) => {
       if (Array.isArray(list)) {
@@ -661,11 +693,64 @@ export default function App() {
         setStoreAlertsList(list)
       }
     })
+    const unsubProfileChanges = subscribeToStaffProfileChanges((list) => {
+      if (Array.isArray(list)) {
+        setStaffChangeLogs(list)
+      }
+    })
+
+    const handleProfileUpdate = () => {
+      setAdminProfile(getAdminProfile())
+    }
+    window.addEventListener('chafe_admin_profile_updated', handleProfileUpdate)
+
     return () => {
       if (unsubMessages) unsubMessages()
       if (unsubAlerts) unsubAlerts()
+      if (unsubProfileChanges) unsubProfileChanges()
+      window.removeEventListener('chafe_admin_profile_updated', handleProfileUpdate)
     }
   }, [])
+
+  // Admin Profile Save Handler
+  const handleSaveAdminProfile = async (e) => {
+    if (e && e.preventDefault) e.preventDefault()
+    if (adminNewPassword && adminNewPassword !== adminConfirmPassword) {
+      showToast('Passwords do not match. Please verify new password.', 'error')
+      return
+    }
+    try {
+      const payload = {
+        name: (adminProfileForm.name || '').trim() || 'Administrator',
+        title: (adminProfileForm.title || '').trim() || 'System Administrator & General Manager',
+        username: (adminProfileForm.username || '').trim() || 'admin',
+        email: (adminProfileForm.email || '').trim() || 'admin@chafe.internal',
+        phone: (adminProfileForm.phone || '').trim() || '+1 (555) 234-5678',
+      }
+      if (adminNewPassword && adminNewPassword.trim()) {
+        payload.password = adminNewPassword.trim()
+      }
+      const updated = await saveAdminProfile(payload)
+      setAdminProfile(updated)
+      setAdminNewPassword('')
+      setAdminConfirmPassword('')
+      setIsEditingAdminProfile(false)
+      showToast('Administrator profile updated successfully!', 'success')
+    } catch (err) {
+      showToast('Failed to update admin profile: ' + (err.message || err), 'error')
+    }
+  }
+
+  // Dismiss Staff Profile Change Audit Log
+  const handleDeleteStaffProfileChange = async (changeId) => {
+    try {
+      await deleteStaffProfileChange(changeId)
+      setStaffChangeLogs(prev => prev.filter(l => l.id !== changeId))
+      showToast('Profile change record dismissed', 'info')
+    } catch (err) {
+      showToast('Failed to dismiss log: ' + (err.message || err), 'error')
+    }
+  }
 
   const unreadStaffMsgsCount = useMemo(() => {
     return staffMessagesList.filter(m => m.status === 'pending' || !m.status).length
@@ -1398,15 +1483,21 @@ export default function App() {
       })
 
       const totalShifts = stfCheckins.length
-      const lateCount = stfCheckins.filter(c => c.punctuality_status === 'late').length
+      const lateRecords = stfCheckins.filter(c => c.punctuality_status === 'late')
+      const lateCount = lateRecords.length
       const onTimeCount = Math.max(0, totalShifts - lateCount)
       const grade = totalShifts > 0 ? Math.round((onTimeCount / totalShifts) * 100) : 100
+
+      // Calculate late duration metrics
+      const maxLateMinutes = lateRecords.reduce((max, c) => Math.max(max, Number(c.late_minutes) || 0), 0)
+      const totalLateMinutes = lateRecords.reduce((sum, c) => sum + (Number(c.late_minutes) || 0), 0)
 
       const matchedBranch = (branches || []).find(b => b.id === stf.branch_id)
       const branchDisplay = stf.branch_name || matchedBranch?.name || (branches?.[0]?.name || 'Chafé • Main Store')
 
       return {
         id: stf.id,
+        branch_id: stf.branch_id,
         name: stf.name,
         role: stf.role || 'Staff',
         branch: branchDisplay,
@@ -1414,7 +1505,9 @@ export default function App() {
         totalShifts,
         onTimeCount,
         lateCount,
-        grade
+        grade,
+        maxLateMinutes,
+        totalLateMinutes
       }
     })
 
@@ -1428,8 +1521,42 @@ export default function App() {
       filtered = filtered.filter(r => String(r.id) === String(auditStaffFilter) || r.name === auditStaffFilter)
     }
 
+    // Filter by auditLateDurationFilter: 'all' | 'long_late' (>30m) | 'moderate_late' (15-30m) | 'minor_late' (1-15m) | 'never_late'
+    if (auditLateDurationFilter === 'long_late') {
+      filtered = filtered.filter(r => r.maxLateMinutes > 30)
+    } else if (auditLateDurationFilter === 'moderate_late') {
+      filtered = filtered.filter(r => r.maxLateMinutes >= 15 && r.maxLateMinutes <= 30)
+    } else if (auditLateDurationFilter === 'minor_late') {
+      filtered = filtered.filter(r => r.maxLateMinutes > 0 && r.maxLateMinutes < 15)
+    } else if (auditLateDurationFilter === 'never_late') {
+      filtered = filtered.filter(r => r.lateCount === 0)
+    }
+
+    // Filter by auditFrequencyFilter: 'all' | 'chronic' (>=3 late) | 'occasional' (1-2 late)
+    if (auditFrequencyFilter === 'chronic') {
+      filtered = filtered.filter(r => r.lateCount >= 3)
+    } else if (auditFrequencyFilter === 'occasional') {
+      filtered = filtered.filter(r => r.lateCount >= 1 && r.lateCount <= 2)
+    }
+
+    // Filter by auditBranchFilter
+    if (auditBranchFilter !== 'all') {
+      filtered = filtered.filter(r => String(r.branch_id) === String(auditBranchFilter) || r.branch === auditBranchFilter)
+    }
+
+    // Sort by auditSortBy
+    if (auditSortBy === 'longest_late') {
+      filtered = [...filtered].sort((a, b) => b.maxLateMinutes - a.maxLateMinutes || b.totalLateMinutes - a.totalLateMinutes)
+    } else if (auditSortBy === 'most_late_shifts') {
+      filtered = [...filtered].sort((a, b) => b.lateCount - a.lateCount)
+    } else if (auditSortBy === 'worst_grade') {
+      filtered = [...filtered].sort((a, b) => a.grade - b.grade)
+    } else if (auditSortBy === 'best_grade') {
+      filtered = [...filtered].sort((a, b) => b.grade - a.grade)
+    }
+
     return filtered
-  }, [staffList, checkins, auditPeriod, auditStaffFilter, branches])
+  }, [staffList, checkins, auditPeriod, auditStaffFilter, auditLateDurationFilter, auditFrequencyFilter, auditBranchFilter, auditSortBy, branches])
 
   // TOP Staff Leaderboard Rankings for Admin Performance View
   const adminTopRankings = useMemo(() => {
@@ -1566,8 +1693,8 @@ export default function App() {
       }
     })
 
-    return list
-  }, [checkins, performanceData, staffList, cafeSettings])
+    return list.filter(a => !deletedAlertIds.includes(a.id))
+  }, [checkins, performanceData, staffList, cafeSettings, deletedAlertIds])
 
   const unreadAlertsCount = useMemo(() => {
     return allAlerts.filter(a => !readAlertIds.includes(a.id)).length
@@ -1590,6 +1717,26 @@ export default function App() {
       } catch {}
       return next
     })
+  }
+
+  // Live System Alerts Deletion
+  const handleDeleteAlert = (id) => {
+    const next = [...deletedAlertIds, id]
+    setDeletedAlertIds(next)
+    try {
+      localStorage.setItem('chafe_deleted_alerts', JSON.stringify(next))
+    } catch {}
+    showToast('Alert removed from system alerts', 'info')
+  }
+
+  const handleDeleteAllAlerts = () => {
+    const allIds = allAlerts.map(a => a.id)
+    const next = Array.from(new Set([...deletedAlertIds, ...allIds]))
+    setDeletedAlertIds(next)
+    try {
+      localStorage.setItem('chafe_deleted_alerts', JSON.stringify(next))
+    } catch {}
+    showToast('All live system alerts cleared', 'info')
   }
 
   // Handlers for goals & performance modals
@@ -1752,7 +1899,7 @@ export default function App() {
             </div>
             <div className="user-info-text">
               <span className="user-welcome-label">Welcome,</span>
-              <span className="user-display-name">Administrator</span>
+              <span className="user-display-name">{adminProfile?.name || 'Administrator'}</span>
             </div>
           </div>
 
@@ -1954,7 +2101,7 @@ export default function App() {
               <div className="user-thumbnail-avatar">
                 <IconUserCircle size={18} color="#475569" />
               </div>
-              <span className="user-thumbnail-name">Administrator</span>
+              <span className="user-thumbnail-name">{adminProfile?.name || 'Administrator'}</span>
             </div>
 
             <button
@@ -2885,7 +3032,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="audit-controls-row">
+                  <div className="audit-controls-row" style={{ flexWrap: 'wrap', gap: '8px' }}>
                     {/* Weekly / Monthly Toggle */}
                     <div className="audit-toggle-pill">
                       <button
@@ -2917,6 +3064,59 @@ export default function App() {
                         <option key={r.id} value={r.id}>{r.name}</option>
                       ))}
                     </select>
+
+                    {/* Filter by Late Duration: Late long time vs minor/moderate */}
+                    <select
+                      className="audit-filter-select"
+                      value={auditLateDurationFilter}
+                      onChange={(e) => setAuditLateDurationFilter(e.target.value)}
+                      title="Filter by Late Duration"
+                    >
+                      <option value="all">⏱️ All Late Durations</option>
+                      <option value="long_late">🚨 Late Long Time (&gt;30m)</option>
+                      <option value="moderate_late">⚠️ Moderate Delay (15–30m)</option>
+                      <option value="minor_late">⚡ Minor Delay (1–15m)</option>
+                      <option value="never_late">🛡️ Never Late (0m)</option>
+                    </select>
+
+                    {/* Filter by Frequency */}
+                    <select
+                      className="audit-filter-select"
+                      value={auditFrequencyFilter}
+                      onChange={(e) => setAuditFrequencyFilter(e.target.value)}
+                      title="Filter by Tardiness Frequency"
+                    >
+                      <option value="all">🔄 All Frequencies</option>
+                      <option value="chronic">⚠️ Chronic Late (3+ shifts)</option>
+                      <option value="occasional">ℹ️ Occasional Late (1–2 shifts)</option>
+                    </select>
+
+                    {/* Filter by Branch */}
+                    <select
+                      className="audit-filter-select"
+                      value={auditBranchFilter}
+                      onChange={(e) => setAuditBranchFilter(e.target.value)}
+                      title="Filter by Branch"
+                    >
+                      <option value="all">🏢 All Branches</option>
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+
+                    {/* Sort By */}
+                    <select
+                      className="audit-filter-select"
+                      value={auditSortBy}
+                      onChange={(e) => setAuditSortBy(e.target.value)}
+                      title="Sort Audit Results"
+                    >
+                      <option value="default">📊 Sort: Default</option>
+                      <option value="longest_late">⏱️ Sort: Longest Late Duration</option>
+                      <option value="most_late_shifts">🚨 Sort: Most Late Shifts</option>
+                      <option value="worst_grade">📉 Sort: Lowest Grade First</option>
+                      <option value="best_grade">📈 Sort: Highest Grade First</option>
+                    </select>
                   </div>
                 </div>
 
@@ -2930,6 +3130,7 @@ export default function App() {
                         <th>Total Shifts ({auditPeriod === 'weekly' ? 'Weekly' : 'Monthly'})</th>
                         <th>On-Time Count</th>
                         <th>Late Count</th>
+                        <th>Late Duration</th>
                         <th>Status Classification</th>
                         <th style={{ textAlign: 'right' }}>Punctuality Grade</th>
                       </tr>
@@ -2937,7 +3138,7 @@ export default function App() {
                     <tbody>
                       {auditRows.length === 0 ? (
                         <tr>
-                          <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                          <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
                             {(staffList || []).length === 0 
                               ? 'No staff members registered yet. Add staff to begin tracking attendance.' 
                               : 'No staff records match the selected filter.'}
@@ -2999,6 +3200,26 @@ export default function App() {
                               </td>
 
                               <td>
+                                {staff.maxLateMinutes > 30 ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '11px', fontWeight: 800 }}>
+                                    🚨 {staff.maxLateMinutes}m Delay
+                                  </span>
+                                ) : staff.maxLateMinutes >= 15 ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', background: '#fffbeb', border: '1px solid #fef3c7', color: '#d97706', fontSize: '11px', fontWeight: 700 }}>
+                                    ⚠️ {staff.maxLateMinutes}m Delay
+                                  </span>
+                                ) : staff.maxLateMinutes > 0 ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', background: '#fefce8', border: '1px solid #fef08a', color: '#ca8a04', fontSize: '11px', fontWeight: 700 }}>
+                                    ⚡ {staff.maxLateMinutes}m Delay
+                                  </span>
+                                ) : (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a', fontSize: '11px', fontWeight: 700 }}>
+                                    🛡️ 0m (Clean)
+                                  </span>
+                                )}
+                              </td>
+
+                              <td>
                                 {isNeverLate ? (
                                   <span className="audit-badge-clean">Never Late (0)</span>
                                 ) : (
@@ -3035,8 +3256,118 @@ export default function App() {
           {navTab === 'staff' && (
             <div>
               <div className="content-panel">
-                <div className="panel-header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                  <div className="panel-heading-title">CHAFÉ STAFF ROSTER & ROLE ASSIGNMENT</div>
+                {/* Staff Sub-Tabs: Roster vs Profile Changes Audit Log */}
+                <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
+                  <button
+                    type="button"
+                    className={`pill-filter-btn ${staffProfileViewTab === 'roster' ? 'active' : ''}`}
+                    onClick={() => setStaffProfileViewTab('roster')}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+                  >
+                    <IconUsers size={14} />
+                    <span>Staff Directory Roster ({filteredStaffList.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`pill-filter-btn ${staffProfileViewTab === 'changes' ? 'active' : ''}`}
+                    onClick={() => setStaffProfileViewTab('changes')}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+                  >
+                    <IconHistory size={14} />
+                    <span>Staff Profile Changes & Audit Log ({staffChangeLogs.length})</span>
+                  </button>
+                </div>
+
+                {staffProfileViewTab === 'changes' ? (
+                  <div>
+                    <div className="panel-header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                      <div>
+                        <div className="panel-heading-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <IconHistory size={18} color="#ea580c" />
+                          <span>STAFF PROFILE CHANGES & AUDIT LOG</span>
+                        </div>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                          Live log of self-service profile updates (nickname, bio, phone, avatar) submitted by staff.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="table-responsive" style={{ marginTop: '12px' }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Staff Member</th>
+                            <th>Field Modified</th>
+                            <th>Previous Value</th>
+                            <th>Updated Value</th>
+                            <th>Date & Time</th>
+                            <th style={{ textAlign: 'right' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {staffChangeLogs.length === 0 ? (
+                            <tr>
+                              <td colSpan="6" style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                                <IconCheckCircle size={28} color="#10b981" style={{ marginBottom: '8px', display: 'block', margin: '0 auto 8px' }} />
+                                <strong>No profile changes recorded yet.</strong>
+                                <p style={{ margin: '4px 0 0', fontSize: '12px' }}>When staff update their nickname, bio, or contact information, records will show here in real-time.</p>
+                              </td>
+                            </tr>
+                          ) : (
+                            staffChangeLogs.map((log) => (
+                              <tr key={log.id}>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div className="user-thumbnail-avatar" style={{ width: '28px', height: '28px', fontSize: '11px', background: '#e0f2fe', color: '#0369a1' }}>
+                                      {(log.staff_name || 'ST').substring(0, 2).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <strong style={{ fontSize: '13px', color: '#0f172a' }}>{log.staff_name || 'Staff Member'}</strong>
+                                      {log.branch_name && <div style={{ fontSize: '10px', color: '#64748b' }}>{log.branch_name}</div>}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#f1f5f9', color: '#334155', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                                    <IconEdit size={10} /> {log.field_name || log.field || 'Profile Field'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontSize: '12px', color: '#94a3b8', fontStyle: log.old_value ? 'normal' : 'italic' }}>
+                                    {log.old_value || '(None)'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
+                                    {log.new_value || '(Empty)'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                    {new Date(log.timestamp || log.created_at || Date.now()).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteStaffProfileChange(log.id)}
+                                    title="Dismiss change log"
+                                    style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', color: '#64748b', cursor: 'pointer' }}
+                                  >
+                                    Dismiss
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="panel-header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                      <div className="panel-heading-title">CHAFÉ STAFF ROSTER & ROLE ASSIGNMENT</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>Branch (សាខា):</span>
@@ -3206,106 +3537,393 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
 
           {/* ============================================================== */}
           {/* TAB 3.5: STAFF MESSAGES & NOTIFICATIONS CONTROL */}
           {/* ============================================================== */}
           {navTab === 'messages' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-              {/* === SEND NOTIFICATION PANEL (Admin → Staff) === */}
-              <div className="content-panel">
-                <div className="panel-header-bar" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <IconBell size={18} color="#ea580c" />
-                  <div className="panel-heading-title">SEND NOTIFICATION TO STAFF</div>
-                </div>
-                <form onSubmit={handleSendAdminNotification} style={{ padding: '16px 0 0', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>TARGET RECIPIENT</label>
-                      <select
-                        value={adminNotifForm.target_staff_id}
-                        onChange={(e) => setAdminNotifForm(f => ({ ...f, target_staff_id: e.target.value }))}
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 600 }}
-                      >
-                        <option value="all">📢 Broadcast to All Staff</option>
-                        {staffList.map(s => (
-                          <option key={s.id} value={s.id}>{s.name} ({s.role || 'Staff'})</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>NOTIFICATION TITLE</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Schedule Update, Urgent Notice..."
-                        value={adminNotifForm.title}
-                        onChange={(e) => setAdminNotifForm(f => ({ ...f, title: e.target.value }))}
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 600, boxSizing: 'border-box' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>PRIORITY LEVEL</label>
-                      <select
-                        value={adminNotifForm.priority}
-                        onChange={(e) => setAdminNotifForm(f => ({ ...f, priority: e.target.value }))}
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 600 }}
-                      >
-                        <option value="normal">🔔 Normal</option>
-                        <option value="info">ℹ️ Info</option>
-                        <option value="urgent">🚨 Urgent</option>
-                      </select>
-                    </div>
+              {/* KPI Summary Cards Bar */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
+                <div style={{ background: '#ffffff', borderRadius: '12px', padding: '16px 18px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <IconEnvelope size={22} color="#0284c7" />
                   </div>
                   <div>
-                    <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>MESSAGE CONTENT</label>
-                    <textarea
-                      placeholder="Type your message to staff here..."
-                      value={adminNotifForm.message}
-                      onChange={(e) => setAdminNotifForm(f => ({ ...f, message: e.target.value }))}
-                      rows={3}
-                      style={{ width: '100%', padding: '10px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
-                    />
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Inquiries</div>
+                    <div style={{ fontSize: '22px', fontWeight: 900, color: '#0f172a', lineHeight: 1.2 }}>{staffMessagesList.length}</div>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <button
-                      type="submit"
-                      disabled={adminNotifSending}
-                      style={{
-                        padding: '10px 24px',
-                        background: adminNotifSending ? '#94a3b8' : '#0f172a',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '10px',
-                        fontWeight: 800,
-                        fontSize: '13px',
-                        cursor: adminNotifSending ? 'not-allowed' : 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                      }}
-                    >
-                      <IconSend size={14} color="#ffffff" />
-                      {adminNotifSending ? 'Sending...' : 'Send Notification'}
-                    </button>
-                  </div>
-                </form>
+                </div>
 
-                {/* Recent Notifications Log */}
-                {adminNotifList.length > 0 && (
-                  <div style={{ marginTop: '16px', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginBottom: '10px' }}>SENT NOTIFICATIONS HISTORY</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto' }}>
+                <div style={{ background: '#ffffff', borderRadius: '12px', padding: '16px 18px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <IconAlertTriangle size={22} color="#ea580c" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pending Action</div>
+                    <div style={{ fontSize: '22px', fontWeight: 900, color: '#ea580c', lineHeight: 1.2 }}>{unreadStaffMsgsCount}</div>
+                  </div>
+                </div>
+
+                <div style={{ background: '#ffffff', borderRadius: '12px', padding: '16px 18px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <IconCheckCircle size={22} color="#059669" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Resolved / Replied</div>
+                    <div style={{ fontSize: '22px', fontWeight: 900, color: '#059669', lineHeight: 1.2 }}>
+                      {staffMessagesList.filter(m => m.status === 'replied').length}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ background: '#ffffff', borderRadius: '12px', padding: '16px 18px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <IconMegaphone size={22} color="#475569" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Broadcasts Dispatched</div>
+                    <div style={{ fontSize: '22px', fontWeight: 900, color: '#0f172a', lineHeight: 1.2 }}>{adminNotifList.length}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-Tab Navigation Bar */}
+              <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
+                <button
+                  type="button"
+                  className={`pill-filter-btn ${messagesSubTab === 'inbox' ? 'active' : ''}`}
+                  onClick={() => setMessagesSubTab('inbox')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+                >
+                  <IconEnvelope size={14} />
+                  <span>Staff Inquiries Desk {unreadStaffMsgsCount > 0 ? `(${unreadStaffMsgsCount} New)` : `(${staffMessagesList.length})`}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`pill-filter-btn ${messagesSubTab === 'broadcast' ? 'active' : ''}`}
+                  onClick={() => setMessagesSubTab('broadcast')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+                >
+                  <IconBell size={14} />
+                  <span>Send Broadcast to Staff</span>
+                </button>
+                <button
+                  type="button"
+                  className={`pill-filter-btn ${messagesSubTab === 'history' ? 'active' : ''}`}
+                  onClick={() => setMessagesSubTab('history')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
+                >
+                  <IconHistory size={14} />
+                  <span>Dispatched History ({adminNotifList.length})</span>
+                </button>
+              </div>
+
+              {/* VIEW 1: STAFF INQUIRIES DESK */}
+              {messagesSubTab === 'inbox' && (
+                <div className="content-panel">
+                  <div className="panel-header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div className="panel-heading-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <IconEnvelope size={18} color="#0284c7" />
+                        <span>STAFF SUPPORT DESK & INQUIRIES INBOX</span>
+                      </div>
+                      {unreadStaffMsgsCount > 0 && (
+                        <span style={{ background: '#ea580c', color: '#fff', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '10px' }}>
+                          {unreadStaffMsgsCount} PENDING
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input
+                        type="text"
+                        placeholder="Search by name, subject, branch..."
+                        value={staffMessagesSearch}
+                        onChange={(e) => setStaffMessagesSearch(e.target.value)}
+                        style={{ padding: '7px 12px', fontSize: '12px', border: '1.5px solid #cbd5e1', borderRadius: '20px', outline: 'none', width: '220px' }}
+                      />
+                      {['all', 'pending', 'replied'].map(f => (
+                        <button
+                          key={f}
+                          onClick={() => setStaffMessagesFilter(f)}
+                          style={{
+                            padding: '6px 14px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            borderRadius: '20px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            background: staffMessagesFilter === f ? '#0f172a' : '#f1f5f9',
+                            color: staffMessagesFilter === f ? '#ffffff' : '#64748b',
+                            textTransform: 'capitalize',
+                          }}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {filteredStaffMessages.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '48px 20px', color: '#94a3b8' }}>
+                      <div style={{ fontSize: '36px', marginBottom: '8px' }}>📭</div>
+                      <div style={{ fontWeight: 700, color: '#64748b' }}>No staff inquiries {staffMessagesFilter !== 'all' ? `(${staffMessagesFilter})` : ''}</div>
+                      <div style={{ fontSize: '12px', marginTop: '4px' }}>When staff submit requests from their portal support desk, they arrive here instantly.</div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+                      {filteredStaffMessages.map(msg => (
+                        <div key={msg.id} style={{
+                          border: `1.5px solid ${msg.status === 'replied' ? '#bbf7d0' : msg.priority === 'urgent' ? '#fed7aa' : '#e2e8f0'}`,
+                          borderRadius: '12px',
+                          padding: '16px 18px',
+                          background: msg.status === 'replied' ? '#f0fdf4' : msg.priority === 'urgent' ? '#fff7ed' : '#ffffff',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a' }}>
+                                  {msg.staff_name || 'Staff Member'}
+                                </span>
+                                <span style={{ fontSize: '11px', color: '#64748b' }}>• {msg.branch_name || 'Store'}</span>
+                                {msg.email && <span style={{ fontSize: '11px', color: '#94a3b8' }}>• {msg.email}</span>}
+                                <span style={{
+                                  fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '6px',
+                                  background: msg.status === 'replied' ? '#059669' : msg.priority === 'urgent' ? '#ea580c' : '#0284c7',
+                                  color: '#ffffff',
+                                }}>
+                                  {msg.status === 'replied' ? '✓ REPLIED' : msg.status === 'read' ? 'READ' : msg.priority === 'urgent' ? '🚨 URGENT' : 'PENDING'}
+                                </span>
+                              </div>
+                              <div style={{ fontWeight: 700, fontSize: '13px', color: '#1e293b', marginTop: '6px' }}>
+                                {msg.subject || 'Staff Inquiry'}
+                              </div>
+                              <div style={{ fontSize: '13px', color: '#475569', marginTop: '4px', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                                {msg.message}
+                              </div>
+                              <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>
+                                {new Date(msg.created_at || 0).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </div>
+
+                              {/* Admin Reply Thread Box */}
+                              {msg.status === 'replied' && msg.reply && (
+                                <div style={{ marginTop: '12px', padding: '12px 14px', background: '#dcfce7', borderRadius: '8px', borderLeft: '4px solid #16a34a' }}>
+                                  <div style={{ fontSize: '10px', fontWeight: 800, color: '#16a34a', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Admin Resolution Reply</div>
+                                  <div style={{ fontSize: '12px', color: '#166534', lineHeight: 1.5 }}>{msg.reply}</div>
+                                  {msg.replied_at && (
+                                    <div style={{ fontSize: '10px', color: '#4ade80', marginTop: '4px' }}>
+                                      {new Date(msg.replied_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Quick Reply Form */}
+                              {replyingMsgId === msg.id && (
+                                <div style={{ marginTop: '12px', padding: '12px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                                  <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>Quick Templates:</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setReplyText('Approved. Your shift schedule has been adjusted accordingly.')}
+                                      style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}
+                                    >
+                                      ✓ Approved & Updated
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setReplyText('Received. Store operations will review this request shortly.')}
+                                      style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}
+                                    >
+                                      ✓ Received & In Review
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setReplyText('Thank you for notifying us. Have a great shift!')}
+                                      style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}
+                                    >
+                                      ✓ Thank You / Noted
+                                    </button>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <textarea
+                                      placeholder="Type your reply to this staff member..."
+                                      value={replyText}
+                                      onChange={(e) => setReplyText(e.target.value)}
+                                      rows={2}
+                                      style={{ flex: 1, padding: '8px 12px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid #0284c7', resize: 'none', fontFamily: 'inherit' }}
+                                      autoFocus
+                                    />
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <button
+                                        onClick={() => handleReplyStaffMessage(msg.id)}
+                                        disabled={replySubmitting}
+                                        style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
+                                      >
+                                        {replySubmitting ? '...' : 'Send'}
+                                      </button>
+                                      <button
+                                        onClick={() => { setReplyingMsgId(null); setReplyText('') }}
+                                        style={{ padding: '8px 16px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '105px' }}>
+                              {msg.status !== 'replied' && replyingMsgId !== msg.id && (
+                                <button
+                                  onClick={() => { setReplyingMsgId(msg.id); setReplyText('') }}
+                                  style={{ padding: '7px 12px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+                                >
+                                  <IconSend size={11} /> Reply
+                                </button>
+                              )}
+                              {msg.status === 'replied' && replyingMsgId !== msg.id && (
+                                <button
+                                  onClick={() => { setReplyingMsgId(msg.id); setReplyText(msg.reply || '') }}
+                                  style={{ padding: '7px 12px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', textAlign: 'center' }}
+                                >
+                                  Edit Reply
+                                </button>
+                              )}
+                              {msg.status !== 'read' && msg.status !== 'replied' && (
+                                <button
+                                  onClick={() => handleUpdateMessageStatus(msg.id, 'read')}
+                                  style={{ padding: '7px 12px', background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', textAlign: 'center' }}
+                                >
+                                  Mark Read
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteStaffMessage(msg.id)}
+                                title="Delete staff inquiry permanently"
+                                style={{ padding: '7px 12px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+                              >
+                                <IconTrash size={11} color="#dc2626" /> Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* VIEW 2: SEND BROADCAST TO STAFF */}
+              {messagesSubTab === 'broadcast' && (
+                <div className="content-panel">
+                  <div className="panel-header-bar" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <IconBell size={18} color="#ea580c" />
+                    <div className="panel-heading-title">SEND NOTIFICATION / BROADCAST TO STAFF</div>
+                  </div>
+                  <form onSubmit={handleSendAdminNotification} style={{ padding: '16px 0 0', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>TARGET RECIPIENT</label>
+                        <select
+                          value={adminNotifForm.target_staff_id}
+                          onChange={(e) => setAdminNotifForm(f => ({ ...f, target_staff_id: e.target.value }))}
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 600 }}
+                        >
+                          <option value="all">📢 Broadcast to All Staff</option>
+                          {staffList.map(s => (
+                            <option key={s.id} value={s.id}>{s.name} ({s.role || 'Staff'})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>NOTIFICATION TITLE</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Schedule Update, Urgent Store Notice..."
+                          value={adminNotifForm.title}
+                          onChange={(e) => setAdminNotifForm(f => ({ ...f, title: e.target.value }))}
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 600, boxSizing: 'border-box' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>PRIORITY LEVEL</label>
+                        <select
+                          value={adminNotifForm.priority}
+                          onChange={(e) => setAdminNotifForm(f => ({ ...f, priority: e.target.value }))}
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 600 }}
+                        >
+                          <option value="normal">🔔 Normal</option>
+                          <option value="info">ℹ️ Info Digest</option>
+                          <option value="urgent">🚨 Urgent Priority</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>MESSAGE CONTENT</label>
+                      <textarea
+                        placeholder="Type your message or notice to staff members here..."
+                        value={adminNotifForm.message}
+                        onChange={(e) => setAdminNotifForm(f => ({ ...f, message: e.target.value }))}
+                        rows={4}
+                        style={{ width: '100%', padding: '10px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        type="submit"
+                        disabled={adminNotifSending}
+                        style={{
+                          padding: '10px 24px',
+                          background: adminNotifSending ? '#94a3b8' : '#0f172a',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '10px',
+                          fontWeight: 800,
+                          fontSize: '13px',
+                          cursor: adminNotifSending ? 'not-allowed' : 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                      >
+                        <IconSend size={14} color="#ffffff" />
+                        {adminNotifSending ? 'Dispatching...' : 'Dispatch Broadcast'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* VIEW 3: DISPATCHED HISTORY */}
+              {messagesSubTab === 'history' && (
+                <div className="content-panel">
+                  <div className="panel-header-bar" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <IconHistory size={18} color="#0284c7" />
+                    <div className="panel-heading-title">DISPATCHED NOTIFICATIONS HISTORY</div>
+                  </div>
+                  {adminNotifList.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                      No notifications have been dispatched yet.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
                       {adminNotifList.map(notif => (
                         <div key={notif.id} style={{
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'flex-start',
-                          padding: '10px 14px',
+                          padding: '12px 16px',
                           borderRadius: '10px',
                           background: notif.priority === 'urgent' ? '#fff7ed' : notif.priority === 'info' ? '#eff6ff' : '#f8fafc',
                           border: `1px solid ${notif.priority === 'urgent' ? '#fed7aa' : notif.priority === 'info' ? '#bfdbfe' : '#e2e8f0'}`,
@@ -3318,192 +3936,25 @@ export default function App() {
                                 → {notif.is_broadcast ? 'All Staff' : notif.target_staff_name}
                               </span>
                             </div>
-                            <div style={{ fontSize: '12px', color: '#475569', marginTop: '3px' }}>{notif.message}</div>
-                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '3px' }}>
+                            <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>{notif.message}</div>
+                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
                               {new Date(notif.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                             </div>
                           </div>
                           <button
                             onClick={() => handleDeleteAdminNotif(notif.id)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px', marginLeft: '10px' }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px', marginLeft: '10px' }}
                             title="Delete notification"
                           >
-                            <IconX size={14} />
+                            <IconTrash size={14} color="#ef4444" />
                           </button>
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
-
-              {/* === STAFF INQUIRIES INBOX (Staff → Admin) === */}
-              <div className="content-panel">
-                <div className="panel-header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <IconEnvelope size={18} color="#0284c7" />
-                    <div className="panel-heading-title">STAFF INQUIRIES INBOX</div>
-                    {unreadStaffMsgsCount > 0 && (
-                      <span style={{ background: '#ea580c', color: '#fff', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '10px' }}>
-                        {unreadStaffMsgsCount} NEW
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input
-                      type="text"
-                      placeholder="Search by name, subject, branch..."
-                      value={staffMessagesSearch}
-                      onChange={(e) => setStaffMessagesSearch(e.target.value)}
-                      style={{ padding: '7px 12px', fontSize: '12px', border: '1.5px solid #cbd5e1', borderRadius: '20px', outline: 'none', width: '220px' }}
-                    />
-                    {['all', 'pending', 'replied'].map(f => (
-                      <button
-                        key={f}
-                        onClick={() => setStaffMessagesFilter(f)}
-                        style={{
-                          padding: '6px 14px',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          borderRadius: '20px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          background: staffMessagesFilter === f ? '#0f172a' : '#f1f5f9',
-                          color: staffMessagesFilter === f ? '#ffffff' : '#64748b',
-                          textTransform: 'capitalize',
-                        }}
-                      >
-                        {f}
-                      </button>
-                    ))}
-                  </div>
+                  )}
                 </div>
+              )}
 
-                {filteredStaffMessages.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8' }}>
-                    <div style={{ fontSize: '32px', marginBottom: '8px' }}>📭</div>
-                    <div style={{ fontWeight: 700, color: '#64748b' }}>No staff inquiries {staffMessagesFilter !== 'all' ? `(${staffMessagesFilter})` : ''}</div>
-                    <div style={{ fontSize: '12px', marginTop: '4px' }}>When staff send a message via the support form, it appears here.</div>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                    {filteredStaffMessages.map(msg => (
-                      <div key={msg.id} style={{
-                        border: `1.5px solid ${msg.status === 'replied' ? '#bbf7d0' : msg.priority === 'urgent' ? '#fed7aa' : '#e2e8f0'}`,
-                        borderRadius: '12px',
-                        padding: '14px 16px',
-                        background: msg.status === 'replied' ? '#f0fdf4' : msg.priority === 'urgent' ? '#fff7ed' : '#ffffff',
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                              <span style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a' }}>
-                                {msg.staff_name || 'Staff Member'}
-                              </span>
-                              <span style={{ fontSize: '11px', color: '#64748b' }}>• {msg.branch_name || 'Store'}</span>
-                              {msg.email && <span style={{ fontSize: '11px', color: '#94a3b8' }}>• {msg.email}</span>}
-                              <span style={{
-                                fontSize: '10px', fontWeight: 700, padding: '1px 7px', borderRadius: '6px',
-                                background: msg.status === 'replied' ? '#059669' : msg.priority === 'urgent' ? '#ea580c' : '#0284c7',
-                                color: '#ffffff',
-                              }}>
-                                {msg.status === 'replied' ? '✓ REPLIED' : msg.status === 'read' ? 'READ' : msg.priority === 'urgent' ? '🚨 URGENT' : 'PENDING'}
-                              </span>
-                            </div>
-                            <div style={{ fontWeight: 700, fontSize: '13px', color: '#334155', marginTop: '6px' }}>
-                              {msg.subject || 'Staff Inquiry'}
-                            </div>
-                            <div style={{ fontSize: '13px', color: '#475569', marginTop: '4px', lineHeight: '1.5' }}>
-                              {msg.message}
-                            </div>
-                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>
-                              {new Date(msg.created_at || 0).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </div>
-
-                            {/* Admin Reply Display */}
-                            {msg.status === 'replied' && msg.reply && (
-                              <div style={{ marginTop: '10px', padding: '10px 12px', background: '#dcfce7', borderRadius: '8px', borderLeft: '3px solid #16a34a' }}>
-                                <div style={{ fontSize: '10px', fontWeight: 700, color: '#16a34a', marginBottom: '4px' }}>ADMIN REPLY</div>
-                                <div style={{ fontSize: '12px', color: '#166534' }}>{msg.reply}</div>
-                                {msg.replied_at && (
-                                  <div style={{ fontSize: '10px', color: '#4ade80', marginTop: '3px' }}>
-                                    {new Date(msg.replied_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Reply Form */}
-                            {replyingMsgId === msg.id && (
-                              <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
-                                <textarea
-                                  placeholder="Type your reply to this staff member..."
-                                  value={replyText}
-                                  onChange={(e) => setReplyText(e.target.value)}
-                                  rows={2}
-                                  style={{ flex: 1, padding: '8px 12px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid #0284c7', resize: 'none', fontFamily: 'inherit' }}
-                                  autoFocus
-                                />
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  <button
-                                    onClick={() => handleReplyStaffMessage(msg.id)}
-                                    disabled={replySubmitting}
-                                    style={{ padding: '8px 16px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
-                                  >
-                                    {replySubmitting ? '...' : 'Send'}
-                                  </button>
-                                  <button
-                                    onClick={() => { setReplyingMsgId(null); setReplyText('') }}
-                                    style={{ padding: '8px 16px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Action Buttons */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '100px' }}>
-                            {msg.status !== 'replied' && replyingMsgId !== msg.id && (
-                              <button
-                                onClick={() => { setReplyingMsgId(msg.id); setReplyText('') }}
-                                style={{ padding: '7px 12px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
-                              >
-                                <IconSend size={11} /> Reply
-                              </button>
-                            )}
-                            {msg.status === 'replied' && replyingMsgId !== msg.id && (
-                              <button
-                                onClick={() => { setReplyingMsgId(msg.id); setReplyText(msg.reply || '') }}
-                                style={{ padding: '7px 12px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', textAlign: 'center' }}
-                              >
-                                Edit Reply
-                              </button>
-                            )}
-                            {msg.status !== 'read' && msg.status !== 'replied' && (
-                              <button
-                                onClick={() => handleUpdateMessageStatus(msg.id, 'read')}
-                                style={{ padding: '7px 12px', background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', textAlign: 'center' }}
-                              >
-                                Mark Read
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleDeleteStaffMessage(msg.id)}
-                              title="Delete staff inquiry permanently"
-                              style={{ padding: '7px 12px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '8px', fontWeight: 700, fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
-                            >
-                              <IconTrash size={11} color="#dc2626" /> Delete
-                            </button>
-                          </div>
-
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -5333,6 +5784,10 @@ export default function App() {
               const branchName = editingStaff.branch_id === 'all' ? 'All Branches (Floating)' : (chosenBranch?.name || editingStaff.branch_name || 'Chafé • Kohke')
               const payload = {
                 name: (editingStaff.name || '').trim(),
+                nickname: (editingStaff.nickname || '').trim(),
+                bio: (editingStaff.bio || '').trim(),
+                phone: (editingStaff.phone || '').trim(),
+                email: (editingStaff.email || '').trim(),
                 role: editingStaff.role || 'Barista',
                 branch_id: editingStaff.branch_id || chosenBranch?.id || 'branch_2',
                 branch_name: branchName,
@@ -5341,6 +5796,7 @@ export default function App() {
                 shift_start: editingStaff.shift_start || '07:30',
                 shift_end: editingStaff.shift_end || '16:00',
                 username: (editingStaff.username || '').trim(),
+                status: editingStaff.status || 'active',
               }
               if (editingStaff.new_password && editingStaff.new_password.trim()) {
                 payload.password = editingStaff.new_password.trim()
@@ -5394,6 +5850,66 @@ export default function App() {
                     value={editingStaff.name || ''}
                     onChange={(e) => setEditingStaff({ ...editingStaff, name: e.target.value })}
                     required
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Nickname / Handle</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. barista_pro"
+                      value={editingStaff.nickname || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, nickname: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Staff Status</label>
+                    <select
+                      className="form-select"
+                      value={editingStaff.status || 'active'}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, status: e.target.value })}
+                    >
+                      <option value="active">Active & On Roster</option>
+                      <option value="on_leave">On Approved Leave</option>
+                      <option value="inactive">Inactive / Suspended</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Phone Number</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="+1 (555) 000-0000"
+                      value={editingStaff.phone || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Email Address</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      placeholder="staff@chafe.internal"
+                      value={editingStaff.email || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, email: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Staff Personal Bio & Notes</label>
+                  <textarea
+                    className="form-input"
+                    rows={2}
+                    placeholder="Staff personal bio, quote, espresso specialty..."
+                    value={editingStaff.bio || ''}
+                    onChange={(e) => setEditingStaff({ ...editingStaff, bio: e.target.value })}
+                    style={{ resize: 'vertical', fontFamily: 'inherit' }}
                   />
                 </div>
 
@@ -5554,7 +6070,19 @@ export default function App() {
                   </span>
                 )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {allAlerts.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ fontSize: '11px', padding: '3px 8px', color: '#dc2626', borderColor: '#fecaca', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                    onClick={handleDeleteAllAlerts}
+                    title="Delete and clear all system messages and alerts"
+                  >
+                    <IconTrash size={11} color="#dc2626" />
+                    <span>Clear All</span>
+                  </button>
+                )}
                 {unreadAlertsCount > 0 && (
                   <button
                     type="button"
@@ -5659,6 +6187,15 @@ export default function App() {
                               onClick={() => handleToggleAlertRead(alert.id)}
                             >
                               {isUnread ? 'Mark as read' : 'Mark unread'}
+                            </button>
+                            <button
+                              type="button"
+                              style={{ background: 'transparent', border: 'none', fontSize: '11px', color: '#ef4444', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px', marginLeft: 'auto' }}
+                              onClick={() => handleDeleteAlert(alert.id)}
+                              title="Delete alert"
+                            >
+                              <IconTrash size={12} color="#ef4444" />
+                              <span>Delete</span>
                             </button>
                           </div>
                         </div>
@@ -5877,66 +6414,203 @@ export default function App() {
       {/* MODAL: ADMINISTRATOR PROFILE & STATUS */}
       {/* ============================================================== */}
       {isProfileModalOpen && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setIsProfileModalOpen(false)}>
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => { setIsProfileModalOpen(false); setIsEditingAdminProfile(false); }}>
           <div
             className="modal-content"
-            style={{ maxWidth: '420px', width: '100%', borderRadius: '12px' }}
+            style={{ maxWidth: isEditingAdminProfile ? '480px' : '420px', width: '100%', borderRadius: '12px' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <IconUserCircle size={20} color="#f97316" />
-                <h2 className="modal-title">Administrator Profile</h2>
+                <h2 className="modal-title">
+                  {isEditingAdminProfile ? 'Edit Administrator Profile' : 'Administrator Profile'}
+                </h2>
               </div>
-              <button className="btn-close" onClick={() => setIsProfileModalOpen(false)} aria-label="Close">
+              <button
+                className="btn-close"
+                onClick={() => { setIsProfileModalOpen(false); setIsEditingAdminProfile(false); }}
+                aria-label="Close"
+              >
                 <IconX size={16} />
               </button>
             </div>
 
-            <div className="modal-body" style={{ textAlign: 'center', padding: '24px 20px' }}>
-              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#ffedd5', color: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-                <IconUserCircle size={40} color="#ea580c" />
-              </div>
-              <h3 style={{ margin: '0 0 4px', fontSize: '17px', color: '#0f172a' }}>System Administrator</h3>
-              <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748b' }}>admin@chafe.internal</p>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', color: '#059669', padding: '4px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 700 }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }}></span>
-                Full Enterprise Access Active
-              </div>
+            {isEditingAdminProfile ? (
+              <form onSubmit={handleSaveAdminProfile}>
+                <div className="modal-body" style={{ padding: '20px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Administrator Display Name</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={adminProfileForm.name || ''}
+                      onChange={(e) => setAdminProfileForm({ ...adminProfileForm, name: e.target.value })}
+                      required
+                    />
+                  </div>
 
-              <div style={{ marginTop: '20px', textAlign: 'left', background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                  <span style={{ color: '#64748b' }}>Role:</span>
-                  <strong>Root Admin / Manager</strong>
+                  <div className="form-group">
+                    <label className="form-label">Job Title / Manager Designation</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={adminProfileForm.title || ''}
+                      onChange={(e) => setAdminProfileForm({ ...adminProfileForm, title: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Username (Login ID)</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={adminProfileForm.username || ''}
+                        onChange={(e) => setAdminProfileForm({ ...adminProfileForm, username: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Contact Phone</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={adminProfileForm.phone || ''}
+                        onChange={(e) => setAdminProfileForm({ ...adminProfileForm, phone: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Administrator Email Address</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      value={adminProfileForm.email || ''}
+                      onChange={(e) => setAdminProfileForm({ ...adminProfileForm, email: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '12px', marginTop: '12px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+                      Security & Password (Optional)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div className="form-group">
+                        <label className="form-label">New Password</label>
+                        <input
+                          type="password"
+                          className="form-input"
+                          placeholder="Leave blank to keep"
+                          value={adminNewPassword}
+                          onChange={(e) => setAdminNewPassword(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Confirm Password</label>
+                        <input
+                          type="password"
+                          className="form-input"
+                          placeholder="Repeat new password"
+                          value={adminConfirmPassword}
+                          onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                  <span style={{ color: '#64748b' }}>Version:</span>
-                  <span>v2.4.0 Live Enterprise</span>
+
+                <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setIsEditingAdminProfile(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary">
+                    Save Profile Changes
+                  </button>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                  <span style={{ color: '#64748b' }}>Active Alerts:</span>
-                  <strong style={{ color: '#ea580c' }}>{allAlerts.length} Messages</strong>
+              </form>
+            ) : (
+              <div>
+                <div className="modal-body" style={{ textAlign: 'center', padding: '24px 20px' }}>
+                  <div style={{ width: '68px', height: '68px', borderRadius: '50%', background: '#ffedd5', color: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', fontSize: '24px', fontWeight: 900 }}>
+                    {(adminProfile?.name || 'AD').substring(0, 2).toUpperCase()}
+                  </div>
+                  <h3 style={{ margin: '0 0 4px', fontSize: '18px', color: '#0f172a', fontWeight: 800 }}>
+                    {adminProfile?.name || 'System Administrator'}
+                  </h3>
+                  <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#64748b' }}>
+                    {adminProfile?.email || 'admin@chafe.internal'}
+                  </p>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', color: '#059669', padding: '4px 14px', borderRadius: '16px', fontSize: '12px', fontWeight: 700 }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }}></span>
+                    {adminProfile?.access_level || 'Full Enterprise Access Active'}
+                  </div>
+
+                  <div style={{ marginTop: '20px', textAlign: 'left', background: '#f8fafc', padding: '14px 16px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                      <span style={{ color: '#64748b' }}>Role Title:</span>
+                      <strong>{adminProfile?.title || 'System Administrator & General Manager'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                      <span style={{ color: '#64748b' }}>Username ID:</span>
+                      <strong style={{ color: '#0284c7' }}>@{adminProfile?.username || 'admin'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                      <span style={{ color: '#64748b' }}>Direct Contact:</span>
+                      <span>{adminProfile?.phone || '+1 (555) 234-5678'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                      <span style={{ color: '#64748b' }}>Version:</span>
+                      <span>{adminProfile?.version || 'v2.4.0 Live Enterprise'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                      <span style={{ color: '#64748b' }}>Active Alerts:</span>
+                      <strong style={{ color: '#ea580c' }}>{allAlerts.length} Messages</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ color: '#ef4444' }}
+                    onClick={() => { setIsProfileModalOpen(false); handleLogout(); }}
+                  >
+                    Sign Out
+                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ color: '#0284c7', borderColor: '#bae6fd' }}
+                      onClick={() => {
+                        setAdminProfileForm(adminProfile);
+                        setAdminNewPassword('');
+                        setAdminConfirmPassword('');
+                        setIsEditingAdminProfile(true);
+                      }}
+                    >
+                      <IconEdit size={13} style={{ marginRight: '4px' }} /> Edit Profile
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => setIsProfileModalOpen(false)}
+                    >
+                      Done
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-              <button
-                type="button"
-                className="btn-secondary"
-                style={{ color: '#ef4444' }}
-                onClick={() => { setIsProfileModalOpen(false); handleLogout() }}
-              >
-                Sign Out
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => setIsProfileModalOpen(false)}
-              >
-                Done
-              </button>
-            </div>
+            )}
           </div>
         </div>
       )}
