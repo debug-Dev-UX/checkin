@@ -23,6 +23,7 @@ export const TRANSLATIONS = {
     profile: 'Profile',
     myProfile: 'My Profile',
     switchAdminShort: 'Admin',
+    installApp: 'Install Chafé (Home Screen)',
 
     // Search
     searchPlaceholder: 'Search staff, station, tools...',
@@ -134,6 +135,7 @@ export const TRANSLATIONS = {
     profile: 'ព័ត៌មានផ្ទាល់ខ្លួន',
     myProfile: 'ព័ត៌មានផ្ទាល់ខ្លួន',
     switchAdminShort: 'អភិបាល',
+    installApp: 'ដំឡើង Chafé លើទូរស័ព្ទ (Home Screen)',
 
     // Search
     searchPlaceholder: 'ស្វែងរកបុគ្គលិក ស្ថានីយ ឧបករណ៍...',

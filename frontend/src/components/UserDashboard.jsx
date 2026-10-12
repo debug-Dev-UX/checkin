@@ -1204,6 +1204,26 @@ export default function UserDashboard({
                 <span>Store Alerts</span>
               </button>
 
+              <button
+                type="button"
+                className="drawer-nav-item"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.12) 0%, rgba(56, 189, 248, 0.06) 100%)',
+                  border: '1px solid rgba(2, 132, 199, 0.25)',
+                  borderRadius: '12px',
+                  marginTop: '8px'
+                }}
+                onClick={() => {
+                  setIsDrawerOpen(false)
+                  window.location.hash = '#install'
+                }}
+              >
+                <span style={{ fontSize: '18px' }}>📲</span>
+                <span style={{ fontWeight: 700, color: '#0284c7' }}>
+                  {t('installApp', 'Install Chafé (Home Screen)')}
+                </span>
+              </button>
+
               {onSwitchToAdmin && (
                 <>
                   <div style={{ height: '1px', background: '#f1f5f9', margin: '8px 0' }} />

@@ -67,6 +67,7 @@ import LoginForm from './components/LoginForm'
 import DayoffCalendar from './components/DayoffCalendar'
 import StaffPortal from './components/StaffPortal'
 import LoadingPage from './components/LoadingPage'
+import InstallModal from './components/InstallModal'
 import {
   Skeleton,
   SkeletonBannerCards,
@@ -1832,6 +1833,7 @@ export default function App() {
     return (
       <>
         <LoginForm apiBase={API_BASE} onLoginSuccess={handleLoginSuccess} />
+        <InstallModal />
         {toast && (
           <div className="toast-container">
             <div className={`toast ${toast.type}`}>
@@ -1853,6 +1855,7 @@ export default function App() {
           onLogout={handleLogout}
           showToast={showToast}
         />
+        <InstallModal />
         {toast && (
           <div className="toast-container">
             <div className={`toast ${toast.type}`}>
@@ -1867,16 +1870,19 @@ export default function App() {
   // Dedicated USER / CAMERA CHECK-IN TERMINAL (Accessible by Admin)
   if (navTab === 'user' || navTab === 'staff-scan') {
     return (
-      <UserDashboard
-        apiBase={API_BASE}
-        staffList={staffList}
-        onShiftUpdated={() => {
-          fetchOverviewData()
-          fetchStaffData()
-          fetchControlData()
-        }}
-        onSwitchToAdmin={() => setNavTab('overview')}
-      />
+      <>
+        <UserDashboard
+          apiBase={API_BASE}
+          staffList={staffList}
+          onShiftUpdated={() => {
+            fetchOverviewData()
+            fetchStaffData()
+            fetchControlData()
+          }}
+          onSwitchToAdmin={() => setNavTab('overview')}
+        />
+        <InstallModal />
+      </>
     )
   }
 
@@ -7016,6 +7022,8 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Home Screen PWA Auto-Install Modal */}
+      <InstallModal />
     </div>
   )
 }
