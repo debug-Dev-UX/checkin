@@ -381,6 +381,7 @@ export default function App() {
   const [auditSortBy, setAuditSortBy] = useState('default') // 'default' | 'longest_late' | 'most_late_shifts' | 'worst_grade' | 'best_grade'
   const [staffProfileViewTab, setStaffProfileViewTab] = useState('roster') // 'roster' | 'changes'
   const [staffChangeLogs, setStaffChangeLogs] = useState([])
+  const [adminViewingStaffProfile, setAdminViewingStaffProfile] = useState(null)
   const [messagesSubTab, setMessagesSubTab] = useState('inbox') // 'inbox' | 'broadcast' | 'history'
 
   // Administrator Profile State
@@ -3432,7 +3433,11 @@ export default function App() {
                         filteredStaffList.map((s) => (
                           <tr key={s.id}>
                             <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div
+                                style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+                                onClick={() => setAdminViewingStaffProfile(s)}
+                                title="Click to view full staff profile"
+                              >
                                 <div className="table-staff-avatar-wrap">
                                   {s.photo_url ? (
                                     <img
@@ -3454,7 +3459,7 @@ export default function App() {
                                   </div>
                                 </div>
                                 <div>
-                                  <div className="task-name-text">{s.name}</div>
+                                  <div className="task-name-text" style={{ color: '#0f172a', fontWeight: 700 }}>{s.name}</div>
                                   <div style={{ fontSize: '11px', color: '#94a3b8' }}>{s.email}</div>
                                 </div>
                               </div>
@@ -3503,6 +3508,15 @@ export default function App() {
                             </td>
 
                             <td style={{ textAlign: 'right' }}>
+                              <button
+                                className="btn-secondary"
+                                style={{ fontSize: '11px', padding: '4px 8px', marginRight: '6px', color: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                onClick={() => setAdminViewingStaffProfile(s)}
+                                title="View full staff profile"
+                              >
+                                <IconEye size={12} />
+                                <span>Profile</span>
+                              </button>
                               <button
                                 className="btn-secondary"
                                 style={{ fontSize: '11px', padding: '4px 8px', marginRight: '6px', color: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
@@ -5761,6 +5775,167 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: VIEW STAFF PROFILE (ADMIN INSPECTION) */}
+      {/* ============================================================== */}
+      {adminViewingStaffProfile && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setAdminViewingStaffProfile(null)}>
+          <div className="modal-content" style={{ maxWidth: '480px', padding: 0, overflow: 'hidden', borderRadius: '18px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+              padding: '24px 24px 34px',
+              color: '#ffffff',
+              position: 'relative'
+            }}>
+              <button
+                type="button"
+                className="btn-close"
+                style={{
+                  position: 'absolute',
+                  top: '16px',
+                  right: '16px',
+                  background: 'rgba(255,255,255,0.2)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setAdminViewingStaffProfile(null)}
+                aria-label="Close"
+              >
+                <IconX size={16} />
+              </button>
+              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>
+                Staff Member Profile • ព័ត៌មានបុគ្គលិក
+              </div>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#ffffff' }}>
+                {adminViewingStaffProfile.name}
+              </h2>
+              {adminViewingStaffProfile.nickname && (
+                <div style={{ fontSize: '13px', color: '#bae6fd', fontWeight: 700, marginTop: '2px' }}>
+                  @{adminViewingStaffProfile.nickname}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '0 24px 24px', marginTop: '-24px', background: '#ffffff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '18px' }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '16px',
+                  background: '#f8fafc',
+                  border: '3px solid #ffffff',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '20px',
+                  fontWeight: 900,
+                  color: '#0284c7',
+                  overflow: 'hidden'
+                }}>
+                  {adminViewingStaffProfile.photo_url ? (
+                    <img src={adminViewingStaffProfile.photo_url} alt={adminViewingStaffProfile.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    (adminViewingStaffProfile.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                  )}
+                </div>
+
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  padding: '5px 12px',
+                  borderRadius: '12px',
+                  background: adminViewingStaffProfile.is_on_shift ? '#dcfce7' : adminViewingStaffProfile.has_dayoff_today ? '#fef3c7' : '#f1f5f9',
+                  color: adminViewingStaffProfile.is_on_shift ? '#15803d' : adminViewingStaffProfile.has_dayoff_today ? '#b45309' : '#64748b'
+                }}>
+                  {adminViewingStaffProfile.is_on_shift ? '● On Shift Now' : adminViewingStaffProfile.has_dayoff_today ? '● Day Off Today' : '○ Off Duty'}
+                </span>
+              </div>
+
+              {/* Bio & About */}
+              {adminViewingStaffProfile.bio && (
+                <div style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  marginBottom: '14px'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0284c7', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    Personal Bio
+                  </div>
+                  <p style={{ margin: 0, fontSize: '12.5px', color: '#334155', lineHeight: '1.45' }}>
+                    {adminViewingStaffProfile.bio}
+                  </p>
+                </div>
+              )}
+
+              {/* Meta Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px', marginBottom: '18px' }}>
+                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Role</span>
+                  <strong style={{ color: '#0f172a' }}>{adminViewingStaffProfile.role || 'Barista'}</strong>
+                </div>
+                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Assigned Branch</span>
+                  <strong style={{ color: '#0f172a' }}>{branches.find(b => b.id === adminViewingStaffProfile.branch_id)?.name || adminViewingStaffProfile.branch_name || 'Store'}</strong>
+                </div>
+                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Shift Schedule</span>
+                  <strong style={{ color: '#0f172a' }}>{formatTime(adminViewingStaffProfile.shift_start)} - {formatTime(adminViewingStaffProfile.shift_end)}</strong>
+                </div>
+                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Login Username</span>
+                  <strong style={{ color: '#0284c7' }}>@{adminViewingStaffProfile.username || 'staff'}</strong>
+                </div>
+                {adminViewingStaffProfile.email && (
+                  <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+                    <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Email Address</span>
+                    <strong style={{ color: '#0f172a', wordBreak: 'break-all' }}>{adminViewingStaffProfile.email}</strong>
+                  </div>
+                )}
+                {adminViewingStaffProfile.phone && (
+                  <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
+                    <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Phone Contact</span>
+                    <strong style={{ color: '#0f172a' }}>{adminViewingStaffProfile.phone}</strong>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    const stf = adminViewingStaffProfile
+                    setAdminViewingStaffProfile(null)
+                    setEditingStaff({ ...stf, new_password: '' })
+                  }}
+                  style={{ fontSize: '12px' }}
+                >
+                  Edit Profile / Password
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setAdminViewingStaffProfile(null)}
+                  style={{ fontSize: '12px' }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

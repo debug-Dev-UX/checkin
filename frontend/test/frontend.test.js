@@ -531,5 +531,26 @@ test('Admin Profile Customization, Alert Deletion, and Performance Long-Late Fil
   assert.match(appContent, /Late Long Time/, 'App.jsx must render Late Long Time filter option')
 })
 
+test('Staff Profile Viewing & ErrorBoundary Bug Fix', async () => {
+  const staffPortalPath = path.resolve('src/components/StaffPortal.jsx')
+  const staffPortalContent = fs.readFileSync(staffPortalPath, 'utf-8')
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
+  const mainPath = path.resolve('src/main.jsx')
+  const mainContent = fs.readFileSync(mainPath, 'utf-8')
+
+  // 1. formatTime defined in StaffPortal to avoid ReferenceError when viewing profiles
+  assert.match(staffPortalContent, /function formatTime\(timeStr\)/, 'StaffPortal must define formatTime')
+  assert.match(staffPortalContent, /formatTime\(viewingTeammate\.shift_start\)/, 'StaffPortal must format coworker shift start')
+
+  // 2. Admin staff profile inspection modal in App.jsx
+  assert.match(appContent, /adminViewingStaffProfile/, 'App.jsx must track adminViewingStaffProfile')
+  assert.match(appContent, /Staff Member Profile/, 'App.jsx must render admin staff profile modal')
+
+  // 3. ErrorBoundary wrapping App in main.jsx
+  assert.match(mainContent, /ErrorBoundary/, 'main.jsx must wrap App in ErrorBoundary')
+})
+
+
 
 

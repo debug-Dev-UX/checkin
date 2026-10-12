@@ -857,5 +857,51 @@ export function IconSliders({ size = 16, color = 'currentColor', className = '' 
   )
 }
 
+/**
+ * Circular Glowing Neon Dots Loader Icon
+ * Matching the reference circular beads loading style.
+ */
+export function IconNeonLoader({ size = 24, className = '', color = '#00b4d8' }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      className={`icon-neon-loader ${className}`}
+      aria-hidden="true"
+    >
+      <g style={{ transformOrigin: '50px 50px', animation: 'neonSpinRotation 1.4s linear infinite' }}>
+        <circle cx="28.4" cy="74.5" r="1.1" fill={color} opacity="0.25" />
+        <circle cx="23.8" cy="69.8" r="1.3" fill={color} opacity="0.3" />
+        <circle cx="20.3" cy="64.3" r="1.5" fill={color} opacity="0.35" />
+        <circle cx="17.9" cy="58.2" r="1.8" fill={color} opacity="0.4" />
+        <circle cx="16.7" cy="51.8" r="2.1" fill={color} opacity="0.45" />
+        <circle cx="16.8" cy="45.4" r="2.4" fill={color} opacity="0.5" />
+        <circle cx="18.1" cy="39.2" r="2.7" fill={color} opacity="0.55" />
+        <circle cx="20.7" cy="33.4" r="3.1" fill={color} opacity="0.6" />
+        <circle cx="24.4" cy="28.3" r="3.5" fill={color} opacity="0.65" />
+        <circle cx="29.2" cy="24.0" r="3.9" fill={color} opacity="0.7" />
+        <circle cx="34.9" cy="20.7" r="4.3" fill={color} opacity="0.75" />
+        <circle cx="41.2" cy="18.5" r="4.7" fill={color} opacity="0.8" />
+        <circle cx="47.9" cy="17.6" r="5.1" fill={color} opacity="0.85" />
+        <circle cx="54.6" cy="18.0" r="5.5" fill={color} opacity="0.9" />
+        <circle cx="61.0" cy="19.7" r="6.0" fill={color} opacity="0.95" />
+        <circle cx="67.0" cy="22.6" r="6.5" fill={color} opacity="0.98" />
+        <circle cx="72.3" cy="26.7" r="7.0" fill={color} opacity="1" />
+        <circle cx="76.6" cy="31.8" r="7.5" fill={color} opacity="1" />
+        <circle cx="79.9" cy="37.8" r="8.1" fill={color} opacity="1" />
+        <circle cx="81.8" cy="44.4" r="8.7" fill={color} opacity="1" />
+        <circle cx="82.4" cy="51.3" r="9.3" fill={color} opacity="1" />
+        <circle cx="81.4" cy="58.2" r="9.9" fill={color} opacity="1" />
+        <circle cx="78.9" cy="64.8" r="10.5" fill={color} opacity="1" />
+        <circle cx="74.9" cy="70.9" r="11.2" fill={color} opacity="1" />
+        <circle cx="69.5" cy="76.1" r="12.0" fill={color} opacity="1" />
+        <circle cx="63.0" cy="80.1" r="12.8" fill={color} opacity="1" filter="drop-shadow(0 0 6px #00b4d8)" />
+      </g>
+    </svg>
+  )
+}
+
+
 
 

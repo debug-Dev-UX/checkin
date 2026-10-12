@@ -100,6 +100,22 @@ function playSuccessBeep() {
   }
 }
 
+// 12-Hour Time Formatter (e.g. "8:30 AM", "1:15 PM")
+function formatTime(timeStr) {
+  if (!timeStr) return '-'
+  if (typeof timeStr === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(timeStr.trim())) {
+    const parts = timeStr.trim().split(':')
+    let h = parseInt(parts[0], 10)
+    const m = parts[1]
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    h = h % 12 || 12
+    return `${h}:${m} ${ampm}`
+  }
+  const d = new Date(timeStr)
+  if (isNaN(d.getTime())) return timeStr
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+}
+
 export default function StaffPortal({
   staffUser,
   onLogout,
@@ -1933,7 +1949,19 @@ export default function StaffPortal({
                       const isMine = String(item.staff_id) === String(staffUser?.id) || item.name === staffUser?.name
 
                       return (
-                        <div key={item.id || Math.random()} className={`pro-dayoff-card ${isToday ? 'card-today-glow' : ''}`} style={isMine ? { borderColor: '#38bdf8', background: '#f0f9ff' } : {}}>
+                        <div
+                          key={item.id || Math.random()}
+                          className={`pro-dayoff-card ${isToday ? 'card-today-glow' : ''}`}
+                          style={{
+                            cursor: 'pointer',
+                            ...(isMine ? { borderColor: '#38bdf8', background: '#f0f9ff' } : {})
+                          }}
+                          onClick={() => {
+                            const match = allStaffList.find(s => String(s.id) === String(item.staff_id) || s.name === item.staff_name || s.name === item.name)
+                            if (match) setViewingTeammate(match)
+                          }}
+                          title="Click to view staff profile"
+                        >
                           <div className="dayoff-card-top">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span className="dayoff-type-icon">
@@ -2405,7 +2433,13 @@ export default function StaffPortal({
                       return (
                         <div
                           key={stf.id || idx}
+                          onClick={() => {
+                            const match = allStaffList.find(s => String(s.id) === String(stf.id) || (stf.email && s.email && s.email.toLowerCase() === stf.email.toLowerCase()) || s.name === stf.name) || stf
+                            setViewingTeammate(match)
+                          }}
+                          title="Click to view coworker profile"
                           style={{
+                            cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
