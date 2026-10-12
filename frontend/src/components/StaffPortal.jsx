@@ -40,6 +40,8 @@ import {
   IconGear,
   IconShield,
   IconSparkles,
+  IconTarget,
+  IconEnvelope,
 } from '../Icons'
 import { Skeleton } from './Skeleton'
 import ProfileView from './ProfileView'
