@@ -1,0 +1,24 @@
+{
+  "name": "Chafé • Guest & Staff Check-in System",
+  "short_name": "Chafé",
+  "description": "Artisan Café & Lounge Check-in and Checkout Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/loading-orb.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
