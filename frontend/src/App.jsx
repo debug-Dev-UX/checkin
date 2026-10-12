@@ -5783,137 +5783,352 @@ export default function App() {
       {/* MODAL: VIEW STAFF PROFILE (ADMIN INSPECTION) */}
       {/* ============================================================== */}
       {adminViewingStaffProfile && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setAdminViewingStaffProfile(null)}>
-          <div className="modal-content" style={{ maxWidth: '480px', padding: 0, overflow: 'hidden', borderRadius: '18px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{
-              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-              padding: '24px 24px 34px',
-              color: '#ffffff',
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setAdminViewingStaffProfile(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            background: 'rgba(11, 15, 25, 0.72)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+        >
+          <div
+            className="modal-content"
+            style={{
+              maxWidth: '430px',
+              width: '100%',
+              padding: 0,
+              overflow: 'hidden',
+              borderRadius: '24px',
+              background: '#ffffff',
+              border: '1px solid rgba(226, 232, 240, 0.9)',
+              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 25px rgba(2, 132, 199, 0.08)',
               position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Atmospheric Aura Ambient Glow */}
+            <div style={{
+              position: 'absolute',
+              top: '-60px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '320px',
+              height: '180px',
+              background: 'radial-gradient(circle, rgba(2, 132, 199, 0.28) 0%, rgba(14, 165, 233, 0.08) 55%, transparent 75%)',
+              filter: 'blur(40px)',
+              pointerEvents: 'none',
+              zIndex: 0
+            }} />
+
+            {/* Header Navigation Bar */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '18px 20px 10px',
+              position: 'relative',
+              zIndex: 1
             }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '11px',
+                fontWeight: 800,
+                letterSpacing: '0.6px',
+                textTransform: 'uppercase',
+                color: '#0284c7',
+                background: '#e0f2fe',
+                border: '1px solid rgba(2, 132, 199, 0.25)',
+                padding: '4px 10px',
+                borderRadius: '999px'
+              }}>
+                <IconCoffee size={12} color="#0284c7" />
+                <span>Staff Member Profile</span>
+              </div>
+
               <button
                 type="button"
-                className="btn-close"
+                onClick={() => setAdminViewingStaffProfile(null)}
+                aria-label="Close"
                 style={{
-                  position: 'absolute',
-                  top: '16px',
-                  right: '16px',
-                  background: 'rgba(255,255,255,0.2)',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '50%',
                   width: '32px',
                   height: '32px',
+                  borderRadius: '50%',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  color: '#64748b',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer'
                 }}
-                onClick={() => setAdminViewingStaffProfile(null)}
-                aria-label="Close"
               >
-                <IconX size={16} />
+                <IconX size={15} />
               </button>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>
-                Staff Member Profile • ព័ត៌មានបុគ្គលិក
-              </div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#ffffff' }}>
-                {adminViewingStaffProfile.name}
-              </h2>
-              {adminViewingStaffProfile.nickname && (
-                <div style={{ fontSize: '13px', color: '#bae6fd', fontWeight: 700, marginTop: '2px' }}>
-                  @{adminViewingStaffProfile.nickname}
-                </div>
-              )}
             </div>
 
-            <div style={{ padding: '0 24px 24px', marginTop: '-24px', background: '#ffffff' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '18px' }}>
-                <div style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '16px',
-                  background: '#f8fafc',
-                  border: '3px solid #ffffff',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '20px',
-                  fontWeight: 900,
-                  color: '#0284c7',
-                  overflow: 'hidden'
-                }}>
-                  {adminViewingStaffProfile.photo_url ? (
-                    <img src={adminViewingStaffProfile.photo_url} alt={adminViewingStaffProfile.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    (adminViewingStaffProfile.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-                  )}
+            {/* Hero Profile Body */}
+            <div style={{ padding: '4px 22px 22px', position: 'relative', zIndex: 1 }}>
+              {/* Centered Avatar with Status Ring */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '14px' }}>
+                <div style={{ position: 'relative', marginBottom: '10px' }}>
+                  <div style={{
+                    width: '80px',
+                    height: '80px',
+                    borderRadius: '50%',
+                    padding: '3px',
+                    background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 50%, #818cf8 100%)',
+                    boxShadow: '0 8px 24px rgba(2, 132, 199, 0.3)'
+                  }}>
+                    <div style={{
+                      width: '100%',
+                      height: '100%',
+                      borderRadius: '50%',
+                      background: '#f8fafc',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '22px',
+                      fontWeight: 900,
+                      color: '#0284c7'
+                    }}>
+                      {adminViewingStaffProfile.photo_url ? (
+                        <img
+                          src={adminViewingStaffProfile.photo_url}
+                          alt={adminViewingStaffProfile.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        (adminViewingStaffProfile.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                      )}
+                    </div>
+                  </div>
+
+                  <span
+                    style={{
+                      position: 'absolute',
+                      bottom: '2px',
+                      right: '2px',
+                      width: '14px',
+                      height: '14px',
+                      borderRadius: '50%',
+                      border: '2.5px solid #ffffff',
+                      background: adminViewingStaffProfile.is_on_shift
+                        ? '#10b981'
+                        : adminViewingStaffProfile.has_dayoff_today
+                        ? '#f59e0b'
+                        : '#94a3b8',
+                      boxShadow: adminViewingStaffProfile.is_on_shift ? '0 0 8px #10b981' : 'none'
+                    }}
+                    title={adminViewingStaffProfile.is_on_shift ? 'On Shift' : adminViewingStaffProfile.has_dayoff_today ? 'Day Off' : 'Off Duty'}
+                  />
                 </div>
 
-                <span style={{
-                  fontSize: '11px',
+                {/* Staff Name & Title */}
+                <h2 style={{
+                  margin: 0,
+                  fontSize: '20px',
                   fontWeight: 800,
-                  padding: '5px 12px',
-                  borderRadius: '12px',
-                  background: adminViewingStaffProfile.is_on_shift ? '#dcfce7' : adminViewingStaffProfile.has_dayoff_today ? '#fef3c7' : '#f1f5f9',
-                  color: adminViewingStaffProfile.is_on_shift ? '#15803d' : adminViewingStaffProfile.has_dayoff_today ? '#b45309' : '#64748b'
+                  color: '#0f172a',
+                  letterSpacing: '-0.3px',
+                  textAlign: 'center'
                 }}>
-                  {adminViewingStaffProfile.is_on_shift ? '● On Shift Now' : adminViewingStaffProfile.has_dayoff_today ? '● Day Off Today' : '○ Off Duty'}
+                  {adminViewingStaffProfile.name}
+                </h2>
+
+                {adminViewingStaffProfile.nickname && (
+                  <span style={{
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#0284c7',
+                    background: 'rgba(2, 132, 199, 0.08)',
+                    border: '1px solid rgba(2, 132, 199, 0.2)',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    marginTop: '4px'
+                  }}>
+                    @{adminViewingStaffProfile.nickname}
+                  </span>
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '6px',
+                  fontSize: '12px',
+                  color: '#64748b'
+                }}>
+                  <strong style={{ color: '#334155' }}>
+                    {adminViewingStaffProfile.role || 'Barista'}
+                  </strong>
+                  <span>•</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                    <IconMapPin size={11} color="#0284c7" />
+                    <span>{branches.find(b => b.id === adminViewingStaffProfile.branch_id)?.name || adminViewingStaffProfile.branch_name || 'Store'}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Status Ribbon Pill */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '8px 14px',
+                borderRadius: '12px',
+                marginBottom: '14px',
+                fontSize: '12px',
+                fontWeight: 700,
+                background: adminViewingStaffProfile.is_on_shift
+                  ? '#ecfdf5'
+                  : adminViewingStaffProfile.has_dayoff_today
+                  ? '#fffbeb'
+                  : '#f8fafc',
+                border: adminViewingStaffProfile.is_on_shift
+                  ? '1px solid rgba(16, 185, 129, 0.3)'
+                  : adminViewingStaffProfile.has_dayoff_today
+                  ? '1px solid rgba(245, 158, 11, 0.3)'
+                  : '1px solid #e2e8f0',
+                color: adminViewingStaffProfile.is_on_shift
+                  ? '#059669'
+                  : adminViewingStaffProfile.has_dayoff_today
+                  ? '#d97706'
+                  : '#64748b'
+              }}>
+                <span style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: 'currentColor',
+                  boxShadow: adminViewingStaffProfile.is_on_shift ? '0 0 6px currentColor' : 'none'
+                }} />
+                <span>
+                  {adminViewingStaffProfile.is_on_shift
+                    ? 'Active On Duty • កំពុងបំពេញការងារ'
+                    : adminViewingStaffProfile.has_dayoff_today
+                    ? 'Scheduled Day Off • ថ្ងៃសម្រាក'
+                    : 'Off Duty • ក្រៅម៉ោងការងារ'}
                 </span>
               </div>
 
-              {/* Bio & About */}
-              {adminViewingStaffProfile.bio && (
+              {/* 2x2 Feature Stats Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '8px',
+                marginBottom: '14px'
+              }}>
                 <div style={{
                   background: '#f8fafc',
                   border: '1px solid #e2e8f0',
                   borderRadius: '12px',
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
+                    <IconClock size={12} color="#0284c7" />
+                    <span>Shift Hours</span>
+                  </div>
+                  <strong style={{ fontSize: '12px', color: '#0f172a' }}>
+                    {formatTime(adminViewingStaffProfile.shift_start)} - {formatTime(adminViewingStaffProfile.shift_end)}
+                  </strong>
+                </div>
+
+                <div style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
+                    <IconBuilding size={12} color="#0284c7" />
+                    <span>Station</span>
+                  </div>
+                  <strong style={{ fontSize: '12px', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                    {branches.find(b => b.id === adminViewingStaffProfile.branch_id)?.name || adminViewingStaffProfile.branch_name || 'Store'}
+                  </strong>
+                </div>
+
+                <div style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
+                    <IconUser size={12} color="#0284c7" />
+                    <span>Username</span>
+                  </div>
+                  <strong style={{ fontSize: '12px', color: '#0284c7' }}>
+                    @{adminViewingStaffProfile.username || 'staff'}
+                  </strong>
+                </div>
+
+                <div style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
+                    <IconShield size={12} color="#0284c7" />
+                    <span>Staff Code</span>
+                  </div>
+                  <strong style={{ fontSize: '12px', color: '#0284c7' }}>
+                    #{String(adminViewingStaffProfile.id || '').slice(-6).toUpperCase() || 'STF-01'}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Bio & Passions Quote Card */}
+              {adminViewingStaffProfile.bio && (
+                <div style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '14px',
                   padding: '12px 14px',
                   marginBottom: '14px'
                 }}>
-                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0284c7', textTransform: 'uppercase', marginBottom: '4px' }}>
-                    Personal Bio
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '10.5px',
+                    fontWeight: 800,
+                    color: '#0284c7',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.6px',
+                    marginBottom: '4px'
+                  }}>
+                    <IconQuote size={12} color="#0284c7" />
+                    <span>Personal Bio</span>
                   </div>
-                  <p style={{ margin: 0, fontSize: '12.5px', color: '#334155', lineHeight: '1.45' }}>
+                  <p style={{
+                    margin: 0,
+                    fontSize: '12px',
+                    color: '#334155',
+                    lineHeight: '1.5'
+                  }}>
                     {adminViewingStaffProfile.bio}
                   </p>
                 </div>
               )}
 
-              {/* Meta Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px', marginBottom: '18px' }}>
-                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
-                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Role</span>
-                  <strong style={{ color: '#0f172a' }}>{adminViewingStaffProfile.role || 'Barista'}</strong>
-                </div>
-                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
-                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Assigned Branch</span>
-                  <strong style={{ color: '#0f172a' }}>{branches.find(b => b.id === adminViewingStaffProfile.branch_id)?.name || adminViewingStaffProfile.branch_name || 'Store'}</strong>
-                </div>
-                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
-                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Shift Schedule</span>
-                  <strong style={{ color: '#0f172a' }}>{formatTime(adminViewingStaffProfile.shift_start)} - {formatTime(adminViewingStaffProfile.shift_end)}</strong>
-                </div>
-                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
-                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Login Username</span>
-                  <strong style={{ color: '#0284c7' }}>@{adminViewingStaffProfile.username || 'staff'}</strong>
-                </div>
-                {adminViewingStaffProfile.email && (
-                  <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Email Address</span>
-                    <strong style={{ color: '#0f172a', wordBreak: 'break-all' }}>{adminViewingStaffProfile.email}</strong>
-                  </div>
-                )}
-                {adminViewingStaffProfile.phone && (
-                  <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '10px', border: '1px solid #f1f5f9' }}>
-                    <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Phone Contact</span>
-                    <strong style={{ color: '#0f172a' }}>{adminViewingStaffProfile.phone}</strong>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              {/* Actions Footer */}
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   type="button"
                   className="btn-secondary"
@@ -5922,17 +6137,33 @@ export default function App() {
                     setAdminViewingStaffProfile(null)
                     setEditingStaff({ ...stf, new_password: '' })
                   }}
-                  style={{ fontSize: '12px' }}
+                  style={{
+                    flex: 1,
+                    padding: '11px',
+                    borderRadius: '12px',
+                    fontSize: '13px',
+                    fontWeight: 700
+                  }}
                 >
-                  Edit Profile / Password
+                  Edit Credentials
                 </button>
                 <button
                   type="button"
-                  className="btn-primary"
                   onClick={() => setAdminViewingStaffProfile(null)}
-                  style={{ fontSize: '12px' }}
+                  style={{
+                    flex: 1,
+                    padding: '11px',
+                    background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)'
+                  }}
                 >
-                  Close
+                  Close Profile
                 </button>
               </div>
             </div>

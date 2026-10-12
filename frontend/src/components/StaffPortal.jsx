@@ -38,6 +38,8 @@ import {
   IconTrash,
   IconRotateCw,
   IconGear,
+  IconShield,
+  IconSparkles,
 } from '../Icons'
 import { Skeleton } from './Skeleton'
 import ProfileView from './ProfileView'
@@ -3143,157 +3145,419 @@ export default function StaffPortal({
       )}
       {/* COWORKER PROFILE MODAL (Staff can view other staff profile) */}
       {viewingTeammate && (
-        <div className="staff-modal-backdrop" onClick={() => setViewingTeammate(null)}>
+        <div
+          className="staff-modal-backdrop"
+          onClick={() => setViewingTeammate(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            background: 'rgba(11, 15, 25, 0.72)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+        >
           <div
             className="staff-modal-dialog"
-            style={{ maxWidth: '440px', width: '100%', padding: 0, overflow: 'hidden', borderRadius: '18px' }}
+            style={{
+              maxWidth: '430px',
+              width: '100%',
+              padding: 0,
+              overflow: 'hidden',
+              borderRadius: '24px',
+              background: themeMode === 'dark' ? '#0f172a' : '#ffffff',
+              border: themeMode === 'dark' ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(226, 232, 240, 0.9)',
+              boxShadow: themeMode === 'dark'
+                ? '0 25px 60px -12px rgba(0,0,0,0.7), 0 0 35px rgba(2, 132, 199, 0.18)'
+                : '0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 25px rgba(2, 132, 199, 0.08)',
+              position: 'relative'
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header Banner */}
+            {/* Top Atmospheric Aura Ambient Glow */}
             <div style={{
-              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-              padding: '20px 20px 32px',
-              color: '#ffffff',
-              position: 'relative'
+              position: 'absolute',
+              top: '-60px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '320px',
+              height: '180px',
+              background: 'radial-gradient(circle, rgba(2, 132, 199, 0.28) 0%, rgba(14, 165, 233, 0.08) 55%, transparent 75%)',
+              filter: 'blur(40px)',
+              pointerEvents: 'none',
+              zIndex: 0
+            }} />
+
+            {/* Header Navigation Bar */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '18px 20px 10px',
+              position: 'relative',
+              zIndex: 1
             }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '11px',
+                fontWeight: 800,
+                letterSpacing: '0.6px',
+                textTransform: 'uppercase',
+                color: '#0284c7',
+                background: themeMode === 'dark' ? 'rgba(2, 132, 199, 0.15)' : '#e0f2fe',
+                border: '1px solid rgba(2, 132, 199, 0.25)',
+                padding: '4px 10px',
+                borderRadius: '999px'
+              }}>
+                <IconCoffee size={12} color="#0284c7" />
+                <span>Coworker Profile</span>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setViewingTeammate(null)}
+                aria-label="Close"
                 style={{
-                  position: 'absolute',
-                  top: '14px',
-                  right: '14px',
                   width: '32px',
                   height: '32px',
                   borderRadius: '50%',
-                  background: 'rgba(255,255,255,0.2)',
-                  border: 'none',
-                  color: '#ffffff',
+                  background: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : '#f1f5f9',
+                  border: themeMode === 'dark' ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid #e2e8f0',
+                  color: themeMode === 'dark' ? '#cbd5e1' : '#64748b',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
                 }}
               >
-                <IconX size={16} />
+                <IconX size={15} />
               </button>
-              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'rgba(255,255,255,0.8)', marginBottom: '4px' }}>
-                Coworker Profile • Team Member Profile • មិត្តរួមការងារ
-              </div>
-              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#ffffff' }}>
-                {viewingTeammate.name}
-              </h2>
-              {viewingTeammate.nickname && (
-                <div style={{ fontSize: '13px', color: '#bae6fd', fontWeight: 700, marginTop: '2px' }}>
-                  @{viewingTeammate.nickname}
-                </div>
-              )}
             </div>
 
-            {/* Profile Content Body */}
-            <div style={{
-              padding: '0 20px 20px',
-              marginTop: '-24px',
-              background: themeMode === 'dark' ? '#0f172a' : '#ffffff'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px' }}>
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  borderRadius: '16px',
-                  background: '#f8fafc',
-                  border: '3px solid #ffffff',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '18px',
-                  fontWeight: 900,
-                  color: '#0284c7',
-                  overflow: 'hidden'
-                }}>
-                  {viewingTeammate.photo_url ? (
-                    <img src={viewingTeammate.photo_url} alt={viewingTeammate.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    (viewingTeammate.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-                  )}
+            {/* Hero Profile Body */}
+            <div style={{ padding: '4px 22px 22px', position: 'relative', zIndex: 1 }}>
+              {/* Centered Avatar with Status Ring */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '14px' }}>
+                <div style={{ position: 'relative', marginBottom: '10px' }}>
+                  <div style={{
+                    width: '80px',
+                    height: '80px',
+                    borderRadius: '50%',
+                    padding: '3px',
+                    background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 50%, #818cf8 100%)',
+                    boxShadow: '0 8px 24px rgba(2, 132, 199, 0.3)'
+                  }}>
+                    <div style={{
+                      width: '100%',
+                      height: '100%',
+                      borderRadius: '50%',
+                      background: themeMode === 'dark' ? '#1e293b' : '#f8fafc',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '22px',
+                      fontWeight: 900,
+                      color: '#0284c7'
+                    }}>
+                      {viewingTeammate.photo_url ? (
+                        <img
+                          src={viewingTeammate.photo_url}
+                          alt={viewingTeammate.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        (viewingTeammate.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Status dot pinned to avatar */}
+                  <span
+                    style={{
+                      position: 'absolute',
+                      bottom: '2px',
+                      right: '2px',
+                      width: '14px',
+                      height: '14px',
+                      borderRadius: '50%',
+                      border: `2.5px solid ${themeMode === 'dark' ? '#0f172a' : '#ffffff'}`,
+                      background: viewingTeammate.is_on_shift
+                        ? '#10b981'
+                        : viewingTeammate.has_dayoff_today
+                        ? '#f59e0b'
+                        : '#94a3b8',
+                      boxShadow: viewingTeammate.is_on_shift ? '0 0 8px #10b981' : 'none'
+                    }}
+                    title={viewingTeammate.is_on_shift ? 'On Shift' : viewingTeammate.has_dayoff_today ? 'Day Off' : 'Off Duty'}
+                  />
                 </div>
 
-                <span style={{
-                  fontSize: '11px',
+                {/* Staff Name & Title */}
+                <h2 style={{
+                  margin: 0,
+                  fontSize: '20px',
                   fontWeight: 800,
-                  padding: '4px 10px',
-                  borderRadius: '12px',
-                  background: viewingTeammate.is_on_shift ? '#dcfce7' : viewingTeammate.has_dayoff_today ? '#fef3c7' : '#f1f5f9',
-                  color: viewingTeammate.is_on_shift ? '#15803d' : viewingTeammate.has_dayoff_today ? '#b45309' : '#64748b'
+                  color: themeMode === 'dark' ? '#f8fafc' : '#0f172a',
+                  letterSpacing: '-0.3px',
+                  textAlign: 'center'
                 }}>
-                  {viewingTeammate.is_on_shift ? '● On Shift Now' : viewingTeammate.has_dayoff_today ? '● Day Off Today' : '○ Off Duty'}
+                  {viewingTeammate.name}
+                </h2>
+
+                {viewingTeammate.nickname && (
+                  <span style={{
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#0284c7',
+                    background: themeMode === 'dark' ? 'rgba(2, 132, 199, 0.12)' : 'rgba(2, 132, 199, 0.08)',
+                    border: '1px solid rgba(2, 132, 199, 0.2)',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    marginTop: '4px'
+                  }}>
+                    @{viewingTeammate.nickname}
+                  </span>
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '6px',
+                  fontSize: '12px',
+                  color: themeMode === 'dark' ? '#94a3b8' : '#64748b'
+                }}>
+                  <strong style={{ color: themeMode === 'dark' ? '#cbd5e1' : '#334155' }}>
+                    {viewingTeammate.role || 'Barista'}
+                  </strong>
+                  <span>•</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                    <IconMapPin size={11} color="#0284c7" />
+                    <span>{viewingTeammate.branch_name || 'Chafé Store'}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Status Ribbon Pill */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '8px 14px',
+                borderRadius: '12px',
+                marginBottom: '14px',
+                fontSize: '12px',
+                fontWeight: 700,
+                background: viewingTeammate.is_on_shift
+                  ? (themeMode === 'dark' ? 'rgba(16, 185, 129, 0.15)' : '#ecfdf5')
+                  : viewingTeammate.has_dayoff_today
+                  ? (themeMode === 'dark' ? 'rgba(245, 158, 11, 0.15)' : '#fffbeb')
+                  : (themeMode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : '#f8fafc'),
+                border: viewingTeammate.is_on_shift
+                  ? '1px solid rgba(16, 185, 129, 0.3)'
+                  : viewingTeammate.has_dayoff_today
+                  ? '1px solid rgba(245, 158, 11, 0.3)'
+                  : (themeMode === 'dark' ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #e2e8f0'),
+                color: viewingTeammate.is_on_shift
+                  ? '#059669'
+                  : viewingTeammate.has_dayoff_today
+                  ? '#d97706'
+                  : '#64748b'
+              }}>
+                <span style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: 'currentColor',
+                  boxShadow: viewingTeammate.is_on_shift ? '0 0 6px currentColor' : 'none'
+                }} />
+                <span>
+                  {viewingTeammate.is_on_shift
+                    ? 'Active On Duty • កំពុងបំពេញការងារ'
+                    : viewingTeammate.has_dayoff_today
+                    ? 'Scheduled Day Off • ថ្ងៃសម្រាក'
+                    : 'Off Duty • ក្រៅម៉ោងការងារ'}
                 </span>
               </div>
 
-              {/* Bio & Passions Card */}
+              {/* 2x2 Feature Stats Grid (Refined Ticket Style) */}
               <div style={{
-                background: themeMode === 'dark' ? '#1e293b' : '#f8fafc',
-                border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}`,
-                borderRadius: '12px',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '8px',
+                marginBottom: '14px'
+              }}>
+                <div style={{
+                  background: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#f8fafc',
+                  border: themeMode === 'dark' ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
+                    <IconClock size={12} color="#0284c7" />
+                    <span>Shift Hours</span>
+                  </div>
+                  <strong style={{ fontSize: '12px', color: themeMode === 'dark' ? '#f1f5f9' : '#0f172a' }}>
+                    {formatTime(viewingTeammate.shift_start)} - {formatTime(viewingTeammate.shift_end)}
+                  </strong>
+                </div>
+
+                <div style={{
+                  background: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#f8fafc',
+                  border: themeMode === 'dark' ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
+                    <IconBuilding size={12} color="#0284c7" />
+                    <span>Station</span>
+                  </div>
+                  <strong style={{ fontSize: '12px', color: themeMode === 'dark' ? '#f1f5f9' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                    {viewingTeammate.branch_name || 'Chafé Store'}
+                  </strong>
+                </div>
+
+                <div style={{
+                  background: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#f8fafc',
+                  border: themeMode === 'dark' ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
+                    <IconShield size={12} color="#0284c7" />
+                    <span>Staff Code</span>
+                  </div>
+                  <strong style={{ fontSize: '12px', color: '#0284c7' }}>
+                    #{String(viewingTeammate.id || '').slice(-6).toUpperCase() || 'STF-01'}
+                  </strong>
+                </div>
+
+                <div style={{
+                  background: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#f8fafc',
+                  border: themeMode === 'dark' ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
+                    <IconAward size={12} color="#0284c7" />
+                    <span>Experience</span>
+                  </div>
+                  <strong style={{ fontSize: '12px', color: '#059669' }}>
+                    Verified Team
+                  </strong>
+                </div>
+              </div>
+
+              {/* Bio & Passions Quote Card */}
+              <div style={{
+                background: themeMode === 'dark' ? 'rgba(255, 255, 255, 0.02)' : '#f8fafc',
+                border: themeMode === 'dark' ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid #e2e8f0',
+                borderRadius: '14px',
                 padding: '12px 14px',
                 marginBottom: '14px'
               }}>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: '#0284c7', textTransform: 'uppercase', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <IconQuote size={13} color="#0284c7" />
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '10.5px',
+                  fontWeight: 800,
+                  color: '#0284c7',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.6px',
+                  marginBottom: '4px'
+                }}>
+                  <IconQuote size={12} color="#0284c7" />
                   <span>About & Coffee Passions</span>
                 </div>
-                <p style={{ margin: 0, fontSize: '12.5px', color: viewingTeammate.bio ? (themeMode === 'dark' ? '#cbd5e1' : '#334155') : '#94a3b8', fontStyle: viewingTeammate.bio ? 'normal' : 'italic', lineHeight: '1.45' }}>
-                  {viewingTeammate.bio || 'This team member hasn\'t written their personal bio yet.'}
+                <p style={{
+                  margin: 0,
+                  fontSize: '12px',
+                  color: viewingTeammate.bio
+                    ? (themeMode === 'dark' ? '#cbd5e1' : '#334155')
+                    : (themeMode === 'dark' ? '#64748b' : '#94a3b8'),
+                  fontStyle: viewingTeammate.bio ? 'normal' : 'italic',
+                  lineHeight: '1.5'
+                }}>
+                  {viewingTeammate.bio || 'Chafé coffee enthusiast & dedicated team member passionate about specialty craft.'}
                 </p>
               </div>
 
-              {/* Meta Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', marginBottom: '16px' }}>
-                <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '10px 12px', borderRadius: '10px' }}>
-                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Role</span>
-                  <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{viewingTeammate.role || 'Barista'}</strong>
-                </div>
-                <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '10px 12px', borderRadius: '10px' }}>
-                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Store Branch</span>
-                  <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{viewingTeammate.branch_name || 'Chafé Store'}</strong>
-                </div>
-                <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '10px 12px', borderRadius: '10px' }}>
-                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Shift Hours</span>
-                  <strong style={{ color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>{formatTime(viewingTeammate.shift_start)} - {formatTime(viewingTeammate.shift_end)}</strong>
-                </div>
-                <div style={{ background: themeMode === 'dark' ? '#1e293b' : '#f8fafc', padding: '10px 12px', borderRadius: '10px' }}>
-                  <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Status</span>
-                  <strong style={{ color: '#059669' }}>Verified Team</strong>
-                </div>
+              {/* Verified Skills Strip */}
+              <div style={{
+                display: 'flex',
+                gap: '6px',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+                marginBottom: '16px'
+              }}>
+                <span style={{
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                  padding: '3px 8px',
+                  borderRadius: '8px',
+                  background: 'rgba(2, 132, 199, 0.1)',
+                  color: '#0284c7',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <IconAward size={11} /> Team Member
+                </span>
+                <span style={{
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                  padding: '3px 8px',
+                  borderRadius: '8px',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  color: '#059669',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <IconCheck size={11} /> Verified Identity
+                </span>
+                <span style={{
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                  padding: '3px 8px',
+                  borderRadius: '8px',
+                  background: 'rgba(234, 88, 12, 0.1)',
+                  color: '#ea580c',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <IconCoffee size={11} /> Coffee Artisan
+                </span>
               </div>
 
-              {/* Badges Strip */}
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
-                <span style={{ fontSize: '10.5px', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', background: 'rgba(2,132,199,0.1)', color: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  <IconAward size={12} /> Team Member
-                </span>
-                <span style={{ fontSize: '10.5px', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', background: 'rgba(16,185,129,0.1)', color: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  <IconCheck size={12} /> Verified Identity
-                </span>
-                <span style={{ fontSize: '10.5px', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', background: 'rgba(234,88,12,0.1)', color: '#ea580c', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  <IconCoffee size={12} /> Coffee Artisan
-                </span>
-              </div>
-
+              {/* Close Button */}
               <button
                 type="button"
                 onClick={() => setViewingTeammate(null)}
                 style={{
                   width: '100%',
-                  padding: '10px',
-                  background: '#0f172a',
+                  padding: '11px',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
                   color: '#ffffff',
                   border: 'none',
-                  borderRadius: '10px',
+                  borderRadius: '12px',
                   fontWeight: 700,
                   fontSize: '13px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)',
+                  transition: 'transform 0.15s ease'
                 }}
               >
                 Close Profile
