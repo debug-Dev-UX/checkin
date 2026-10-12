@@ -1081,11 +1081,16 @@ export default function StaffPortal({
             title="Open Menu"
             aria-label="Open Navigation Menu"
           >
-            <IconMenu size={22} color="#ffffff" />
+            <IconMenu size={20} color="#ffffff" />
           </button>
-          <div className="mobile-header-brand-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <img src="/png-logo.png" alt="Chafé" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'contain' }} />
-            <span>{t('staffWorkspace', 'Chafé • Staff Workspace')}</span>
+          <div className="mobile-header-brand-unit">
+            <div className="mobile-header-brand-logo-wrap">
+              <img src="/png-logo.png" alt="Chafé Logo" className="mobile-header-brand-logo-img" />
+            </div>
+            <div className="mobile-header-brand-text-block">
+              <span className="mobile-header-brand-name">Chafé</span>
+              <span className="mobile-header-brand-badge">{t('staffWorkspaceShort', 'Staff Workspace')}</span>
+            </div>
           </div>
         </div>
 

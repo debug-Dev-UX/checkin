@@ -5,6 +5,7 @@ export const TRANSLATIONS = {
     // Header & Workspace
     appName: 'Chafé',
     staffWorkspace: 'Chafé • Staff Workspace',
+    staffWorkspaceShort: 'Staff Workspace',
     workspaceSubtitle: 'Attendance, Daily Shift Rosters, Stations & Performance Operations',
     terminalActive: 'Terminal Active',
     readyToScan: 'Ready to Scan',
@@ -115,6 +116,7 @@ export const TRANSLATIONS = {
     // Header & Workspace
     appName: 'Chafé',
     staffWorkspace: 'Chafé • កន្លែងធ្វើការបុគ្គលិក',
+    staffWorkspaceShort: 'កន្លែងធ្វើការបុគ្គលិក',
     workspaceSubtitle: 'ការចុះវត្តមាន វេនការងារប្រចាំថ្ងៃ ស្ថានីយ និងប្រតិបត្តិការការងារ',
     terminalActive: 'ស្ថានីយដំណើរការ',
     readyToScan: 'រួចរាល់ដើម្បីស្កេន',
