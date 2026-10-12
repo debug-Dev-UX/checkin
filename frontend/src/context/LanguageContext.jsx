@@ -26,7 +26,7 @@ export const TRANSLATIONS = {
     installApp: 'Install Chafé (Home Screen)',
 
     // Search
-    searchPlaceholder: 'Search staff, station, tools...',
+    searchPlaceholder: 'Search...',
     searchShifts: 'Search shifts, staff name, date...',
     searchTable: 'Search by staff, branch, or security tag...',
 
@@ -138,7 +138,7 @@ export const TRANSLATIONS = {
     installApp: 'ដំឡើង Chafé លើទូរស័ព្ទ (Home Screen)',
 
     // Search
-    searchPlaceholder: 'ស្វែងរកបុគ្គលិក ស្ថានីយ ឧបករណ៍...',
+    searchPlaceholder: 'ស្វែងរក...',
     searchShifts: 'ស្វែងរកវេនការងារ ឈ្មោះ កាលបរិច្ឆេទ...',
     searchTable: 'ស្វែងរកតាមឈ្មោះ សាខា ឬស្លាកសុវត្ថិភាព...',
 

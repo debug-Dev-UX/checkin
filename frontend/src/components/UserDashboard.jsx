@@ -658,7 +658,7 @@ export default function UserDashboard({
           <input
             type="text"
             className="mobile-header-search-input"
-            placeholder={t('searchPlaceholder', 'Search staff, station, tools...')}
+            placeholder={t('searchPlaceholder', 'Search...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />

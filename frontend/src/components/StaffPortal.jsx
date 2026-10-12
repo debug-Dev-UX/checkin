@@ -142,6 +142,10 @@ export default function StaffPortal({
   const [rosterSearch, setRosterSearch] = useState('')
   const [allStaffList, setAllStaffList] = useState([])
   const [allCheckinsList, setAllCheckinsList] = useState([])
+  const [scheduleViewType, setScheduleViewType] = useState('calendar') // 'calendar' | 'cards'
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date())
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [historyScope, setHistoryScope] = useState('all') // 'all' (All Staff) | 'my' (My Shifts)
   const [staffMessages, setStaffMessages] = useState([])
   const [viewingTeammate, setViewingTeammate] = useState(null)
   const [supportForm, setSupportForm] = useState({ subject: '', message: '', priority: 'normal' })
@@ -580,6 +584,151 @@ export default function StaffPortal({
       return true
     })
   }, [allDayoffs, dayoffFilter, rosterSearch, todayStr])
+
+  // Calendar month calculation
+  const calendarYear = calendarMonth.getFullYear()
+  const calendarMonthIdx = calendarMonth.getMonth()
+
+  const calendarCells = useMemo(() => {
+    const firstDay = new Date(calendarYear, calendarMonthIdx, 1)
+    const startingDay = firstDay.getDay() // 0 = Sunday
+    const totalDays = new Date(calendarYear, calendarMonthIdx + 1, 0).getDate()
+    const prevMonthTotal = new Date(calendarYear, calendarMonthIdx, 0).getDate()
+
+    const cells = []
+    // Previous month filler
+    for (let i = startingDay - 1; i >= 0; i--) {
+      const dayNum = prevMonthTotal - i
+      const d = new Date(calendarYear, calendarMonthIdx - 1, dayNum)
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const dt = String(dayNum).padStart(2, '0')
+      cells.push({
+        dayNum,
+        dateStr: `${y}-${m}-${dt}`,
+        isCurrentMonth: false,
+      })
+    }
+    // Current month days
+    for (let i = 1; i <= totalDays; i++) {
+      const m = String(calendarMonthIdx + 1).padStart(2, '0')
+      const dt = String(i).padStart(2, '0')
+      cells.push({
+        dayNum: i,
+        dateStr: `${calendarYear}-${m}-${dt}`,
+        isCurrentMonth: true,
+      })
+    }
+    // Next month filler
+    const remainder = (7 - (cells.length % 7)) % 7
+    for (let i = 1; i <= remainder; i++) {
+      const d = new Date(calendarYear, calendarMonthIdx + 1, i)
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const dt = String(i).padStart(2, '0')
+      cells.push({
+        dayNum: i,
+        dateStr: `${y}-${m}-${dt}`,
+        isCurrentMonth: false,
+      })
+    }
+    return cells
+  }, [calendarYear, calendarMonthIdx])
+
+  const calendarMonthTitle = useMemo(() => {
+    return calendarMonth.toLocaleDateString([], { month: 'long', year: 'numeric' })
+  }, [calendarMonth])
+
+  // Map own dayoffs by date YYYY-MM-DD
+  const myDayoffsByDate = useMemo(() => {
+    const map = {}
+    dayoffs.forEach(item => {
+      if (!item.date) return
+      const dStr = String(item.date).substring(0, 10)
+      if (!map[dStr]) map[dStr] = []
+      map[dStr].push(item)
+    })
+    return map
+  }, [dayoffs])
+
+  // Map all team dayoffs by date YYYY-MM-DD
+  const teamDayoffsByDate = useMemo(() => {
+    const map = {}
+    allDayoffs.forEach(item => {
+      if (!item.date) return
+      const dStr = String(item.date).substring(0, 10)
+      if (rosterSearch.trim()) {
+        const q = rosterSearch.toLowerCase()
+        const sName = (item.staff_name || item.name || '').toLowerCase()
+        const sBranch = (item.branch_name || '').toLowerCase()
+        const sType = (item.type || '').toLowerCase()
+        const sReason = (item.reason || '').toLowerCase()
+        if (!sName.includes(q) && !sBranch.includes(q) && !sType.includes(q) && !sReason.includes(q)) return
+      }
+      if (!map[dStr]) map[dStr] = []
+      map[dStr].push(item)
+    })
+    return map
+  }, [allDayoffs, rosterSearch])
+
+  // Month navigation handlers
+  const handlePrevMonth = () => {
+    setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+  }
+  const handleNextMonth = () => {
+    setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+  }
+  const handleTodayMonth = () => {
+    const now = new Date()
+    setCalendarMonth(now)
+    setSelectedCalendarDate(now.toISOString().split('T')[0])
+  }
+
+  // Count of days off this month
+  const monthDayoffCount = useMemo(() => {
+    const currentMonthPrefix = `${calendarYear}-${String(calendarMonthIdx + 1).padStart(2, '0')}`
+    if (scheduleMode === 'own') {
+      return dayoffs.filter(d => String(d.date).startsWith(currentMonthPrefix)).length
+    }
+    return allDayoffs.filter(d => String(d.date).startsWith(currentMonthPrefix)).length
+  }, [scheduleMode, dayoffs, allDayoffs, calendarYear, calendarMonthIdx])
+
+  // Shift logs date and time formatters
+  const formatLogDate = useCallback((dateVal) => {
+    if (!dateVal) return '-'
+    const d = new Date(dateVal)
+    if (isNaN(d.getTime())) return '-'
+    const today = new Date()
+    if (
+      d.getFullYear() === today.getFullYear() &&
+      d.getMonth() === today.getMonth() &&
+      d.getDate() === today.getDate()
+    ) {
+      return 'today'
+    }
+    const dd = String(d.getDate()).padStart(2, '0')
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const yy = String(d.getFullYear()).slice(-2)
+    return `${dd}/${mm}/${yy}`
+  }, [])
+
+  const formatLogTime = useCallback((dateVal) => {
+    if (!dateVal) return '-'
+    const d = new Date(dateVal)
+    if (isNaN(d.getTime())) return '-'
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    return `${hh}:${mm}s`
+  }, [])
+
+  const displayedHistoryLogs = useMemo(() => {
+    const list = historyScope === 'my' ? (recentLogs || []) : (allCheckinsList || [])
+    return [...list].sort((a, b) => {
+      const timeA = a.check_in_at ? new Date(a.check_in_at).getTime() : 0
+      const timeB = b.check_in_at ? new Date(b.check_in_at).getTime() : 0
+      return timeB - timeA
+    })
+  }, [historyScope, recentLogs, allCheckinsList])
 
   // TOP Staff Leaderboard Rankings
   const topRankings = useMemo(() => {
@@ -1161,7 +1310,7 @@ export default function StaffPortal({
           <input
             type="text"
             className="mobile-header-search-input"
-            placeholder={t('searchPlaceholder', 'Search staff, station, tools...')}
+            placeholder={t('searchPlaceholder', 'Search...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -1473,34 +1622,67 @@ export default function StaffPortal({
                     {t('noRecentLogs', 'No recent shift logs recorded yet.')}
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {recentLogs.slice(0, 3).map((log) => (
-                      <div
-                        key={log.id}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '10px 12px',
-                          borderRadius: '10px',
-                          background: '#f8fafc',
-                          border: '1px solid #f1f5f9'
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a' }}>
-                            {log.check_in_at ? new Date(log.check_in_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Shift'}
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#64748b' }}>
-                            {log.check_in_at ? new Date(log.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
-                            {log.check_out_at && ` → ${new Date(log.check_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                          </div>
-                        </div>
-                        <span className={`pro-badge ${log.status === 'checked_in' ? 'badge-emerald' : 'badge-slate'}`}>
-                          {log.status === 'checked_in' ? 'Active' : 'Completed'}
-                        </span>
-                      </div>
-                    ))}
+                  <div className="pro-table-wrapper" style={{ margin: 0 }}>
+                    <table className="pro-shift-logs-table" style={{ fontSize: '11.5px' }}>
+                      <thead>
+                        <tr>
+                          <th>DATE</th>
+                          <th>NAME</th>
+                          <th>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span className="log-circle circle-green" style={{ fontSize: '11px' }}>●</span>
+                              <span>IN</span>
+                            </div>
+                          </th>
+                          <th>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span className="log-circle circle-blue" style={{ fontSize: '11px' }}>●</span>
+                              <span>OUT</span>
+                            </div>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recentLogs.slice(0, 4).map((log) => {
+                          const inDate = log.check_in_at ? new Date(log.check_in_at) : null
+                          const outDate = log.check_out_at ? new Date(log.check_out_at) : null
+                          const isLate = log.punctuality_status === 'late' || (log.late_minutes && log.late_minutes > 0)
+                          const dateText = formatLogDate(log.check_in_at)
+                          const staffName = log.name || staffUser?.name || 'Staff'
+
+                          return (
+                            <tr key={log.id}>
+                              <td className="log-cell-date">
+                                {dateText === 'today' ? (
+                                  <span className="log-today-badge">today</span>
+                                ) : (
+                                  <span className="log-date-text">{dateText}</span>
+                                )}
+                              </td>
+                              <td><strong>{staffName}</strong></td>
+                              <td>
+                                {inDate ? (
+                                  <div className="log-time-wrapper">
+                                    <span className={`log-circle ${isLate ? 'circle-red' : 'circle-green'}`}>●</span>
+                                    <span className={`log-time-str ${isLate ? 'time-late' : ''}`}>{formatLogTime(inDate)}</span>
+                                  </div>
+                                ) : '-'}
+                              </td>
+                              <td>
+                                {outDate ? (
+                                  <div className="log-time-wrapper">
+                                    <span className="log-circle circle-blue">●</span>
+                                    <span className="log-time-str">{formatLogTime(outDate)}</span>
+                                  </div>
+                                ) : (
+                                  <span className="log-pending-dots">.......</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
@@ -1831,6 +2013,28 @@ export default function StaffPortal({
                   </div>
                 )}
 
+                {/* View switcher: Calendar View vs Cards View */}
+                <div className="pro-view-switcher">
+                  <button
+                    type="button"
+                    className={`pro-view-btn ${scheduleViewType === 'calendar' ? 'active' : ''}`}
+                    onClick={() => setScheduleViewType('calendar')}
+                    title="Calendar View"
+                  >
+                    <IconCalendar size={13} />
+                    <span>Calendar</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`pro-view-btn ${scheduleViewType === 'cards' ? 'active' : ''}`}
+                    onClick={() => setScheduleViewType('cards')}
+                    title="Cards / List View"
+                  >
+                    <IconFileText size={13} />
+                    <span>Cards</span>
+                  </button>
+                </div>
+
                 <div className="pro-filter-pills">
                   <button
                     type="button"
@@ -1863,8 +2067,249 @@ export default function StaffPortal({
                   <Skeleton width="100%" height="48px" borderRadius="8px" />
                   <Skeleton width="100%" height="48px" borderRadius="8px" />
                 </div>
+              ) : scheduleViewType === 'calendar' ? (
+                /* ========================================================== */
+                /* 1. CALENDAR VIEW (FOR BOTH DAY OFF ROSTER & SHIFT ROSTER)  */
+                /* ========================================================== */
+                <div className="staff-schedule-calendar-box">
+                  {/* Calendar Top Navigation Bar */}
+                  <div className="staff-calendar-nav-bar">
+                    <div className="staff-calendar-title-wrap">
+                      <h3 className="staff-calendar-month-heading">{calendarMonthTitle}</h3>
+                      <span className="staff-calendar-month-badge">
+                        {scheduleMode === 'own'
+                          ? `${monthDayoffCount} Scheduled Off`
+                          : `${monthDayoffCount} Team Leaves`}
+                      </span>
+                    </div>
+
+                    <div className="staff-calendar-nav-actions">
+                      <button
+                        type="button"
+                        className="staff-calendar-nav-arrow-btn"
+                        onClick={handlePrevMonth}
+                        title="Previous Month"
+                      >
+                        ‹
+                      </button>
+                      <button
+                        type="button"
+                        className="staff-calendar-today-btn"
+                        onClick={handleTodayMonth}
+                        title="Jump to Current Month & Today"
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        className="staff-calendar-nav-arrow-btn"
+                        onClick={handleNextMonth}
+                        title="Next Month"
+                      >
+                        ›
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Calendar Weekdays Row */}
+                  <div className="staff-calendar-weekdays-row">
+                    <div>SUN</div>
+                    <div>MON</div>
+                    <div>TUE</div>
+                    <div>WED</div>
+                    <div>THU</div>
+                    <div>FRI</div>
+                    <div>SAT</div>
+                  </div>
+
+                  {/* Calendar Cells Grid */}
+                  <div className="staff-calendar-cells-grid">
+                    {calendarCells.map((cell) => {
+                      const isToday = cell.dateStr === todayStr
+                      const isSelected = cell.dateStr === selectedCalendarDate
+                      const cellMyDayoffs = myDayoffsByDate[cell.dateStr] || []
+                      const cellTeamDayoffs = teamDayoffsByDate[cell.dateStr] || []
+
+                      return (
+                        <div
+                          key={cell.dateStr}
+                          className={`staff-calendar-cell ${cell.isCurrentMonth ? 'current-month' : 'other-month'} ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}`}
+                          onClick={() => setSelectedCalendarDate(cell.dateStr)}
+                        >
+                          <div className="staff-cell-top">
+                            <span className="staff-cell-day-num">{cell.dayNum}</span>
+                            {isToday && <span style={{ fontSize: '9px', fontWeight: 800, color: '#10b981' }}>TODAY</span>}
+                          </div>
+
+                          <div className="staff-cell-events-list">
+                            {scheduleMode === 'own' ? (
+                              // OWN DAYOFFS IN CELL
+                              cellMyDayoffs.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className={`staff-calendar-chip mine ${item.type === 'sick_leave' ? 'sick' : item.type === 'holiday' ? 'holiday' : ''}`}
+                                  title={item.reason || 'Day Off'}
+                                >
+                                  <span>🏖️</span>
+                                  <span>{String(item.type || 'DAY OFF').replace('_', ' ').toUpperCase()}</span>
+                                </div>
+                              ))
+                            ) : (
+                              // TEAM DAYOFFS IN CELL
+                              <>
+                                {cellTeamDayoffs.slice(0, 2).map((item) => {
+                                  const staffName = item.staff_name || item.name || 'Teammate'
+                                  const isMine = String(item.staff_id) === String(staffUser?.id) || item.name === staffUser?.name
+                                  return (
+                                    <div
+                                      key={item.id || Math.random()}
+                                      className={`staff-calendar-chip ${isMine ? 'mine' : ''} ${item.type === 'sick_leave' ? 'sick' : ''}`}
+                                      title={`${staffName} - ${item.reason || 'Scheduled Day Off'}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        const match = allStaffList.find(s => String(s.id) === String(item.staff_id) || s.name === item.staff_name || s.name === item.name)
+                                        if (match) setViewingTeammate(match)
+                                      }}
+                                    >
+                                      <div className="staff-calendar-chip-avatar">
+                                        {staffName.charAt(0).toUpperCase()}
+                                      </div>
+                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {staffName}
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                                {cellTeamDayoffs.length > 2 && (
+                                  <span className="staff-calendar-more-tag">
+                                    +{cellTeamDayoffs.length - 2} more
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Selected Date Summary Detail Panel */}
+                  <div className="staff-calendar-detail-panel">
+                    <div className="staff-detail-panel-header">
+                      <div className="staff-detail-panel-title">
+                        <span>SCHEDULE FOR: </span>
+                        <strong>
+                          {selectedCalendarDate
+                            ? new Date(selectedCalendarDate + 'T00:00:00').toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
+                            : 'Select a date'}
+                        </strong>
+                      </div>
+                      {selectedCalendarDate === todayStr && (
+                        <span className="pro-badge badge-emerald">TODAY</span>
+                      )}
+                    </div>
+
+                    {scheduleMode === 'own' ? (
+                      // Own dayoff details for selected date
+                      (myDayoffsByDate[selectedCalendarDate] || []).length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(myDayoffsByDate[selectedCalendarDate] || []).map((item) => (
+                            <div
+                              key={item.id}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '12px 14px',
+                                borderRadius: '10px',
+                                background: themeMode === 'dark' ? '#0f172a' : '#ffffff',
+                                border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}`
+                              }}
+                            >
+                              <div>
+                                <div style={{ fontWeight: 800, fontSize: '13px', color: '#0284c7' }}>
+                                  {String(item.type || 'DAY OFF').replace('_', ' ').toUpperCase()}
+                                </div>
+                                <div style={{ fontSize: '12px', color: themeMode === 'dark' ? '#cbd5e1' : '#64748b', marginTop: '2px' }}>
+                                  {item.reason || 'Rest & Recreation'}
+                                </div>
+                              </div>
+                              <span className="pro-badge badge-blue">
+                                {selectedCalendarDate === todayStr ? 'TODAY' : selectedCalendarDate > todayStr ? 'UPCOMING' : 'COMPLETED'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '12.5px', color: themeMode === 'dark' ? '#94a3b8' : '#64748b', padding: '6px 0' }}>
+                          ✓ Regular shift scheduled. No day off on this date.
+                        </div>
+                      )
+                    ) : (
+                      // Team dayoff details for selected date
+                      (teamDayoffsByDate[selectedCalendarDate] || []).length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(teamDayoffsByDate[selectedCalendarDate] || []).map((item) => {
+                            const staffName = item.staff_name || item.name || 'Team Member'
+                            const isMine = String(item.staff_id) === String(staffUser?.id) || item.name === staffUser?.name
+                            const match = allStaffList.find(s => String(s.id) === String(item.staff_id) || s.name === item.staff_name || s.name === item.name)
+
+                            return (
+                              <div
+                                key={item.id || Math.random()}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  padding: '10px 14px',
+                                  borderRadius: '10px',
+                                  background: themeMode === 'dark' ? '#0f172a' : '#ffffff',
+                                  border: `1px solid ${themeMode === 'dark' ? '#334155' : '#e2e8f0'}`,
+                                  cursor: match ? 'pointer' : 'default'
+                                }}
+                                onClick={() => { if (match) setViewingTeammate(match) }}
+                                title={match ? 'Click to view profile' : ''}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <div className="log-avatar-dot">
+                                    {staffName.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <strong style={{ fontSize: '13px', color: themeMode === 'dark' ? '#f8fafc' : '#0f172a' }}>
+                                      {staffName} {isMine && <span style={{ fontSize: '10px', color: '#0284c7' }}>(YOU)</span>}
+                                    </strong>
+                                    <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                      {item.branch_name || 'Store'} • {String(item.type || 'DAY OFF').replace('_', ' ').toUpperCase()} • {item.reason || 'Rest Day'}
+                                    </div>
+                                  </div>
+                                </div>
+                                {match && (
+                                  <button
+                                    type="button"
+                                    className="pro-btn-secondary"
+                                    style={{ padding: '4px 10px', fontSize: '11px' }}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setViewingTeammate(match)
+                                    }}
+                                  >
+                                    Profile →
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '12.5px', color: themeMode === 'dark' ? '#94a3b8' : '#64748b', padding: '6px 0' }}>
+                          ✓ Full roster active. No team members scheduled off on this date.
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
               ) : scheduleMode === 'own' ? (
-                // VIEW 1: OWN ACCOUNT DAY OFFS ONLY
+                // VIEW 2: OWN ACCOUNT DAY OFFS CARDS LIST
                 filteredDayoffs.length === 0 ? (
                   <div className="pro-empty-placeholder">
                     <div className="empty-icon"><IconSun size={32} color="#0284c7" /></div>
@@ -1908,7 +2353,7 @@ export default function StaffPortal({
                   </div>
                 )
               ) : (
-                // VIEW 2: SHIFT ROSTER - ALL STAFF DAY OFFS
+                // VIEW 3: SHIFT ROSTER - ALL STAFF DAY OFFS CARDS LIST
                 filteredTeamDayoffs.length === 0 ? (
                   <div className="pro-empty-placeholder">
                     <div className="empty-icon"><IconCalendar size={32} color="#0284c7" /></div>
@@ -1976,80 +2421,167 @@ export default function StaffPortal({
         )}
 
         {/* ============================================================== */}
-        {/* 7. TAB 3: SHIFT HISTORY & TIMESHEET */}
+        {/* 7. TAB 3: SHIFT HISTORY & TIMESHEET (4-COLUMN COLOR-CODED LIST)*/}
         {/* ============================================================== */}
         {activeTab === 'history' && (
           <div className="pro-card">
             <div className="pro-card-header">
               <div>
-                <h2 className="pro-card-title">MY SHIFT HISTORY & ATTENDANCE LOGS</h2>
-                <p className="pro-card-subtitle">Verified cloud attendance records</p>
+                <h2 className="pro-card-title">SHIFT LOGS & ATTENDANCE RECORDS</h2>
+                <p className="pro-card-subtitle">Verified check-in & check-out logs with punctuality tracking</p>
               </div>
-              <button
-                type="button"
-                className="pro-btn-secondary"
-                onClick={handlePrintTimesheet}
-                title="Print timesheet"
-              >
-                <IconPrinter size={15} />
-                <span>Print Timesheet</span>
-              </button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div className="pro-filter-pills">
+                  <button
+                    type="button"
+                    className={`pro-filter-pill ${historyScope === 'all' ? 'active' : ''}`}
+                    onClick={() => setHistoryScope('all')}
+                  >
+                    All Staff ({allCheckinsList.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`pro-filter-pill ${historyScope === 'my' ? 'active' : ''}`}
+                    onClick={() => setHistoryScope('my')}
+                  >
+                    My Shifts ({recentLogs.length})
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="pro-btn-secondary"
+                  onClick={handlePrintTimesheet}
+                  title="Print timesheet"
+                >
+                  <IconPrinter size={15} />
+                  <span>Print</span>
+                </button>
+              </div>
             </div>
 
             <div className="pro-card-body">
+              {/* Status Legend Bar */}
+              <div className="shift-logs-status-legend">
+                <div className="legend-indicator">
+                  <span className="log-circle circle-green">●</span>
+                  <span>Check In (On-Time)</span>
+                </div>
+                <div className="legend-indicator">
+                  <span className="log-circle circle-red">●</span>
+                  <span>Check In (Late)</span>
+                </div>
+                <div className="legend-indicator">
+                  <span className="log-circle circle-blue">●</span>
+                  <span>Check Out</span>
+                </div>
+                <div className="legend-indicator">
+                  <span className="log-pending-dots">.......</span>
+                  <span>Active on Shift</span>
+                </div>
+              </div>
+
               {loading ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <Skeleton width="100%" height="40px" borderRadius="6px" />
                   <Skeleton width="100%" height="40px" borderRadius="6px" />
                   <Skeleton width="100%" height="40px" borderRadius="6px" />
                 </div>
-              ) : recentLogs.length === 0 ? (
+              ) : displayedHistoryLogs.length === 0 ? (
                 <div className="pro-empty-placeholder">
-                  <div className="empty-icon"><IconFileText size={32} color="#94a3b8" /></div>
-                  <h3>No Shift History Recorded</h3>
-                  <p>When you clock in and out, your verified shift hours will be automatically recorded here.</p>
+                  <div className="empty-icon"><IconClock size={32} color="#94a3b8" /></div>
+                  <h3>No Shift Logs Recorded</h3>
+                  <p>When staff clock in and out, verified attendance records will appear in this list.</p>
                 </div>
               ) : (
                 <div className="pro-table-wrapper">
-                  <table className="pro-timesheet-table">
+                  <table className="pro-shift-logs-table">
                     <thead>
                       <tr>
-                        <th>DATE</th>
-                        <th>CLOCK IN</th>
-                        <th>CLOCK OUT</th>
-                        <th>DEPARTMENT / LOCATION</th>
-                        <th>STATUS</th>
-                        <th>PUNCTUALITY</th>
+                        <th style={{ width: '22%' }}>DATE</th>
+                        <th style={{ width: '26%' }}>NAME</th>
+                        <th style={{ width: '26%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span className="log-circle circle-green">●</span>
+                            <span>CHECK IN</span>
+                          </div>
+                        </th>
+                        <th style={{ width: '26%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span className="log-circle circle-blue">●</span>
+                            <span>CHECK OUT</span>
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {recentLogs.map((log) => {
+                      {displayedHistoryLogs.map((log) => {
                         const inDate = log.check_in_at ? new Date(log.check_in_at) : null
                         const outDate = log.check_out_at ? new Date(log.check_out_at) : null
+                        const isLate = log.punctuality_status === 'late' || (log.late_minutes && log.late_minutes > 0)
+                        const dateText = formatLogDate(log.check_in_at)
+                        const staffName = log.name || log.staff_name || staffUser?.name || 'Staff'
 
                         return (
                           <tr key={log.id}>
-                            <td className="font-bold">
-                              {inDate ? inDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
-                            </td>
-                            <td>
-                              {inDate ? inDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
-                            </td>
-                            <td>
-                              {outDate ? outDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (
-                                <span className="text-emerald font-bold">Active Now</span>
+                            {/* DATE */}
+                            <td className="log-cell-date">
+                              {dateText === 'today' ? (
+                                <span className="log-today-badge">today</span>
+                              ) : (
+                                <span className="log-date-text">{dateText}</span>
                               )}
                             </td>
-                            <td>{log.department || 'Service Team'} • {log.location || 'Terminal'}</td>
+
+                            {/* NAME */}
                             <td>
-                              <span className={`pro-badge ${log.status === 'checked_in' ? 'badge-emerald' : 'badge-slate'}`}>
-                                {log.status === 'checked_in' ? 'Active' : 'Completed'}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div className="log-avatar-dot">
+                                  {staffName.charAt(0).toUpperCase()}
+                                </div>
+                                <strong style={{ fontSize: '13px' }}>{staffName}</strong>
+                              </div>
                             </td>
+
+                            {/* CHECK IN (🟢 O / 🔴 O) */}
                             <td>
-                              <span className={`pro-badge ${log.punctuality_status === 'on_time' ? 'badge-emerald' : 'badge-amber'}`}>
-                                {log.punctuality_status === 'on_time' ? 'On-Time' : `Late (${formatLateDuration(log.late_minutes)})`}
-                              </span>
+                              {inDate ? (
+                                <div className="log-time-wrapper">
+                                  <span
+                                    className={`log-circle ${isLate ? 'circle-red' : 'circle-green'}`}
+                                    title={isLate ? `Late by ${log.late_minutes || 0}m` : 'On Time'}
+                                  >
+                                    ●
+                                  </span>
+                                  <span className={`log-time-str ${isLate ? 'time-late' : ''}`}>
+                                    {formatLogTime(inDate)}
+                                  </span>
+                                  {isLate && (
+                                    <span className="log-mini-late-tag">LATE</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: '#94a3b8' }}>-</span>
+                              )}
+                            </td>
+
+                            {/* CHECK OUT (🔵 O / .......) */}
+                            <td>
+                              {outDate ? (
+                                <div className="log-time-wrapper">
+                                  <span className="log-circle circle-blue" title="Checked Out">
+                                    ●
+                                  </span>
+                                  <span className="log-time-str">
+                                    {formatLogTime(outDate)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="log-time-wrapper">
+                                  <span className="log-pending-dots" title="Still on shift">
+                                    .......
+                                  </span>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )
