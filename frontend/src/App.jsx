@@ -1887,10 +1887,11 @@ export default function App() {
       {/* ============================================================== */}
       {sidebarOpen && (
         <aside className="sidebar">
-          {/* Brand Name without Logo */}
+          {/* Brand Name with Logo */}
           <div className="sidebar-header">
-            <div className="sidebar-brand-text">
-              Chafé <span className="sidebar-brand-accent">HR</span>
+            <div className="sidebar-brand-text" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <img src="/png-logo.png" alt="Chafé" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'contain' }} />
+              <span>Chafé <span className="sidebar-brand-accent">HR</span></span>
             </div>
           </div>
 

@@ -1083,8 +1083,9 @@ export default function StaffPortal({
           >
             <IconMenu size={22} color="#ffffff" />
           </button>
-          <div className="mobile-header-brand-title">
-            {t('staffWorkspace', 'Chafé • Staff Workspace')}
+          <div className="mobile-header-brand-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <img src="/png-logo.png" alt="Chafé" style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'contain' }} />
+            <span>{t('staffWorkspace', 'Chafé • Staff Workspace')}</span>
           </div>
         </div>
 

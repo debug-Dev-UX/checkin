@@ -114,7 +114,8 @@ export default function LoginForm({ apiBase, onLoginSuccess }) {
       <div className="login-card">
         {/* Simple Brand Header */}
         <div className="login-brand-section">
-          <div className="login-logo-badge">
+          <div className="login-logo-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+            <img src="/png-logo.png" alt="Chafé Logo" style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'contain' }} />
             <span className="login-logo-text">Chafé</span>
           </div>
           <h1 className="login-main-title">Sign In</h1>

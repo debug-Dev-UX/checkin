@@ -1,7 +1,7 @@
 {
-  "name": "Chafé • Guest & Staff Check-in System",
+  "name": "Chafé",
   "short_name": "Chafé",
-  "description": "Artisan Café & Lounge Check-in and Checkout Management System",
+  "description": "Chafé • Coffee & Milk Tea Check-in and Workspace System",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
@@ -9,16 +9,16 @@
   "theme_color": "#0284c7",
   "icons": [
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/loading-orb.png",
+      "src": "/png-logo.png",
       "sizes": "192x192 512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180 512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
