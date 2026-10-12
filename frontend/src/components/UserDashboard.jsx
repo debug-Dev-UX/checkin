@@ -500,14 +500,31 @@ export default function UserDashboard({
         const canvas = canvasRef.current || document.createElement('canvas')
         const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const maxDim = 640
+        const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight))
+        const w = Math.round(video.videoWidth * scale)
+        const h = Math.round(video.videoHeight * scale)
 
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'dontInvert',
-        })
+        canvas.width = w
+        canvas.height = h
+        ctx.drawImage(video, 0, 0, w, h)
+
+        let code = null
+        try {
+          const imageData = ctx.getImageData(0, 0, w, h)
+          code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth',
+          })
+          if (!code) {
+            const cropSize = Math.round(Math.min(w, h) * 0.7)
+            const sx = Math.round((w - cropSize) / 2)
+            const sy = Math.round((h - cropSize) / 2)
+            const cropData = ctx.getImageData(sx, sy, cropSize, cropSize)
+            code = jsQR(cropData.data, cropData.width, cropData.height, {
+              inversionAttempts: 'attemptBoth',
+            })
+          }
+        } catch {}
 
         if (code && code.data && code.data !== lastScannedCode) {
           setLastScannedCode(code.data)

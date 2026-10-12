@@ -5765,14 +5765,24 @@ body {
    DEDICATED APP CAMERA SCANNER SCREEN
    ============================================================== */
 .pro-app-scanner-screen {
-  padding: 0;
+  padding: 0 16px 12px;
+  margin-top: -10px;
+  height: calc(100dvh - 148px);
+  max-height: calc(100vh - 148px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .pro-scanner-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   background: #0f172a;
-  border-radius: 16px;
+  border-radius: 20px;
   overflow: hidden;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  min-height: 0;
 }
 
 .pro-scanner-header {
@@ -9801,11 +9811,15 @@ body {
    FUTURISTIC OPTICAL SCANNER SCREEN & HUD UI
    ============================================================== */
 .new-pro-scanner-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   background: radial-gradient(ellipse at top, #1e293b 0%, #0f172a 100%) !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255,255,255,0.05) !important;
-  border-radius: 20px !important;
+  border-radius: 22px !important;
   overflow: hidden;
+  min-height: 0;
 }
 
 .new-scanner-header {
@@ -9927,11 +9941,11 @@ body {
 }
 
 .new-viewfinder-wrapper {
+  flex: 1;
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 10;
-  max-height: 480px;
-  background: #020617;
+  min-height: 240px;
+  background: #000000;
   overflow: hidden;
 }
 

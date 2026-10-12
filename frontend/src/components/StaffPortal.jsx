@@ -957,67 +957,125 @@ export default function StaffPortal({
     return () => stopCamera()
   }, [activeTab, showCamera, cameraFacing, startCamera, stopCamera])
 
-  // Continuous frame loop with jsQR for QR scan
+  // Continuous frame loop with native BarcodeDetector hardware acceleration & downsampled jsQR
   useEffect(() => {
     if (!cameraActive) return
 
-    const tick = () => {
+    let isScanningLocal = false
+    let lastScanTime = 0
+    let detector = null
+    if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+      try {
+        detector = new window.BarcodeDetector({ formats: ['qr_code'] })
+      } catch { /* fallback to jsQR */ }
+    }
+
+    const processFrame = async () => {
       if (
-        videoRef.current &&
-        videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA &&
-        canvasRef.current
+        !videoRef.current ||
+        videoRef.current.readyState < 2 ||
+        isScanningLocal ||
+        isScanningRef.current
       ) {
-        const video = videoRef.current
+        animFrameIdRef.current = requestAnimationFrame(processFrame)
+        return
+      }
+
+      const now = performance.now()
+      // Throttle scanning to ~12 FPS (every 80ms) for high performance and zero UI stutter
+      if (now - lastScanTime < 75) {
+        animFrameIdRef.current = requestAnimationFrame(processFrame)
+        return
+      }
+      lastScanTime = now
+
+      const video = videoRef.current
+      let detectedData = null
+
+      // Pass 1: Native Hardware BarcodeDetector (iOS 17+ Safari & Android Chrome)
+      if (detector) {
+        try {
+          const barcodes = await detector.detect(video)
+          if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+            detectedData = barcodes[0].rawValue
+          }
+        } catch { /* fallback to jsQR */ }
+      }
+
+      // Pass 2: High-speed downsampled jsQR fallback (glare & screen-tolerant)
+      if (!detectedData && canvasRef.current && video.videoWidth > 0 && video.videoHeight > 0) {
         const canvas = canvasRef.current
         const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        // Downscale to max 640px dimension for 10x faster decoding and glare tolerance
+        const maxDim = 640
+        const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight))
+        const w = Math.round(video.videoWidth * scale)
+        const h = Math.round(video.videoHeight * scale)
 
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'dontInvert',
-        })
+        canvas.width = w
+        canvas.height = h
+        ctx.drawImage(video, 0, 0, w, h)
 
-        if (code && code.data && !isScanningRef.current) {
-          isScanningRef.current = true
-          // Explicitly stop camera immediately upon successful scan so hardware turns off
-          stopCamera()
-          setShowCamera(false)
-          setActiveTab('clock')
-
-          playSuccessBeep()
-          if (navigator.vibrate) {
-            try { navigator.vibrate([100, 50, 100]) } catch { /* ignore */ }
+        try {
+          const imageData = ctx.getImageData(0, 0, w, h)
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth',
+          })
+          if (code && code.data) {
+            detectedData = code.data
           }
+        } catch { /* ignore canvas error */ }
 
-          const currentAction = selectedScanActionRef.current
-          if (currentAction === 'in') {
-            handleExecuteAttendance('in')
-          } else if (currentAction === 'out') {
-            handleExecuteAttendance('out')
-          } else {
-            // When turn on don't ask staff again: automatically determine Clock In vs Clock Out
-            if (accountPerms.dontAskAgain || accountPerms.camera) {
-              const autoAction = isOnShift ? 'out' : 'in'
-              handleExecuteAttendance(autoAction)
-            } else {
-              setScannedQrData(code.data)
-              setShowActionModal(true)
+        // Pass 3: Center ROI crop (targeting reticle area) if full frame missed
+        if (!detectedData) {
+          try {
+            const cropSize = Math.round(Math.min(w, h) * 0.7)
+            const sx = Math.round((w - cropSize) / 2)
+            const sy = Math.round((h - cropSize) / 2)
+            const cropImageData = ctx.getImageData(sx, sy, cropSize, cropSize)
+            const cropCode = jsQR(cropImageData.data, cropImageData.width, cropImageData.height, {
+              inversionAttempts: 'attemptBoth',
+            })
+            if (cropCode && cropCode.data) {
+              detectedData = cropCode.data
             }
-          }
-
-          setTimeout(() => {
-            isScanningRef.current = false
-          }, 2500)
-          return
+          } catch { /* ignore crop error */ }
         }
       }
-      animFrameIdRef.current = requestAnimationFrame(tick)
+
+      // If QR detected!
+      if (detectedData && !isScanningRef.current) {
+        isScanningLocal = true
+        isScanningRef.current = true
+
+        stopCamera()
+        setShowCamera(false)
+        setActiveTab('clock')
+
+        playSuccessBeep()
+        if (navigator.vibrate) {
+          try { navigator.vibrate([100, 50, 100]) } catch { /* ignore */ }
+        }
+
+        // Automatic attendance resolution:
+        // If explicitly pre-selected 'in' or 'out', use it. Otherwise automatically determine based on shift status:
+        const currentAction = selectedScanActionRef.current
+        const autoAction = currentAction === 'in' ? 'in' : currentAction === 'out' ? 'out' : (isOnShift ? 'out' : 'in')
+
+        handleExecuteAttendance(autoAction)
+
+        setTimeout(() => {
+          isScanningRef.current = false
+          isScanningLocal = false
+        }, 2000)
+        return
+      }
+
+      animFrameIdRef.current = requestAnimationFrame(processFrame)
     }
 
-    animFrameIdRef.current = requestAnimationFrame(tick)
+    animFrameIdRef.current = requestAnimationFrame(processFrame)
     return () => {
       if (animFrameIdRef.current) {
         cancelAnimationFrame(animFrameIdRef.current)
@@ -1568,11 +1626,7 @@ export default function StaffPortal({
                   </div>
                   <div>
                     <span className="pro-scanner-title">
-                      {selectedScanAction === 'in'
-                        ? 'OPTICAL SCAN • CLOCK IN'
-                        : selectedScanAction === 'out'
-                        ? 'OPTICAL SCAN • CLOCK OUT'
-                        : 'STORE QR ATTENDANCE SCANNER'}
+                      {isOnShift ? 'STORE SCANNER • READY TO CLOCK OUT' : 'STORE SCANNER • READY TO CLOCK IN'}
                     </span>
                     <div className="new-scanner-subhead">
                       {verifiedLocation?.branch?.name ? `📍 ${verifiedLocation.branch.name} (${Math.round(verifiedLocation.distance || 0)}m)` : 'GPS Verified • Ready'}
@@ -1596,48 +1650,12 @@ export default function StaffPortal({
                 </button>
               </div>
 
-              {/* Mode Switcher Tabs right in the Scanner UI */}
-              <div className="new-scanner-mode-switch-bar">
-                <button
-                  type="button"
-                  className={`new-mode-pill-btn in ${selectedScanAction === 'in' ? 'active' : ''}`}
-                  onClick={() => {
-                    setSelectedScanAction('in')
-                    selectedScanActionRef.current = 'in'
-                  }}
-                >
-                  <span className="pill-dot" />
-                  <span>Clock In</span>
-                </button>
-                <button
-                  type="button"
-                  className={`new-mode-pill-btn out ${selectedScanAction === 'out' ? 'active' : ''}`}
-                  onClick={() => {
-                    setSelectedScanAction('out')
-                    selectedScanActionRef.current = 'out'
-                  }}
-                >
-                  <span className="pill-dot" />
-                  <span>Clock Out</span>
-                </button>
-                <button
-                  type="button"
-                  className={`new-mode-pill-btn auto ${!selectedScanAction ? 'active' : ''}`}
-                  onClick={() => {
-                    setSelectedScanAction(null)
-                    selectedScanActionRef.current = null
-                  }}
-                >
-                  <IconZap size={12} />
-                  <span>Smart Auto</span>
-                </button>
-              </div>
-
-              {/* Viewfinder Screen */}
+              {/* Viewfinder Screen - Fits Screen */}
               <div className="pro-viewfinder-wrapper new-viewfinder-wrapper">
                 <video
                   ref={videoRef}
                   playsInline
+                  autoPlay
                   muted
                   className="pro-viewfinder-video new-viewfinder-video"
                 />
@@ -1648,7 +1666,7 @@ export default function StaffPortal({
                   {/* Subtle Grid Lines HUD */}
                   <div className="new-scanner-grid-hud" />
 
-                  <div className={`pro-target-reticle new-target-reticle ${selectedScanAction === 'in' ? 'reticle-in' : selectedScanAction === 'out' ? 'reticle-out' : 'reticle-auto'}`}>
+                  <div className={`pro-target-reticle new-target-reticle ${isOnShift ? 'reticle-out' : 'reticle-in'}`}>
                     {/* 4 Corner Brackets with Glow */}
                     <div className="corner top-left"><span className="corner-dot" /></div>
                     <div className="corner top-right"><span className="corner-dot" /></div>
@@ -1667,13 +1685,7 @@ export default function StaffPortal({
 
                     <div className="pro-reticle-hint new-reticle-hint">
                       <IconTarget size={13} />
-                      <span>
-                        {selectedScanAction === 'in'
-                          ? 'Align Store QR to Clock In'
-                          : selectedScanAction === 'out'
-                          ? 'Align Store QR to Clock Out'
-                          : 'Align Store QR (Auto Detect)'}
-                      </span>
+                      <span>{isOnShift ? 'Align Store QR to Clock Out' : 'Align Store QR to Clock In'}</span>
                     </div>
                   </div>
                 </div>
@@ -1717,60 +1729,6 @@ export default function StaffPortal({
                   <IconQrCode size={15} />
                   <span>My Pass</span>
                 </button>
-              </div>
-
-              {/* Quick Simulation Testing Dock (Instant Scan Test) */}
-              <div className="new-scanner-quick-test-dock">
-                <span className="test-dock-lbl">Test Actions:</span>
-                <button
-                  type="button"
-                  className="new-quick-scan-test-btn in"
-                  disabled={processing || isOnShift}
-                  onClick={() => {
-                    stopCamera()
-                    setShowCamera(false)
-                    setActiveTab('clock')
-                    handleExecuteAttendance('in')
-                  }}
-                  title="Instantly execute Clock In"
-                >
-                  ⚡ Test Clock In
-                </button>
-                <button
-                  type="button"
-                  className="new-quick-scan-test-btn out"
-                  disabled={processing || !isOnShift}
-                  onClick={() => {
-                    stopCamera()
-                    setShowCamera(false)
-                    setActiveTab('clock')
-                    handleExecuteAttendance('out')
-                  }}
-                  title="Instantly execute Clock Out"
-                >
-                  ⚡ Test Clock Out
-                </button>
-              </div>
-
-              {/* Status footer notice */}
-              <div className="pro-scanner-footer-notice new-scanner-footer-notice">
-                <div className="notice-icon"><IconZap size={16} color="#06b6d4" /></div>
-                <div className="notice-text">
-                  <strong>
-                    {selectedScanAction === 'in'
-                      ? 'Shift Attendance: Clock In Ready'
-                      : selectedScanAction === 'out'
-                      ? 'Shift Attendance: Clock Out Ready'
-                      : 'Optical Attendance Engine Active'}
-                  </strong>
-                  <p>
-                    {selectedScanAction === 'in'
-                      ? 'Camera automatically terminates immediately upon scanning Store QR code.'
-                      : selectedScanAction === 'out'
-                      ? 'Camera automatically terminates immediately upon scanning Store QR code.'
-                      : 'Scanning store QR will verify your GPS radius and clock in or out.'}
-                  </p>
-                </div>
               </div>
             </div>
           </div>
