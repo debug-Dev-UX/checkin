@@ -551,6 +551,51 @@ test('Staff Profile Viewing & ErrorBoundary Bug Fix', async () => {
   assert.match(mainContent, /ErrorBoundary/, 'main.jsx must wrap App in ErrorBoundary')
 })
 
+test('Staff Duty Status & Late Arrival Verification (ដល់ម៉ោងតែមិនមក)', async () => {
+  const firebaseServicePath = path.resolve('src/services/firebaseService.js')
+  const firebaseContent = fs.readFileSync(firebaseServicePath, 'utf-8')
+  const staffPortalPath = path.resolve('src/components/StaffPortal.jsx')
+  const staffPortalContent = fs.readFileSync(staffPortalPath, 'utf-8')
+  const appPath = path.resolve('src/App.jsx')
+  const appContent = fs.readFileSync(appPath, 'utf-8')
 
+  // 1. Function definition & integration
+  assert.match(firebaseContent, /export function getStaffDutyStatus/, 'firebaseService must export getStaffDutyStatus')
+  assert.match(staffPortalContent, /getStaffDutyStatus/, 'StaffPortal must import and use getStaffDutyStatus')
+  assert.match(appContent, /getStaffDutyStatus/, 'App must import and use getStaffDutyStatus')
+
+  // Dynamic test of logic
+  const now = new Date()
+  const pastHour = (now.getHours() - 1 + 24) % 24
+  const futureHour = (now.getHours() + 2) % 24
+  const pastTimeStr = `${String(pastHour).padStart(2, '0')}:00`
+  const futureTimeStr = `${String(futureHour).padStart(2, '0')}:00`
+
+  // Import getStaffDutyStatus
+  const { getStaffDutyStatus } = await import('../src/services/firebaseService.js')
+
+  // Case A: On shift
+  const onShiftRes = getStaffDutyStatus({ id: 's1', is_on_shift: true, shift_start: pastTimeStr })
+  assert.strictEqual(onShiftRes.status, 'on_shift')
+  assert.match(onShiftRes.label, /Active On Duty/)
+
+  // Case B: Day off
+  const dayOffRes = getStaffDutyStatus({ id: 's2', is_on_shift: false, has_dayoff_today: true, shift_start: pastTimeStr })
+  assert.strictEqual(dayOffRes.status, 'dayoff')
+  assert.match(dayOffRes.label, /Scheduled Day Off/)
+
+  // Case C: Past shift start and not clocked in (ដល់ម៉ោងតែមិនមក => Late)
+  const lateRes = getStaffDutyStatus({ id: 's3', is_on_shift: false, has_dayoff_today: false, shift_start: pastTimeStr })
+  assert.strictEqual(lateRes.status, 'late')
+  assert.match(lateRes.label, /^Late • \d+(h:\d+)?mn/)
+  assert.strictEqual(lateRes.color, '#ef4444')
+
+  // Case D: Shift start is in future (not arrived yet => Off Duty)
+  if (futureHour > now.getHours()) {
+    const futureRes = getStaffDutyStatus({ id: 's4', is_on_shift: false, has_dayoff_today: false, shift_start: futureTimeStr })
+    assert.strictEqual(futureRes.status, 'off_duty')
+    assert.match(futureRes.label, /Off Duty • ក្រៅម៉ោងការងារ/)
+  }
+})
 
 

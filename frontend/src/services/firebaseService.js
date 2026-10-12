@@ -1631,3 +1631,136 @@ export async function saveAdminProfile(profileData) {
   return updated
 }
 
+/**
+ * Evaluates real-time duty & punctuality status for a staff member.
+ * If scheduled shift start time has arrived today and staff hasn't clocked in ("ដល់ម៉ោងតែមិនមក"),
+ * status is set to 'late' with formatted duration (e.g. "Late • 00mn", "Late • 15mn", "Late • 1h:20mn").
+ */
+export function getStaffDutyStatus(stf, checkinsList = []) {
+  if (!stf) {
+    return {
+      status: 'off_duty',
+      label: 'Off Duty • ក្រៅម៉ោងការងារ',
+      shortLabel: '○ Off Duty',
+      color: '#64748b',
+      bgLight: '#f8fafc',
+      bgDark: 'rgba(255, 255, 255, 0.04)',
+      borderColor: '#e2e8f0',
+      borderDark: 'rgba(255, 255, 255, 0.08)',
+      dotColor: '#94a3b8',
+      glow: false
+    }
+  }
+
+  // 1. Actively on shift
+  if (stf.is_on_shift) {
+    return {
+      status: 'on_shift',
+      label: 'Active On Duty • កំពុងបំពេញការងារ',
+      shortLabel: '● On Shift',
+      color: '#059669',
+      bgLight: '#ecfdf5',
+      bgDark: 'rgba(16, 185, 129, 0.15)',
+      borderColor: 'rgba(16, 185, 129, 0.3)',
+      borderDark: 'rgba(16, 185, 129, 0.3)',
+      dotColor: '#10b981',
+      glow: true
+    }
+  }
+
+  // 2. Scheduled Day Off
+  if (stf.has_dayoff_today) {
+    return {
+      status: 'dayoff',
+      label: 'Scheduled Day Off • ថ្ងៃសម្រាក',
+      shortLabel: '● Day Off',
+      color: '#d97706',
+      bgLight: '#fffbeb',
+      bgDark: 'rgba(245, 158, 11, 0.15)',
+      borderColor: 'rgba(245, 158, 11, 0.3)',
+      borderDark: 'rgba(245, 158, 11, 0.3)',
+      dotColor: '#f59e0b',
+      glow: false
+    }
+  }
+
+  // 3. Completed Shift Today (Checked In and Checked Out today)
+  const todayStr = new Date().toISOString().split('T')[0]
+  const todayRecord = (checkinsList || []).find(c => {
+    const isMatch = String(c.staff_id) === String(stf.id) ||
+      (stf.email && c.email && c.email.toLowerCase() === stf.email.toLowerCase()) ||
+      (c.name && c.name === stf.name)
+    if (!isMatch) return false
+    const dateStr = (c.check_in_at || c.created_at || '').slice(0, 10)
+    return dateStr === todayStr
+  })
+
+  if (todayRecord && todayRecord.status === 'checked_out') {
+    return {
+      status: 'off_duty',
+      label: 'Off Duty • ក្រៅម៉ោងការងារ',
+      shortLabel: '○ Off Duty',
+      color: '#64748b',
+      bgLight: '#f8fafc',
+      bgDark: 'rgba(255, 255, 255, 0.04)',
+      borderColor: '#e2e8f0',
+      borderDark: 'rgba(255, 255, 255, 0.08)',
+      dotColor: '#94a3b8',
+      glow: false
+    }
+  }
+
+  // 4. Check if shift start time has arrived today ("ដល់ម៉ោងតែមិនមក")
+  if (stf.shift_start) {
+    const sStr = String(stf.shift_start).trim()
+    const isPM = /pm/i.test(sStr)
+    const isAM = /am/i.test(sStr)
+    const numParts = sStr.replace(/[^0-9:]/g, '').split(':').map(Number)
+    let sh = numParts[0]
+    let sm = numParts[1] || 0
+    if (!isNaN(sh)) {
+      if (isPM && sh < 12) sh += 12
+      if (isAM && sh === 12) sh = 0
+
+      const now = new Date()
+      const scheduledStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), sh, sm, 0, 0)
+
+      if (now >= scheduledStart) {
+        const diffMins = Math.floor((now - scheduledStart) / 60000)
+        const hours = Math.floor(diffMins / 60)
+        const remMins = diffMins % 60
+        const lateFormatted = hours > 0
+          ? `${hours}h:${String(remMins).padStart(2, '0')}mn`
+          : `${String(diffMins).padStart(2, '0')}mn`
+
+        return {
+          status: 'late',
+          label: `Late • ${lateFormatted}`,
+          shortLabel: `● Late ${lateFormatted}`,
+          diffMins,
+          color: '#ef4444',
+          bgLight: '#fef2f2',
+          bgDark: 'rgba(239, 68, 68, 0.15)',
+          borderColor: 'rgba(239, 68, 68, 0.35)',
+          borderDark: 'rgba(239, 68, 68, 0.35)',
+          dotColor: '#ef4444',
+          glow: true
+        }
+      }
+    }
+  }
+
+  // Default: Off Duty
+  return {
+    status: 'off_duty',
+    label: 'Off Duty • ក្រៅម៉ោងការងារ',
+    shortLabel: '○ Off Duty',
+    color: '#64748b',
+    bgLight: '#f8fafc',
+    bgDark: 'rgba(255, 255, 255, 0.04)',
+    borderColor: '#e2e8f0',
+    borderDark: 'rgba(255, 255, 255, 0.08)',
+    dotColor: '#94a3b8',
+    glow: false
+  }
+}

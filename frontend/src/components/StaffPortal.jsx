@@ -62,6 +62,7 @@ import {
   createStaffMessageInFirebase,
   subscribeToStaffMessages,
   subscribeToAdminNotifications,
+  getStaffDutyStatus,
 } from '../services/firebaseService'
 import {
   verifyRealtimeLocationForStaff,
@@ -1519,17 +1520,22 @@ export default function StaffPortal({
                         <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '2px' }}>
                           {stf.role || 'Staff'}
                         </div>
-                        <span style={{
-                          fontSize: '9.5px',
-                          fontWeight: 700,
-                          padding: '2px 5px',
-                          borderRadius: '6px',
-                          marginTop: '6px',
-                          background: stf.is_on_shift ? '#dcfce7' : stf.has_dayoff_today ? '#fef3c7' : '#f1f5f9',
-                          color: stf.is_on_shift ? '#15803d' : stf.has_dayoff_today ? '#b45309' : '#64748b'
-                        }}>
-                          {stf.is_on_shift ? '● On Shift' : stf.has_dayoff_today ? '● Day Off' : '○ Off Duty'}
-                        </span>
+                        {(() => {
+                          const duty = getStaffDutyStatus(stf, allCheckinsList)
+                          return (
+                            <span style={{
+                              fontSize: '9.5px',
+                              fontWeight: 700,
+                              padding: '2px 5px',
+                              borderRadius: '6px',
+                              marginTop: '6px',
+                              background: themeMode === 'dark' ? duty.bgDark : duty.bgLight,
+                              color: duty.color
+                            }}>
+                              {duty.shortLabel}
+                            </span>
+                          )
+                        })()}
                       </div>
                     )
                   })}
@@ -3243,152 +3249,135 @@ export default function StaffPortal({
             </div>
 
             {/* Hero Profile Body */}
-            <div style={{ padding: '4px 22px 22px', position: 'relative', zIndex: 1 }}>
-              {/* Centered Avatar with Status Ring */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '14px' }}>
-                <div style={{ position: 'relative', marginBottom: '10px' }}>
-                  <div style={{
-                    width: '80px',
-                    height: '80px',
-                    borderRadius: '50%',
-                    padding: '3px',
-                    background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 50%, #818cf8 100%)',
-                    boxShadow: '0 8px 24px rgba(2, 132, 199, 0.3)'
-                  }}>
+            {(() => {
+              const duty = getStaffDutyStatus(viewingTeammate, allCheckinsList)
+              return (
+                <div style={{ padding: '4px 22px 22px', position: 'relative', zIndex: 1 }}>
+                  {/* Centered Avatar with Status Ring */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '14px' }}>
+                    <div style={{ position: 'relative', marginBottom: '10px' }}>
+                      <div style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        padding: '3px',
+                        background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 50%, #818cf8 100%)',
+                        boxShadow: '0 8px 24px rgba(2, 132, 199, 0.3)'
+                      }}>
+                        <div style={{
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: '50%',
+                          background: themeMode === 'dark' ? '#1e293b' : '#f8fafc',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '22px',
+                          fontWeight: 900,
+                          color: '#0284c7'
+                        }}>
+                          {viewingTeammate.photo_url ? (
+                            <img
+                              src={viewingTeammate.photo_url}
+                              alt={viewingTeammate.name}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          ) : (
+                            (viewingTeammate.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Status dot pinned to avatar */}
+                      <span
+                        style={{
+                          position: 'absolute',
+                          bottom: '2px',
+                          right: '2px',
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          border: `2.5px solid ${themeMode === 'dark' ? '#0f172a' : '#ffffff'}`,
+                          background: duty.dotColor,
+                          boxShadow: duty.glow ? `0 0 8px ${duty.dotColor}` : 'none'
+                        }}
+                        title={duty.status === 'on_shift' ? 'On Shift' : duty.status === 'dayoff' ? 'Day Off' : duty.status === 'late' ? `Late (${duty.diffMins}mn)` : 'Off Duty'}
+                      />
+                    </div>
+
+                    {/* Staff Name & Title */}
+                    <h2 style={{
+                      margin: 0,
+                      fontSize: '20px',
+                      fontWeight: 800,
+                      color: themeMode === 'dark' ? '#f8fafc' : '#0f172a',
+                      letterSpacing: '-0.3px',
+                      textAlign: 'center'
+                    }}>
+                      {viewingTeammate.name}
+                    </h2>
+
+                    {viewingTeammate.nickname && (
+                      <span style={{
+                        fontSize: '11.5px',
+                        fontWeight: 700,
+                        color: '#0284c7',
+                        background: themeMode === 'dark' ? 'rgba(2, 132, 199, 0.12)' : 'rgba(2, 132, 199, 0.08)',
+                        border: '1px solid rgba(2, 132, 199, 0.2)',
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                        marginTop: '4px'
+                      }}>
+                        @{viewingTeammate.nickname}
+                      </span>
+                    )}
+
                     <div style={{
-                      width: '100%',
-                      height: '100%',
-                      borderRadius: '50%',
-                      background: themeMode === 'dark' ? '#1e293b' : '#f8fafc',
-                      overflow: 'hidden',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '22px',
-                      fontWeight: 900,
-                      color: '#0284c7'
+                      gap: '8px',
+                      marginTop: '6px',
+                      fontSize: '12px',
+                      color: themeMode === 'dark' ? '#94a3b8' : '#64748b'
                     }}>
-                      {viewingTeammate.photo_url ? (
-                        <img
-                          src={viewingTeammate.photo_url}
-                          alt={viewingTeammate.name}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      ) : (
-                        (viewingTeammate.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-                      )}
+                      <strong style={{ color: themeMode === 'dark' ? '#cbd5e1' : '#334155' }}>
+                        {viewingTeammate.role || 'Barista'}
+                      </strong>
+                      <span>•</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <IconMapPin size={11} color="#0284c7" />
+                        <span>{viewingTeammate.branch_name || 'Chafé Store'}</span>
+                      </span>
                     </div>
                   </div>
 
-                  {/* Status dot pinned to avatar */}
-                  <span
-                    style={{
-                      position: 'absolute',
-                      bottom: '2px',
-                      right: '2px',
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      border: `2.5px solid ${themeMode === 'dark' ? '#0f172a' : '#ffffff'}`,
-                      background: viewingTeammate.is_on_shift
-                        ? '#10b981'
-                        : viewingTeammate.has_dayoff_today
-                        ? '#f59e0b'
-                        : '#94a3b8',
-                      boxShadow: viewingTeammate.is_on_shift ? '0 0 8px #10b981' : 'none'
-                    }}
-                    title={viewingTeammate.is_on_shift ? 'On Shift' : viewingTeammate.has_dayoff_today ? 'Day Off' : 'Off Duty'}
-                  />
-                </div>
-
-                {/* Staff Name & Title */}
-                <h2 style={{
-                  margin: 0,
-                  fontSize: '20px',
-                  fontWeight: 800,
-                  color: themeMode === 'dark' ? '#f8fafc' : '#0f172a',
-                  letterSpacing: '-0.3px',
-                  textAlign: 'center'
-                }}>
-                  {viewingTeammate.name}
-                </h2>
-
-                {viewingTeammate.nickname && (
-                  <span style={{
-                    fontSize: '11.5px',
+                  {/* Status Ribbon Pill */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '8px 14px',
+                    borderRadius: '12px',
+                    marginBottom: '14px',
+                    fontSize: '12px',
                     fontWeight: 700,
-                    color: '#0284c7',
-                    background: themeMode === 'dark' ? 'rgba(2, 132, 199, 0.12)' : 'rgba(2, 132, 199, 0.08)',
-                    border: '1px solid rgba(2, 132, 199, 0.2)',
-                    padding: '2px 8px',
-                    borderRadius: '999px',
-                    marginTop: '4px'
+                    background: themeMode === 'dark' ? duty.bgDark : duty.bgLight,
+                    border: `1px solid ${themeMode === 'dark' ? duty.borderDark : duty.borderColor}`,
+                    color: duty.color
                   }}>
-                    @{viewingTeammate.nickname}
-                  </span>
-                )}
-
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginTop: '6px',
-                  fontSize: '12px',
-                  color: themeMode === 'dark' ? '#94a3b8' : '#64748b'
-                }}>
-                  <strong style={{ color: themeMode === 'dark' ? '#cbd5e1' : '#334155' }}>
-                    {viewingTeammate.role || 'Barista'}
-                  </strong>
-                  <span>•</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                    <IconMapPin size={11} color="#0284c7" />
-                    <span>{viewingTeammate.branch_name || 'Chafé Store'}</span>
-                  </span>
-                </div>
-              </div>
-
-              {/* Status Ribbon Pill */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                padding: '8px 14px',
-                borderRadius: '12px',
-                marginBottom: '14px',
-                fontSize: '12px',
-                fontWeight: 700,
-                background: viewingTeammate.is_on_shift
-                  ? (themeMode === 'dark' ? 'rgba(16, 185, 129, 0.15)' : '#ecfdf5')
-                  : viewingTeammate.has_dayoff_today
-                  ? (themeMode === 'dark' ? 'rgba(245, 158, 11, 0.15)' : '#fffbeb')
-                  : (themeMode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : '#f8fafc'),
-                border: viewingTeammate.is_on_shift
-                  ? '1px solid rgba(16, 185, 129, 0.3)'
-                  : viewingTeammate.has_dayoff_today
-                  ? '1px solid rgba(245, 158, 11, 0.3)'
-                  : (themeMode === 'dark' ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid #e2e8f0'),
-                color: viewingTeammate.is_on_shift
-                  ? '#059669'
-                  : viewingTeammate.has_dayoff_today
-                  ? '#d97706'
-                  : '#64748b'
-              }}>
-                <span style={{
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '50%',
-                  background: 'currentColor',
-                  boxShadow: viewingTeammate.is_on_shift ? '0 0 6px currentColor' : 'none'
-                }} />
-                <span>
-                  {viewingTeammate.is_on_shift
-                    ? 'Active On Duty • កំពុងបំពេញការងារ'
-                    : viewingTeammate.has_dayoff_today
-                    ? 'Scheduled Day Off • ថ្ងៃសម្រាក'
-                    : 'Off Duty • ក្រៅម៉ោងការងារ'}
-                </span>
-              </div>
+                    <span style={{
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      background: 'currentColor',
+                      boxShadow: duty.glow ? '0 0 6px currentColor' : 'none'
+                    }} />
+                    <span>
+                      {duty.label}
+                    </span>
+                  </div>
 
               {/* 2x2 Feature Stats Grid (Refined Ticket Style) */}
               <div style={{
@@ -3563,6 +3552,8 @@ export default function StaffPortal({
                 Close Profile
               </button>
             </div>
+          )
+        })()}
           </div>
         </div>
       )}

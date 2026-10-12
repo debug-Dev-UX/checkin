@@ -116,6 +116,7 @@ import {
   saveAdminProfile,
   subscribeToStaffProfileChanges,
   deleteStaffProfileChange,
+  getStaffDutyStatus,
 } from './services/firebaseService'
 import {
   getStoreLocation,
@@ -5879,151 +5880,134 @@ export default function App() {
             </div>
 
             {/* Hero Profile Body */}
-            <div style={{ padding: '4px 22px 22px', position: 'relative', zIndex: 1 }}>
-              {/* Centered Avatar with Status Ring */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '14px' }}>
-                <div style={{ position: 'relative', marginBottom: '10px' }}>
-                  <div style={{
-                    width: '80px',
-                    height: '80px',
-                    borderRadius: '50%',
-                    padding: '3px',
-                    background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 50%, #818cf8 100%)',
-                    boxShadow: '0 8px 24px rgba(2, 132, 199, 0.3)'
-                  }}>
+            {(() => {
+              const duty = getStaffDutyStatus(adminViewingStaffProfile, checkins)
+              return (
+                <div style={{ padding: '4px 22px 22px', position: 'relative', zIndex: 1 }}>
+                  {/* Centered Avatar with Status Ring */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '14px' }}>
+                    <div style={{ position: 'relative', marginBottom: '10px' }}>
+                      <div style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        padding: '3px',
+                        background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 50%, #818cf8 100%)',
+                        boxShadow: '0 8px 24px rgba(2, 132, 199, 0.3)'
+                      }}>
+                        <div style={{
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: '50%',
+                          background: '#f8fafc',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '22px',
+                          fontWeight: 900,
+                          color: '#0284c7'
+                        }}>
+                          {adminViewingStaffProfile.photo_url ? (
+                            <img
+                              src={adminViewingStaffProfile.photo_url}
+                              alt={adminViewingStaffProfile.name}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          ) : (
+                            (adminViewingStaffProfile.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                          )}
+                        </div>
+                      </div>
+
+                      <span
+                        style={{
+                          position: 'absolute',
+                          bottom: '2px',
+                          right: '2px',
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          border: '2.5px solid #ffffff',
+                          background: duty.dotColor,
+                          boxShadow: duty.glow ? `0 0 8px ${duty.dotColor}` : 'none'
+                        }}
+                        title={duty.status === 'on_shift' ? 'On Shift' : duty.status === 'dayoff' ? 'Day Off' : duty.status === 'late' ? `Late (${duty.diffMins}mn)` : 'Off Duty'}
+                      />
+                    </div>
+
+                    {/* Staff Name & Title */}
+                    <h2 style={{
+                      margin: 0,
+                      fontSize: '20px',
+                      fontWeight: 800,
+                      color: '#0f172a',
+                      letterSpacing: '-0.3px',
+                      textAlign: 'center'
+                    }}>
+                      {adminViewingStaffProfile.name}
+                    </h2>
+
+                    {adminViewingStaffProfile.nickname && (
+                      <span style={{
+                        fontSize: '11.5px',
+                        fontWeight: 700,
+                        color: '#0284c7',
+                        background: 'rgba(2, 132, 199, 0.08)',
+                        border: '1px solid rgba(2, 132, 199, 0.2)',
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                        marginTop: '4px'
+                      }}>
+                        @{adminViewingStaffProfile.nickname}
+                      </span>
+                    )}
+
                     <div style={{
-                      width: '100%',
-                      height: '100%',
-                      borderRadius: '50%',
-                      background: '#f8fafc',
-                      overflow: 'hidden',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '22px',
-                      fontWeight: 900,
-                      color: '#0284c7'
+                      gap: '8px',
+                      marginTop: '6px',
+                      fontSize: '12px',
+                      color: '#64748b'
                     }}>
-                      {adminViewingStaffProfile.photo_url ? (
-                        <img
-                          src={adminViewingStaffProfile.photo_url}
-                          alt={adminViewingStaffProfile.name}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      ) : (
-                        (adminViewingStaffProfile.name || 'ST').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-                      )}
+                      <strong style={{ color: '#334155' }}>
+                        {adminViewingStaffProfile.role || 'Barista'}
+                      </strong>
+                      <span>•</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <IconMapPin size={11} color="#0284c7" />
+                        <span>{branches.find(b => b.id === adminViewingStaffProfile.branch_id)?.name || adminViewingStaffProfile.branch_name || 'Store'}</span>
+                      </span>
                     </div>
                   </div>
 
-                  <span
-                    style={{
-                      position: 'absolute',
-                      bottom: '2px',
-                      right: '2px',
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      border: '2.5px solid #ffffff',
-                      background: adminViewingStaffProfile.is_on_shift
-                        ? '#10b981'
-                        : adminViewingStaffProfile.has_dayoff_today
-                        ? '#f59e0b'
-                        : '#94a3b8',
-                      boxShadow: adminViewingStaffProfile.is_on_shift ? '0 0 8px #10b981' : 'none'
-                    }}
-                    title={adminViewingStaffProfile.is_on_shift ? 'On Shift' : adminViewingStaffProfile.has_dayoff_today ? 'Day Off' : 'Off Duty'}
-                  />
-                </div>
-
-                {/* Staff Name & Title */}
-                <h2 style={{
-                  margin: 0,
-                  fontSize: '20px',
-                  fontWeight: 800,
-                  color: '#0f172a',
-                  letterSpacing: '-0.3px',
-                  textAlign: 'center'
-                }}>
-                  {adminViewingStaffProfile.name}
-                </h2>
-
-                {adminViewingStaffProfile.nickname && (
-                  <span style={{
-                    fontSize: '11.5px',
+                  {/* Status Ribbon Pill */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '8px 14px',
+                    borderRadius: '12px',
+                    marginBottom: '14px',
+                    fontSize: '12px',
                     fontWeight: 700,
-                    color: '#0284c7',
-                    background: 'rgba(2, 132, 199, 0.08)',
-                    border: '1px solid rgba(2, 132, 199, 0.2)',
-                    padding: '2px 8px',
-                    borderRadius: '999px',
-                    marginTop: '4px'
+                    background: duty.bgLight,
+                    border: `1px solid ${duty.borderColor}`,
+                    color: duty.color
                   }}>
-                    @{adminViewingStaffProfile.nickname}
-                  </span>
-                )}
-
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginTop: '6px',
-                  fontSize: '12px',
-                  color: '#64748b'
-                }}>
-                  <strong style={{ color: '#334155' }}>
-                    {adminViewingStaffProfile.role || 'Barista'}
-                  </strong>
-                  <span>•</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                    <IconMapPin size={11} color="#0284c7" />
-                    <span>{branches.find(b => b.id === adminViewingStaffProfile.branch_id)?.name || adminViewingStaffProfile.branch_name || 'Store'}</span>
-                  </span>
-                </div>
-              </div>
-
-              {/* Status Ribbon Pill */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                padding: '8px 14px',
-                borderRadius: '12px',
-                marginBottom: '14px',
-                fontSize: '12px',
-                fontWeight: 700,
-                background: adminViewingStaffProfile.is_on_shift
-                  ? '#ecfdf5'
-                  : adminViewingStaffProfile.has_dayoff_today
-                  ? '#fffbeb'
-                  : '#f8fafc',
-                border: adminViewingStaffProfile.is_on_shift
-                  ? '1px solid rgba(16, 185, 129, 0.3)'
-                  : adminViewingStaffProfile.has_dayoff_today
-                  ? '1px solid rgba(245, 158, 11, 0.3)'
-                  : '1px solid #e2e8f0',
-                color: adminViewingStaffProfile.is_on_shift
-                  ? '#059669'
-                  : adminViewingStaffProfile.has_dayoff_today
-                  ? '#d97706'
-                  : '#64748b'
-              }}>
-                <span style={{
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '50%',
-                  background: 'currentColor',
-                  boxShadow: adminViewingStaffProfile.is_on_shift ? '0 0 6px currentColor' : 'none'
-                }} />
-                <span>
-                  {adminViewingStaffProfile.is_on_shift
-                    ? 'Active On Duty • កំពុងបំពេញការងារ'
-                    : adminViewingStaffProfile.has_dayoff_today
-                    ? 'Scheduled Day Off • ថ្ងៃសម្រាក'
-                    : 'Off Duty • ក្រៅម៉ោងការងារ'}
-                </span>
-              </div>
+                    <span style={{
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      background: 'currentColor',
+                      boxShadow: duty.glow ? '0 0 6px currentColor' : 'none'
+                    }} />
+                    <span>
+                      {duty.label}
+                    </span>
+                  </div>
 
               {/* 2x2 Feature Stats Grid */}
               <div style={{
@@ -6167,6 +6151,8 @@ export default function App() {
                 </button>
               </div>
             </div>
+          )
+        })()}
           </div>
         </div>
       )}
