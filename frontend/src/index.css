@@ -39,6 +39,13 @@
   padding: 0;
 }
 
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-primary);
@@ -51,6 +58,28 @@ body {
     radial-gradient(at 15% 15%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
     radial-gradient(at 85% 85%, rgba(168, 85, 247, 0.1) 0px, transparent 50%);
   background-attachment: fixed;
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection inside inputs and content editable */
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  touch-action: manipulation;
+}
+
+button, a, select, [role="button"] {
+  touch-action: manipulation;
+}
+
+/* Prevent auto-zooming on focus in iOS Safari (iOS zooms if font-size < 16px) */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }
 
 #root {
